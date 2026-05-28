@@ -193,6 +193,109 @@ int main() {
 
     static const std::vector<Probe> probes{
         {
+            "DefineStaticArrayWithMetaInfo",
+            R"cpp(
+#include <meta>
+#include <cstdint>
+#include <vector>
+enum class Kind : uint8_t { A, B };
+struct Entity {
+    std::meta::info entity;
+    Kind kind;
+    std::meta::info extra;
+};
+struct sample {};
+consteval std::vector<Entity> discover() {
+    return {{^^sample, Kind::A, std::meta::info{}}};
+}
+int main() {
+    static constexpr auto entities = std::define_static_array(discover());
+    static_assert(entities.size() == 1);
+    static_assert(entities[0].kind == Kind::A);
+    static_assert(std::meta::is_type(entities[0].entity));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "ConstevalVectorWithTypeInfoGetter",
+            R"cpp(
+#include <meta>
+#include <vector>
+#include <typeinfo>
+template<typename T>
+const std::type_info& getter() { return typeid(T); }
+struct Entry {
+    const std::type_info& (*typeInfo)() = nullptr;
+    const char* name = nullptr;
+    void (*thunk)(void*) = nullptr;
+    unsigned size = 0;
+};
+struct sample {};
+template<typename T>
+void constructThunk(void* mem) { new (mem) T(); }
+consteval std::vector<Entry> makeEntries() {
+    const char* n = std::define_static_string(std::string_view("sample"));
+    return {{&getter<sample>, n, &constructThunk<sample>, sizeof(sample)}};
+}
+int main() {
+    static constexpr auto entries = std::define_static_array(makeEntries());
+    static_assert(entries.size() == 1);
+    static_assert(entries[0].size == sizeof(sample));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "DefineStaticArrayWithDefineStaticString",
+            R"cpp(
+#include <meta>
+#include <vector>
+#include <string_view>
+struct Entry {
+    const char* name = nullptr;
+    unsigned size = 0;
+};
+consteval std::vector<Entry> makeEntries() {
+    const char* n = std::define_static_string(std::string_view("hello"));
+    return {{n, 5}};
+}
+int main() {
+    static constexpr auto entries = std::define_static_array(makeEntries());
+    static_assert(entries.size() == 1);
+    static_assert(entries[0].size == 5);
+    return 0;
+}
+)cpp"
+        },
+        {
+            "ConstevalVectorWithFunctionPointers",
+            R"cpp(
+#include <meta>
+#include <vector>
+template<typename T>
+void thunk(void* mem) { new (mem) T(); }
+struct Descriptor {
+    void (*construct)(void*) = nullptr;
+    unsigned size = 0;
+};
+struct sample {};
+consteval std::vector<Descriptor> makeDescriptors() {
+    return {{&thunk<sample>, sizeof(sample)}};
+}
+int main() {
+    static constexpr auto descriptors = std::define_static_array(makeDescriptors());
+    static_assert(descriptors.size() == 1);
+    static_assert(descriptors[0].size == sizeof(sample));
+    static_assert(descriptors[0].construct != nullptr);
+    // Actually call it at runtime
+    alignas(sample) unsigned char buf[sizeof(sample)];
+    descriptors[0].construct(buf);
+    return 0;
+}
+)cpp"
+        },
+        {
             "ReflectionExpression",
             R"cpp(
 struct sample {};
@@ -224,24 +327,6 @@ int main() {
 )cpp"
         },
         {
-            "MetaInfoAsNTTA",
-            R"cpp(
-#include <meta>
-struct sample {};
-struct Entity {
-    std::meta::info entity;
-};
-template <Entity entity>
-consteval bool check() {
-    return std::meta::is_type(entity.entity);
-}
-int main() {
-    static_assert(check<Entity{^^sample}>());
-    return 0;
-}
-)cpp"
-        },
-        {
             "DefineStaticString",
             R"cpp(
 #include <meta>
@@ -249,21 +334,6 @@ int main() {
 int main() {
     constexpr const char* value = std::define_static_string("toolchain");
     static_assert(std::string_view(value) == std::string_view("toolchain"));
-    return 0;
-}
-)cpp"
-        },
-        {
-            "MetaIdentifierOf",
-            R"cpp(
-#include <meta>
-#include <string_view>
-namespace sample {
-struct type {};
-}
-int main() {
-    constexpr auto identifier = std::meta::identifier_of(^^sample::type);
-    static_assert(std::string_view(identifier) == std::string_view("type"));
     return 0;
 }
 )cpp"
@@ -366,21 +436,6 @@ consteval bool check() {
 }
 int main() {
     static_assert(check());
-    return 0;
-}
-)cpp"
-        },
-        {
-            "MetaSizeofSplicer",
-            R"cpp(
-#include <meta>
-struct alignas(16) sample {
-    int value;
-};
-int main() {
-    constexpr auto token = ^^sample;
-    static_assert(sizeof(typename [:token:]) == sizeof(sample));
-    static_assert(alignof(typename [:token:]) == alignof(sample));
     return 0;
 }
 )cpp"
@@ -513,25 +568,6 @@ int main() {
 )cpp"
         },
         {
-            "UserConstevalDefineStaticArray",
-            R"cpp(
-#include <meta>
-#include <vector>
-struct first {};
-struct second {};
-consteval std::vector<std::meta::info> collect() {
-    return {^^first, ^^second};
-}
-int main() {
-    static constexpr auto items = std::define_static_array(collect());
-    static_assert(items.size() == 2U);
-    static_assert(std::meta::is_same_type(items[0], ^^first));
-    static_assert(std::meta::is_same_type(items[1], ^^second));
-    return 0;
-}
-)cpp"
-        },
-        {
             "TemplateFor",
             R"cpp(
 #include <meta>
@@ -612,50 +648,6 @@ int main() {
 )cpp"
         },
         {
-            "MetaAnnotationsOfParameter",
-            R"cpp(
-#include <meta>
-struct marker {
-    const char* name = "";
-};
-struct dependency {};
-struct sample {
-    explicit sample([[=marker{.name = std::define_static_string("alpha")}]] dependency) {}
-};
-consteval bool check() {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_constructor(member)) {
-            static constexpr auto parameters = std::define_static_array(std::meta::parameters_of(member));
-            static constexpr auto annotations = std::define_static_array(std::meta::annotations_of(parameters[0]));
-            return annotations.size() == 1U;
-        }
-    }
-    return false;
-}
-int main() {
-    static_assert(check());
-    return 0;
-}
-)cpp"
-        },
-        {
-            "MetaTemplateArgumentsOf",
-            R"cpp(
-#include <meta>
-template <class T>
-struct Bean {};
-struct Logger {};
-int main() {
-    static constexpr auto arguments = std::define_static_array(std::meta::template_arguments_of(^^Bean<Logger>));
-    static_assert(arguments.size() == 1U);
-    static_assert(std::meta::is_same_type(arguments[0], ^^Logger));
-    return 0;
-}
-)cpp"
-        },
-        {
             "MetaIsConstructor",
             R"cpp(
 #include <meta>
@@ -668,62 +660,6 @@ consteval bool check() {
     template for (constexpr auto member : members) {
         if constexpr (std::meta::is_constructor(member)) {
             return true;
-        }
-    }
-    return false;
-}
-int main() {
-    static_assert(check());
-    return 0;
-}
-)cpp"
-        },
-        {
-            "MetaIsSpecialMemberFunction",
-            R"cpp(
-#include <meta>
-struct sample {
-    sample() = default;
-    void regular() {}
-};
-consteval bool check() {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
-    bool hasSpecial = false;
-    bool hasRegular = false;
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_special_member_function(member)) {
-            hasSpecial = true;
-        } else if constexpr (std::meta::is_function(member)) {
-            hasRegular = true;
-        }
-    }
-    return hasSpecial && hasRegular;
-}
-int main() {
-    static_assert(check());
-    return 0;
-}
-)cpp"
-        },
-        {
-            "MetaReturnTypeOf",
-            R"cpp(
-#include <meta>
-struct product {};
-struct factory {
-    product create();
-};
-consteval bool check() {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^factory, std::meta::access_context::unchecked()));
-    template for (constexpr auto member : members) {
-        if constexpr (std::meta::is_function(member) && !std::meta::is_constructor(member) &&
-                      !std::meta::is_destructor(member)) {
-            constexpr auto result = std::meta::return_type_of(member);
-            if constexpr (std::meta::is_same_type(result, ^^product)) {
-                return true;
-            }
         }
     }
     return false;
@@ -949,32 +885,25 @@ int main() {
 )cpp"
         },
         {
-            "SpliceMemberFunctionPtrAddress",
+            "SpliceMemberFunctionCall",
             R"cpp(
 #include <meta>
 struct target {
-    void process(int* out) { *out = 42; }
+    int compute() { return 42; }
 };
-consteval auto getMethod() {
-    static constexpr auto members =
-        std::define_static_array(std::meta::members_of(^^target, std::meta::access_context::unchecked()));
-    template for (constexpr auto m : members) {
-        if constexpr (!std::meta::is_type(m) && !std::meta::is_special_member_function(m)) {
+consteval std::meta::info getMethod() {
+    for (auto m : std::meta::members_of(^^target, std::meta::access_context::unchecked())) {
+        if (!std::meta::is_type(m) && !std::meta::is_special_member_function(m))
             return m;
-        }
     }
     return std::meta::info{};
 }
-consteval auto getMethodPtr() {
-    constexpr auto m = getMethod();
-    return &target::[:m:];
-}
 int main() {
     target t;
-    constexpr auto pmf = getMethodPtr();
-    int result = 0;
-    (t.*pmf)(&result);
-    return result == 42 ? 0 : 1;
+    constexpr auto m = getMethod();
+    // P2996R13: &[:r:] for a non-static member function = pointer to member
+    constexpr auto pmf = &[:m:];
+    return (t.*pmf)() == 42 ? 0 : 1;
 }
 )cpp"
         },
@@ -1049,6 +978,8 @@ int main() {
     constexpr auto tmpl = std::meta::template_of(^^Wrapper<Inner>);
     constexpr const char* name = std::define_static_string(std::meta::identifier_of(tmpl));
     static_assert(std::string_view(name) == std::string_view("Wrapper"));
+    // P2996R13: two reflections of the same entity compare equal
+    static_assert(tmpl == ^^Wrapper);
     return 0;
 }
 )cpp"

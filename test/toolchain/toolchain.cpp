@@ -1,0 +1,621 @@
+#include <chrono>
+#include <cctype>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <vector>
+
+#ifndef TOOLCHAIN_CHECK_CXX_COMPILER
+#define TOOLCHAIN_CHECK_CXX_COMPILER ""
+#endif
+
+#ifndef TOOLCHAIN_CHECK_CXX_STANDARD_FLAG
+#define TOOLCHAIN_CHECK_CXX_STANDARD_FLAG "-std=c++26"
+#endif
+
+#ifndef TOOLCHAIN_CHECK_REFLECTION_FLAG
+#define TOOLCHAIN_CHECK_REFLECTION_FLAG "-freflection"
+#endif
+
+#ifndef TOOLCHAIN_CHECK_EXPERIMENTAL_LIBRARY
+#define TOOLCHAIN_CHECK_EXPERIMENTAL_LIBRARY "stdc++exp"
+#endif
+
+namespace toolchain_check {
+
+struct Probe {
+    const char* name = "";
+    const char* source = "";
+};
+
+[[nodiscard]] std::string quoteArgument(const std::string_view value) {
+    std::string result{};
+    result.reserve(value.size() + 2U);
+    result.push_back('"');
+    for (const char c : value) {
+        result.push_back(c);
+    }
+    result.push_back('"');
+    return result;
+}
+
+[[nodiscard]] bool containsWhitespace(const std::string_view value) {
+    for (const unsigned char c : value) {
+        if (std::isspace(c) != 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool containsDoubleQuote(const std::string_view value) {
+    return value.find('"') != std::string_view::npos;
+}
+
+[[nodiscard]] std::filesystem::path basePath() {
+    std::error_code error{};
+    const auto tempPath = std::filesystem::temp_directory_path(error);
+    if (!error && !tempPath.empty()) {
+        return tempPath;
+    }
+
+    const auto currentPath = std::filesystem::current_path(error);
+    if (!error && !currentPath.empty()) {
+        return currentPath;
+    }
+
+    return {};
+}
+
+[[nodiscard]] std::filesystem::path createTempDirectory() {
+    const auto base = basePath();
+    if (base.empty()) {
+        return {};
+    }
+
+    const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (int attempt = 0; attempt < 100; ++attempt) {
+        auto path = base / ("ctorium-toolchain-check-" + std::to_string(now) + "-" + std::to_string(attempt));
+        std::error_code error{};
+        if (std::filesystem::create_directory(path, error)) {
+            return path;
+        }
+    }
+    return {};
+}
+
+[[nodiscard]] bool writeSourceFile(const std::filesystem::path& path, const std::string_view sourceText) {
+    std::ofstream source(path, std::ios::binary | std::ios::trunc);
+    if (!source) {
+        return false;
+    }
+    source.write(sourceText.data(), static_cast<std::streamsize>(sourceText.size()));
+    return static_cast<bool>(source);
+}
+
+[[nodiscard]] bool buildCommand(
+    const std::filesystem::path& compilerPath,
+    const std::string_view standardFlag,
+    const std::string_view reflectionFlag,
+    const std::string_view experimentalLibrary,
+    const std::filesystem::path& sourcePath,
+    const std::filesystem::path& outputPath,
+    std::string& command
+) {
+    if (compilerPath.empty()) {
+        std::cerr << "Compiler path is empty.\n";
+        return false;
+    }
+    if (containsDoubleQuote(compilerPath.string())) {
+        std::cerr << "Compiler path contains a double quote that cannot be quoted portably.\n";
+        return false;
+    }
+    if (containsDoubleQuote(standardFlag) || containsDoubleQuote(reflectionFlag) ||
+        containsDoubleQuote(experimentalLibrary)) {
+        std::cerr << "Compile token contains a double quote that cannot be quoted portably.\n";
+        return false;
+    }
+
+    command.clear();
+    const std::vector<std::string> tokens{
+        compilerPath.string(),
+        std::string(standardFlag),
+        std::string(reflectionFlag),
+        sourcePath.string(),
+        "-o",
+        outputPath.string(),
+        std::string("-l") + std::string(experimentalLibrary)
+    };
+
+    for (std::size_t index = 0U; index < tokens.size(); ++index) {
+        if (index != 0U) {
+            command.push_back(' ');
+        }
+        const auto& token = tokens[index];
+        if (!containsWhitespace(token)) {
+            command += token;
+        } else {
+            command += quoteArgument(token);
+        }
+    }
+
+    return true;
+}
+
+[[nodiscard]] bool compileAndLinkProbe(
+    const Probe& probe,
+    const std::filesystem::path& compilerPath,
+    const std::string_view standardFlag,
+    const std::string_view reflectionFlag,
+    const std::string_view experimentalLibrary,
+    const std::filesystem::path& directory,
+    const int index
+) {
+    const auto sourcePath = directory / ("probe-" + std::to_string(index) + ".cpp");
+    const auto outputPath = directory / ("probe-" + std::to_string(index));
+
+    if (!writeSourceFile(sourcePath, probe.source)) {
+        return false;
+    }
+
+    std::string command{};
+    if (!buildCommand(
+        compilerPath,
+        standardFlag,
+        reflectionFlag,
+        experimentalLibrary,
+        sourcePath,
+        outputPath,
+        command
+    )) {
+        return false;
+    }
+
+    return std::system(command.c_str()) == 0;
+}
+
+} // namespace toolchain_check
+
+int main() {
+    constexpr std::string_view compilerValue = TOOLCHAIN_CHECK_CXX_COMPILER;
+    constexpr std::string_view standardFlag = TOOLCHAIN_CHECK_CXX_STANDARD_FLAG;
+    constexpr std::string_view reflectionFlag = TOOLCHAIN_CHECK_REFLECTION_FLAG;
+    constexpr std::string_view experimentalLibrary = TOOLCHAIN_CHECK_EXPERIMENTAL_LIBRARY;
+    if (compilerValue.empty()) {
+        std::cerr << "TOOLCHAIN_CHECK_CXX_COMPILER is empty.\n";
+        return 1;
+    }
+    const std::filesystem::path compilerPath{std::string(compilerValue)};
+
+    using toolchain_check::Probe;
+
+    static const std::vector<Probe> probes{
+        {
+            "ReflectionExpression",
+            R"cpp(
+struct sample {};
+consteval bool check() {
+    constexpr auto token = ^^sample;
+    (void)token;
+    return true;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "ReflectionSplice",
+            R"cpp(
+#include <type_traits>
+struct sample {};
+consteval bool check() {
+    constexpr auto token = ^^sample;
+    using reflected_type = [:token:];
+    return std::is_same_v<reflected_type, sample>;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "DefineStaticString",
+            R"cpp(
+#include <meta>
+#include <string_view>
+int main() {
+    constexpr const char* value = std::define_static_string("toolchain");
+    static_assert(std::string_view(value) == std::string_view("toolchain"));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaAnnotationsOf",
+            R"cpp(
+#include <meta>
+struct marker {};
+struct [[=marker{}]] sample {};
+consteval bool check() {
+    const auto annotations = std::meta::annotations_of(^^sample);
+    unsigned count = 0U;
+    for (const auto annotation : annotations) {
+        (void)annotation;
+        ++count;
+    }
+    return count == 1U;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaTypeOf",
+            R"cpp(
+#include <meta>
+struct marker {};
+struct [[=marker{}]] sample {};
+consteval bool check() {
+    static constexpr auto annotations = std::define_static_array(std::meta::annotations_of(^^sample));
+    template for (constexpr auto annotation : annotations) {
+        constexpr auto type = std::meta::type_of(annotation);
+        if constexpr (std::meta::is_type(type)) {
+            return true;
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaRemoveConst",
+            R"cpp(
+#include <meta>
+struct marker {};
+struct [[=marker{}]] sample {};
+consteval bool check() {
+    static constexpr auto annotations = std::define_static_array(std::meta::annotations_of(^^sample));
+    template for (constexpr auto annotation : annotations) {
+        constexpr auto type = std::meta::remove_const(std::meta::type_of(annotation));
+        if constexpr (std::meta::is_same_type(type, ^^marker)) {
+            return true;
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsSameType",
+            R"cpp(
+#include <meta>
+struct sample {};
+int main() {
+    static_assert(std::meta::is_same_type(^^sample, ^^sample));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaExtract",
+            R"cpp(
+#include <meta>
+#include <string_view>
+struct marker {
+    const char* name = "";
+};
+struct [[=marker{.name = std::define_static_string("alpha")}]] sample {};
+consteval bool check() {
+    static constexpr auto annotations = std::define_static_array(std::meta::annotations_of(^^sample));
+    template for (constexpr auto annotation : annotations) {
+        constexpr auto type = std::meta::remove_const(std::meta::type_of(annotation));
+        if constexpr (std::meta::is_same_type(type, ^^marker)) {
+            constexpr auto value = std::meta::extract<marker>(annotation);
+            return std::string_view(value.name) == std::string_view("alpha");
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsTypeAlias",
+            R"cpp(
+#include <meta>
+struct sample {};
+using alias = sample;
+int main() {
+    static_assert(std::meta::is_type_alias(^^alias));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsNamespaceAlias",
+            R"cpp(
+#include <meta>
+namespace source {}
+namespace alias = source;
+int main() {
+    static_assert(std::meta::is_namespace_alias(^^alias));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaDealias",
+            R"cpp(
+#include <meta>
+#include <type_traits>
+struct sample {};
+using alias = sample;
+int main() {
+    constexpr auto token = std::meta::dealias(^^alias);
+    using dealiased_type = [:token:];
+    static_assert(std::is_same_v<dealiased_type, sample>);
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsType",
+            R"cpp(
+#include <meta>
+struct sample {};
+int main() {
+    static_assert(std::meta::is_type(^^sample));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsClassType",
+            R"cpp(
+#include <meta>
+struct sample {};
+int main() {
+    static_assert(std::meta::is_class_type(^^sample));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsNamespace",
+            R"cpp(
+#include <meta>
+namespace sample {}
+int main() {
+    static_assert(std::meta::is_namespace(^^sample));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaAccessContextUnchecked",
+            R"cpp(
+#include <meta>
+namespace sample {
+struct value {};
+}
+consteval bool check() {
+    const auto members = std::meta::members_of(^^sample, std::meta::access_context::unchecked());
+    (void)members;
+    return true;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaMembersOf",
+            R"cpp(
+#include <meta>
+namespace sample {
+struct value {};
+}
+consteval bool check() {
+    const auto members = std::meta::members_of(^^sample, std::meta::access_context::unchecked());
+    unsigned count = 0U;
+    for (const auto member : members) {
+        (void)member;
+        ++count;
+    }
+    return count == 1U;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "DefineStaticArray",
+            R"cpp(
+#include <meta>
+namespace sample {
+struct value {};
+}
+int main() {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
+    static_assert(members.size() == 1U);
+    return 0;
+}
+)cpp"
+        },
+        {
+            "TemplateFor",
+            R"cpp(
+#include <meta>
+namespace sample {
+struct value {};
+}
+consteval bool check() {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
+    unsigned count = 0U;
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_type(member)) {
+            ++count;
+        }
+    }
+    return count == 1U;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaParametersOf",
+            R"cpp(
+#include <meta>
+#include <type_traits>
+struct dependency {};
+struct sample {
+    explicit sample(dependency) {}
+};
+consteval bool check() {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_constructor(member)) {
+            static constexpr auto parameters = std::define_static_array(std::meta::parameters_of(member));
+            if constexpr (parameters.size() == 1U) {
+                using parameter_type = [:std::meta::type_of(parameters[0]):];
+                if constexpr (std::is_same_v<parameter_type, dependency>) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsConstructor",
+            R"cpp(
+#include <meta>
+struct sample {
+    sample() = default;
+};
+consteval bool check() {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_constructor(member)) {
+            return true;
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaBasesOf",
+            R"cpp(
+#include <meta>
+struct base {};
+struct sample : base {};
+int main() {
+    static constexpr auto bases =
+        std::define_static_array(std::meta::bases_of(^^sample, std::meta::access_context::unchecked()));
+    static_assert(bases.size() == 1U);
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaIsPublic",
+            R"cpp(
+#include <meta>
+struct base {};
+struct sample : base {};
+consteval bool check() {
+    static constexpr auto bases =
+        std::define_static_array(std::meta::bases_of(^^sample, std::meta::access_context::unchecked()));
+    template for (constexpr auto base_relation : bases) {
+        if constexpr (std::meta::is_public(base_relation)) {
+            return true;
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
+    };
+
+    const auto tempDirectory = toolchain_check::createTempDirectory();
+    if (tempDirectory.empty()) {
+        int code = 1;
+        for (const auto& probe : probes) {
+            std::cout << "[FAIL] " << probe.name << " code=" << code << '\n';
+            ++code;
+        }
+        return 1;
+    }
+
+    int firstFailure = 0;
+    int code = 1;
+    for (const auto& probe : probes) {
+        const bool passed = toolchain_check::compileAndLinkProbe(
+            probe,
+            compilerPath,
+            standardFlag,
+            reflectionFlag,
+            experimentalLibrary,
+            tempDirectory,
+            code
+        );
+        if (passed) {
+            std::cout << "[PASS] " << probe.name << '\n';
+        } else {
+            std::cout << "[FAIL] " << probe.name << " code=" << code << '\n';
+            if (firstFailure == 0) {
+                firstFailure = code;
+            }
+        }
+        ++code;
+    }
+
+    std::error_code cleanupError{};
+    std::filesystem::remove_all(tempDirectory, cleanupError);
+    return firstFailure;
+}

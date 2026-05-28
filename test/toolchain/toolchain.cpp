@@ -949,6 +949,96 @@ int main() {
 )cpp"
         },
         {
+            "SpliceMemberFunctionPtrAddress",
+            R"cpp(
+#include <meta>
+struct target {
+    void process(int* out) { *out = 42; }
+};
+consteval auto getMethod() {
+    static constexpr auto members =
+        std::define_static_array(std::meta::members_of(^^target, std::meta::access_context::unchecked()));
+    template for (constexpr auto m : members) {
+        if constexpr (!std::meta::is_type(m) && !std::meta::is_special_member_function(m)) {
+            return m;
+        }
+    }
+    return std::meta::info{};
+}
+consteval auto getMethodPtr() {
+    constexpr auto m = getMethod();
+    return &target::[:m:];
+}
+int main() {
+    target t;
+    constexpr auto pmf = getMethodPtr();
+    int result = 0;
+    (t.*pmf)(&result);
+    return result == 42 ? 0 : 1;
+}
+)cpp"
+        },
+        {
+            "ConstevalStdString",
+            R"cpp(
+#include <meta>
+#include <string>
+#include <string_view>
+namespace outer { namespace inner { struct sample {}; } }
+consteval const char* buildName(std::meta::info entity) {
+    std::string result(std::meta::identifier_of(entity));
+    auto parent = std::meta::parent_of(entity);
+    while (std::meta::is_namespace(parent)) {
+        if (!std::meta::has_identifier(parent)) break;
+        std::string_view pid = std::meta::identifier_of(parent);
+        result = std::string(pid) + "::" + result;
+        parent = std::meta::parent_of(parent);
+    }
+    return std::define_static_string(std::string_view(result));
+}
+int main() {
+    constexpr const char* name = buildName(^^outer::inner::sample);
+    static_assert(std::string_view(name) == std::string_view("outer::inner::sample"));
+    return 0;
+}
+)cpp"
+        },
+        {
+            "MetaInfoDefaultAndEquality",
+            R"cpp(
+#include <meta>
+struct sample {};
+consteval std::meta::info findOrInvalid(bool found) {
+    if (found) return ^^sample;
+    return std::meta::info{};
+}
+int main() {
+    constexpr auto valid   = findOrInvalid(true);
+    constexpr auto invalid = findOrInvalid(false);
+    static_assert(valid   != std::meta::info{});
+    static_assert(invalid == std::meta::info{});
+    return 0;
+}
+)cpp"
+        },
+        {
+            "ReflectTemplateSpecialisationWithTypeParam",
+            R"cpp(
+#include <meta>
+#include <memory>
+#include <type_traits>
+template<typename T>
+consteval bool check() {
+    constexpr auto reflected = ^^std::unique_ptr<T>;
+    return std::meta::is_type(reflected);
+}
+int main() {
+    static_assert(check<int>());
+    return 0;
+}
+)cpp"
+        },
+        {
             "MetaTemplateOf",
             R"cpp(
 #include <meta>

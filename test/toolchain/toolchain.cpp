@@ -948,6 +948,21 @@ int main() {
 }
 )cpp"
         },
+        {
+            "MetaTemplateOf",
+            R"cpp(
+#include <meta>
+#include <string_view>
+template<typename T> struct Wrapper {};
+struct Inner {};
+int main() {
+    constexpr auto tmpl = std::meta::template_of(^^Wrapper<Inner>);
+    constexpr const char* name = std::define_static_string(std::meta::identifier_of(tmpl));
+    static_assert(std::string_view(name) == std::string_view("Wrapper"));
+    return 0;
+}
+)cpp"
+        },
     };
 
     const auto tempDirectory = toolchain_check::createTempDirectory();

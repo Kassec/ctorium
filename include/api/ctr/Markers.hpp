@@ -46,12 +46,12 @@ struct threadLocal {
 // named is an aggregate (no user-provided constructors) so that:
 //  - it is a structural type and can be used as an annotation value (P2996), and
 //  - GCC's reflect_constant can extract it from annotation info.
-// const char* satisfies the structural-type requirement (std::string_view does not).
-// All Ctorium name keys are string literals or define_static_string results, which
-// always produce null-terminated static const char* values.
+// std::string_view is structural ({const char*, size_t}, both structural members)
+// and is extracted reliably by GCC. String literals convert implicitly to
+// std::string_view; define_static_string is not required at annotation sites.
 struct named {
-    /** Name key; nullptr or "" means the unnamed key. */
-    const char* name = nullptr;
+    /** Name key; an empty string_view means the unnamed key. */
+    std::string_view name{};
 };
 
 /**

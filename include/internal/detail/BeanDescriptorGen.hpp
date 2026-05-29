@@ -146,9 +146,8 @@ consteval AnnotationScan scanAnnotations(std::meta::info entity) {
             const auto v = std::meta::extract<ctr::threadLocal>(ann);
             r.lifetime = Lifetime::ThreadLocal; r.priority = v.priority;
         } else if (std::meta::is_same_type(t, ^^ctr::named)) {
-            const char* n = std::meta::extract<ctr::named>(ann).name;
-            r.beanName = std::define_static_string(
-                std::string_view{(n != nullptr) ? n : ""});
+            std::string_view n = std::meta::extract<ctr::named>(ann).name;
+            r.beanName = std::define_static_string(n);
         }
     }
     return r;

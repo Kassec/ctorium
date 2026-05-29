@@ -311,6 +311,24 @@ public:
     // -------------------------------------------------------------------------
 
     /**
+     * @brief Interns a name under the write lock and returns a stable `NameId`.
+     *
+     * Called by `BeanContext::defaultNamed<T>("x")` after `start()`.
+     * The write lock is held only during the intern operation; no other lock is
+     * acquired, so this is safe from user code concurrent with `resolve<T>()`.
+     *
+     * Empty string → `kUnnamed` (fast path, no lock acquired).
+     *
+     * @param name Name to intern; empty string maps to `kUnnamed`.
+     * @return Stable `NameId` for the name.
+     */
+    [[nodiscard]] NameId internNameSafe(std::string_view name) {
+        if (name.empty()) return kUnnamed;
+        std::lock_guard lock(writeLock_);
+        return nameInterning_.intern(name);
+    }
+
+    /**
      * @brief Sets the runtime default `NameId` for the given `TypeId`.
      *
      * Thread-safe.  Called by `BeanContext::defaultNamed<T>("x")`.
@@ -424,6 +442,24 @@ public:
     // Defined in BeanInlineImpl.hpp (included at the bottom of Ctorium.hpp) to
     // avoid a circular dependency between Registry.hpp and Bean.hpp.
 
+    /**
+     * @brief Returns all candidates for (TypeId of T, nameId), materializing each.
+     *
+     * Unlike `resolve<T>()`, no priority arbitration is performed: every registered
+     * candidate is materialized and returned.  Returns an empty vector when there are
+     * no candidates (no exception).
+     *
+     * @tparam T Requested bean interface type.
+     * @param nameId NameId of the qualifier; `kUnnamed` for unnamed resolution.
+     * @param ctx    Active `ResolutionContext`.
+     * @return Vector of `Bean<T>` handles, one per candidate.
+     * @throws ctr::ContextStateError if not started.
+     */
+    template <typename T>
+    [[nodiscard]] auto resolveAll(NameId nameId, ResolutionContext& ctx)
+        -> std::vector<ctr::Bean<T>>;
+    // Defined in BeanInlineImpl.hpp.
+
     // -------------------------------------------------------------------------
     // Runtime binding
     // -------------------------------------------------------------------------
@@ -453,6 +489,23 @@ public:
     // TODO: implement after Bean<T> and the full materialization chain are in place.
 
 private:
+    /**
+     * @brief Materializes a single bean descriptor and returns a tracked handle.
+     *
+     * Contains the lifetime switch extracted from `resolve<T>`: singleton two-phase
+     * lock, prototype CycleGuard + slot activation, and lifecycle dispatch.
+     * Used by both `resolve<T>` (single candidate) and `resolveAll<T>` (all candidates).
+     *
+     * @tparam T Requested bean interface type.
+     * @param descId  Descriptor to materialize.
+     * @param ctx     Active `ResolutionContext`.
+     * @return Tracked `Bean<T>` handle.
+     * @throws ctr::ConfigurationError for unimplemented lifetimes (session, threadLocal).
+     */
+    template <typename T>
+    [[nodiscard]] auto materializeOne(DescriptorId descId, ResolutionContext& ctx)
+        -> ctr::Bean<T>;
+    // Defined in BeanInlineImpl.hpp.
     // -------------------------------------------------------------------------
     // Dependency cycle detection  (specs-internal §13)
     // -------------------------------------------------------------------------

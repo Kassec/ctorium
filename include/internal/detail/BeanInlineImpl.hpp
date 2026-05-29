@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <new>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 #include "Registry.hpp"
@@ -14,6 +15,31 @@
 #include "../../api/ctr/Bean.hpp"
 #include "../../api/ctr/BeanContext.hpp"
 #include "../../api/ctr/Errors.hpp"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// phaseIndexFor<PhaseTag>  (declared before namespace ctr to allow Phase-1
+// lookup from BeanContext::on<T> template bodies defined below)
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace ctr::detail {
+
+template <class PhaseTag>
+[[nodiscard]] std::size_t phaseIndexFor(PhaseTag) {
+    if constexpr (std::is_same_v<PhaseTag, ctr::onInitialized_t>)
+        return ListenerStore::phaseInitialized();
+    else if constexpr (std::is_same_v<PhaseTag, ctr::onCreated_t>)
+        return ListenerStore::phaseCreated();
+    else if constexpr (std::is_same_v<PhaseTag, ctr::onPreDestroy_t>)
+        return ListenerStore::phasePreDestroy();
+    else if constexpr (std::is_same_v<PhaseTag, ctr::onDestroyed_t>)
+        return ListenerStore::phaseDestroyed();
+    else
+        throw ctr::ConfigurationError(
+            "BeanContext::on: unsupported phase tag; use ctr::onInitialized, "
+            "ctr::onCreated, ctr::onPreDestroy, or ctr::onDestroyed.");
+}
+
+} // namespace ctr::detail
 
 namespace ctr {
 
@@ -73,6 +99,159 @@ Bean<T> BeanContext::resolve(named key) {
     }
     detail::ResolutionContext ctx{reg};
     return reg.resolve<T>(nameId, ctx);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeanContext::defaultNamed<T>(std::string_view)
+//
+// Interns the name and sets the runtime default NameId for T on this context.
+// Throws ContextStateError if called before start() (TypeId not yet assigned).
+// Throws ConfigurationError if T was never registered in this context.
+// Empty string clears the default (equivalent to nullptr).
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <class T>
+BeanContext& BeanContext::defaultNamed(std::string_view name) {
+    detail::Registry& reg = core();
+    if (!reg.started()) {
+        throw ContextStateError(
+            "BeanContext::defaultNamed: context must be started; "
+            "TypeId is not assigned before start().");
+    }
+    const detail::TypeId typeId = reg.typeIdFor<T>();
+    if (typeId == detail::kInvalidTypeId) {
+        throw ConfigurationError(
+            "BeanContext::defaultNamed: type T is not registered in this context.");
+    }
+    if (name.empty()) {
+        reg.setDefault(typeId, detail::kUnnamed);
+        return *this;
+    }
+    const detail::NameId nameId = reg.internNameSafe(name);
+    reg.setDefault(typeId, nameId);
+    return *this;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeanContext::defaultNamed<T>(std::nullptr_t)
+//
+// Clears the runtime default for T, restoring unnamed-key resolution.
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <class T>
+BeanContext& BeanContext::defaultNamed(std::nullptr_t) {
+    detail::Registry& reg = core();
+    if (!reg.started()) {
+        throw ContextStateError(
+            "BeanContext::defaultNamed: context must be started; "
+            "TypeId is not assigned before start().");
+    }
+    const detail::TypeId typeId = reg.typeIdFor<T>();
+    if (typeId == detail::kInvalidTypeId) return *this; // T not registered — no-op
+    reg.setDefault(typeId, detail::kUnnamed);
+    return *this;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeanContext::on<T>(phase, callback, options)  — typed listener
+//
+// Wraps the typed callback in a void(const void*) closure that receives the
+// AnyBean*, builds a non-tracking Bean<T> view (kInvalidSlotId prevents
+// releaseIfPrototype on the temporary), and invokes the callback.
+//
+// The TypeId of T is resolved at registration time via typeIdFor<T>().
+// If the context is not yet started (typeIdFor<T>() == kInvalidTypeId), the
+// listener is stored with kInvalidTypeId and behaves as a global listener —
+// a known deviation from specs-api §14.2; note in deviation report.
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <class T, class Callback, class PhaseTag>
+ListenerHandle BeanContext::on(PhaseTag phase, Callback&& callback,
+                               ListenerOptions options) {
+    static_assert(
+        std::is_invocable_v<std::decay_t<Callback>, const Bean<T>&>,
+        "BeanContext::on<T>: callback must accept (const ctr::Bean<T>&).");
+
+    detail::Registry& reg = core();
+    const std::size_t phaseIdx = detail::phaseIndexFor(phase);
+    const detail::TypeId typeId = reg.typeIdFor<T>();
+
+    auto wrapper =
+        [cb = std::forward<Callback>(callback)](const void* vBean) {
+            const ctr::AnyBean& anyBean =
+                *static_cast<const ctr::AnyBean*>(vBean);
+            // Non-tracking view: kInvalidSlotId prevents releaseIfPrototype
+            // on the temporary, avoiding a double-release for prototype beans.
+            // Prototype tracking in listener callbacks is deferred (AnyBean
+            // tracking TODO).
+            ctr::Bean<T> view = ctr::Bean<T>::makeDirect(
+                static_cast<T*>(anyBean.object_),
+                detail::kInvalidSlotId,
+                anyBean.registry_);
+            cb(static_cast<const ctr::Bean<T>&>(view));
+        };
+
+    return reg.listenerStore().addListener(
+        phaseIdx, typeId, std::move(wrapper), options.priority);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeanContext::on(phase, callback, options)  — global listener
+//
+// Observes all beans on this context.  Callback receives const AnyBean&.
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <class Callback, class PhaseTag>
+ListenerHandle BeanContext::on(PhaseTag phase, Callback&& callback,
+                               ListenerOptions options) {
+    static_assert(
+        std::is_invocable_v<std::decay_t<Callback>, const AnyBean&>,
+        "BeanContext::on: global callback must accept (const ctr::AnyBean&).");
+
+    detail::Registry& reg = core();
+    const std::size_t phaseIdx = detail::phaseIndexFor(phase);
+
+    auto wrapper =
+        [cb = std::forward<Callback>(callback)](const void* vBean) {
+            const ctr::AnyBean& anyBean =
+                *static_cast<const ctr::AnyBean*>(vBean);
+            cb(anyBean);
+        };
+
+    return reg.listenerStore().addListener(
+        phaseIdx, detail::kInvalidTypeId, std::move(wrapper), options.priority);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeanContext::remove(handle)
+//
+// Delegates listener removal to the handle.  Idempotent (handle.remove() is
+// a no-op when already removed).
+// ─────────────────────────────────────────────────────────────────────────────
+
+inline void BeanContext::remove(const ListenerHandle& handle) {
+    const_cast<ListenerHandle&>(handle).remove();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BeanContext::resolveAll<T>()  — unnamed resolution space
+// BeanContext::resolveAll<T>(named)  — named resolution space
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <class T>
+std::vector<Bean<T>> BeanContext::resolveAll() {
+    detail::Registry& reg = core();
+    detail::ResolutionContext ctx{reg};
+    return reg.resolveAll<T>(detail::kUnnamed, ctx);
+}
+
+template <class T>
+std::vector<Bean<T>> BeanContext::resolveAll(named key) {
+    detail::Registry& reg = core();
+    const detail::NameId nameId = reg.nameInterning().lookup(key.name);
+    if (nameId == detail::kInvalidNameId) return {};
+    detail::ResolutionContext ctx{reg};
+    return reg.resolveAll<T>(nameId, ctx);
 }
 
 } // namespace ctr
@@ -227,6 +406,21 @@ auto Registry::resolve(NameId nameId, ResolutionContext& ctx) -> Bean<T> {
     }
 
     materialize:
+    return materializeOne<T>(descId, ctx);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registry::materializeOne<T>
+//
+// Per-descriptor materialization: singleton (two-phase lock), prototype
+// (CycleGuard + slot activation), lifecycle dispatch.  Extracted from
+// resolve<T> so that resolveAll<T> can reuse the same path without
+// priority arbitration.
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <typename T>
+auto Registry::materializeOne(DescriptorId descId, ResolutionContext& ctx)
+    -> ctr::Bean<T> {
     const Lifetime lt = descriptors_.lifetimeOf(descId);
 
     switch (lt) {
@@ -241,7 +435,6 @@ auto Registry::resolve(NameId nameId, ResolutionContext& ctx) -> Bean<T> {
                 // ── Phase 1: claim descId or wait for a peer to complete ───
                 {
                     std::unique_lock lock(writeLock_);
-                    // Wait until (a) peer completed the singleton or (b) slot free.
                     cv_.wait(lock, [&] {
                         return singletons_.find(descId) != nullptr
                             || std::find(materializing_.begin(),
@@ -250,7 +443,6 @@ auto Registry::resolve(NameId nameId, ResolutionContext& ctx) -> Bean<T> {
                     });
                     instance = singletons_.find(descId);
                     if (instance == nullptr) {
-                        // Cycle detection (materializationStack() is thread_local).
                         for (DescriptorId existing : materializationStack()) {
                             if (existing == descId) {
                                 throw ctr::ResolutionError(
@@ -324,36 +516,24 @@ auto Registry::resolve(NameId nameId, ResolutionContext& ctx) -> Bean<T> {
                 }
             }
 
-            // 8. Return Bean<T> Form 1 (kInvalidSlotId = singleton, no refcount)
+            // Return Bean<T> Form 1 (kInvalidSlotId = singleton, no refcount)
             return ctr::Bean<T>::makeDirect(
                 static_cast<T*>(instance), kInvalidSlotId, this);
         }
 
         case Lifetime::Prototype: {
             const Descriptor& desc = descriptors_.at(descId);
-            // Every resolve<T>() call creates a new instance — no caching.
-            // CycleGuard uses the thread_local materializationStack() (same as
-            // singleton). Prototype cycle detection is per-thread and lock-free.
             CycleGuard guard(materializationStack(), descId);
 
             void* mem;
             SlotId slotId;
 
             if (desc.allocAndConstruct != nullptr) {
-                // Fast path for unique_ptr<T> factory products: allocation and
-                // construction happen inside the thunk (single allocation).
-                // On exception from the factory: unique_ptr destructor cleans up
-                // automatically — no memory to free here.
-                mem = desc.allocAndConstruct(static_cast<void*>(&ctx));
-                // Phase 1 — register the already-constructed instance.
+                mem    = desc.allocAndConstruct(static_cast<void*>(&ctx));
                 slotId = prototypes_.allocate(descId, mem);
             } else {
-                // Standard path: pre-allocate, then construct separately.
-                mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                // Phase 1 — acquire slot.
+                mem    = ::operator new(desc.size, std::align_val_t{desc.align});
                 slotId = prototypes_.allocate(descId, mem);
-                // Phase 2 — without lock: invoke construct thunk.
-                // On exception: free pre-allocated memory and reclaim the slot.
                 try {
                     desc.construct(mem, static_cast<void*>(&ctx));
                 } catch (...) {
@@ -363,12 +543,8 @@ auto Registry::resolve(NameId nameId, ResolutionContext& ctx) -> Bean<T> {
                 }
             }
 
-            // Phase 3 — activate: set refcount to 1.
-            // No lock needed: the slot is not yet reachable by other threads.
             prototypes_.activate(slotId);
 
-            // Lifecycle dispatch (specs-api §13.1):
-            //   C++ construction → onInitialized → postConstruct → onCreated
             {
                 ctr::AnyBean anyBean;
                 anyBean.object_       = mem;
@@ -397,6 +573,39 @@ auto Registry::resolve(NameId nameId, ResolutionContext& ctx) -> Bean<T> {
 
     // Unreachable; suppress compiler warnings.
     throw ctr::ConfigurationError("Registry::resolve: unhandled lifetime.");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registry::resolveAll<T>
+//
+// Returns all candidates for (TypeId of T, nameId) by materializing each via
+// materializeOne<T>.  No priority arbitration: all candidates are returned.
+// Returns an empty vector when the context is started but no candidate exists
+// for the requested type and key (no exception, per specs-api §10).
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <typename T>
+auto Registry::resolveAll(NameId nameId, ResolutionContext& ctx)
+    -> std::vector<ctr::Bean<T>> {
+    if (!started_.load(std::memory_order_acquire)) [[unlikely]] {
+        throw ctr::ContextStateError(
+            "Registry::resolveAll: context has not been started; "
+            "call start() before resolving beans.");
+    }
+
+    const TypeId typeId = typeIdFor<T>();
+    if (typeId == kInvalidTypeId) return {};
+
+    const std::vector<DescriptorId>* candidates =
+        typeIndex_.candidatesFor(typeId, nameId);
+    if (!candidates || candidates->empty()) return {};
+
+    std::vector<ctr::Bean<T>> result;
+    result.reserve(candidates->size());
+    for (DescriptorId descId : *candidates) {
+        result.push_back(materializeOne<T>(descId, ctx));
+    }
+    return result;
 }
 
 } // namespace ctr::detail

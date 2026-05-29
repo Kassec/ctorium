@@ -39,6 +39,9 @@ add_executable(ctorium-tests
         ctr/prototype.cpp
         ctr/context.cpp
         ctr/bean.cpp
+        ctr/defaults.cpp
+        ctr/listeners.cpp
+        ctr/resolve-all.cpp
 )
 
 target_compile_features(ctorium-tests

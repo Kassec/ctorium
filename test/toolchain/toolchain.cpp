@@ -984,6 +984,100 @@ int main() {
 }
 )cpp"
         },
+        {
+            "MetaInfoNttpLambdaNotEscalated",
+            R"cpp(
+// Validates the fix for P2564 immediate escalation in constructThunkInjected.
+// std::meta::info is a consteval-only type (P3603R0 §2.2): expressions
+// involving std::meta::info NTTPs are immediate-escalating (P2564 §13a.1).
+// A lambda (P2564 §13b.1) containing such expressions is an immediate-escalating
+// function; GCC 16 promotes it to consteval even with 'constexpr' on the call
+// operator when the body calls a function with a std::meta::info NTTP.
+// Fix: use a named pack-expansion helper function — §13b.1 only applies to
+// lambda call operators, so named functions are not subject to this promotion.
+#include <meta>
+#include <utility>
+#include <new>
+
+struct Dep { int v; };
+struct Consumer {
+    Dep dep;
+    explicit Consumer(Dep d) : dep(std::move(d)) {}
+};
+
+template<typename T, std::meta::info Ctor, std::size_t I>
+T resolveArg() { return T{42}; }
+
+// Named helper avoids P2564 §13b.1 lambda promotion.
+template<typename T, std::meta::info Ctor, std::size_t... Is>
+void constructInjImpl(void* mem, std::index_sequence<Is...>) {
+    new (mem) T(resolveArg<Dep, Ctor, Is>()...);
+}
+
+template<typename T, std::meta::info Ctor>
+void constructInj(void* mem) {
+    static constexpr auto kParams =
+        std::define_static_array(std::meta::parameters_of(Ctor));
+    constructInjImpl<T, Ctor>(mem, std::make_index_sequence<kParams.size()>{});
+}
+
+consteval std::meta::info findInjectableCtor() {
+    static constexpr auto kMembers = std::define_static_array(
+        std::meta::members_of(^^Consumer,
+                              std::meta::access_context::unchecked()));
+    template for (constexpr auto m : kMembers) {
+        if constexpr (std::meta::is_constructor(m)) {
+            static constexpr auto kParams =
+                std::define_static_array(std::meta::parameters_of(m));
+            if constexpr (kParams.size() == 1) return m;
+        }
+    }
+    return std::meta::info{};
+}
+
+int main() {
+    alignas(Consumer) unsigned char buf[sizeof(Consumer)];
+    constexpr auto ctor = findInjectableCtor();
+    constructInj<Consumer, ctor>(static_cast<void*>(buf));
+    return reinterpret_cast<Consumer*>(buf)->dep.v == 42 ? 0 : 1;
+}
+)cpp"
+        },
+        {
+            "MetaAnnotationsOfMethod",
+            R"cpp(
+// Validates that annotations_of(m) works when m is a non-special, non-type
+// member function (i.e. a regular method), and that extract<T> can be called
+// on such an annotation. This is the exact path scanMembers() uses to detect
+// [[=ctr::postConstruct{}]] and [[=ctr::preDestroy{}]] hooks.
+#include <meta>
+struct marker {};
+struct sample {
+    [[=marker{}]] void regularMethod() {}
+};
+consteval bool check() {
+    static constexpr auto members = std::define_static_array(
+        std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
+    template for (constexpr auto m : members) {
+        if constexpr (!std::meta::is_type(m) && !std::meta::is_special_member_function(m)) {
+            static constexpr auto anns = std::define_static_array(
+                std::meta::annotations_of(m));
+            if constexpr (anns.size() == 1) {
+                constexpr auto t = std::meta::remove_const(std::meta::type_of(anns[0]));
+                if constexpr (std::meta::is_same_type(t, ^^marker)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
     };
 
     const auto tempDirectory = toolchain_check::createTempDirectory();

@@ -42,6 +42,7 @@ add_executable(ctorium-tests
         ctr/defaults.cpp
         ctr/listeners.cpp
         ctr/resolve-all.cpp
+        ctr/casts.cpp
 )
 
 target_compile_features(ctorium-tests

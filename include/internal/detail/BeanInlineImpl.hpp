@@ -72,6 +72,28 @@ void Bean<T>::releaseIfPrototype() noexcept {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AnyBean prototype refcount helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+inline void ctr::AnyBean::retainIfPrototype() noexcept {
+    if (object_ == nullptr) return;                           // Form 2 or empty
+    if (bits_.f1.slot == detail::kInvalidSlotId) return;     // singleton
+    if (!registry_->startedRelaxed()) return;                 // context stopped
+    registry_->prototypeStore().retain(bits_.f1.slot);
+}
+
+inline void ctr::AnyBean::releaseIfPrototype() noexcept {
+    if (object_ == nullptr) return;                           // Form 2 or empty
+    if (bits_.f1.slot == detail::kInvalidSlotId) return;     // singleton
+    if (!registry_->startedRelaxed()) return;                 // context stopped
+    if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot)) return;
+    const auto [mem, descId] =
+        registry_->prototypeStore().slotMetaAt(bits_.f1.slot);
+    registry_->executeDestructionLifecycle(descId, mem);
+    registry_->prototypeStore().reclaimSlot(bits_.f1.slot);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // BeanContext::resolve<T>()  — unnamed resolution
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -187,6 +209,7 @@ ListenerHandle BeanContext::on(PhaseTag phase, Callback&& callback,
             ctr::Bean<T> view = ctr::Bean<T>::makeDirect(
                 static_cast<T*>(anyBean.object_),
                 detail::kInvalidSlotId,
+                anyBean.bits_.f1.descId,
                 anyBean.registry_);
             cb(static_cast<const ctr::Bean<T>&>(view));
         };
@@ -254,6 +277,111 @@ std::vector<Bean<T>> BeanContext::resolveAll(named key) {
     return reg.resolveAll<T>(nameId, ctx);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Bean<T> — context, exact, compatible, cast, tryCast
+// ─────────────────────────────────────────────────────────────────────────────
+
+template <class T>
+BeanContext& Bean<T>::context() const noexcept {
+    // Form 1 (direct): root context owns this singleton or prototype.
+    // Form 2 (session/proxy): deferred to Lot C once ScopedContext is in place.
+    return *registry_->rootContext();
+}
+
+template <class T>
+template <class U>
+bool Bean<T>::exact() const noexcept {
+    if (object_ == nullptr || registry_ == nullptr) return false;
+    const detail::TypeId tid = registry_->typeIdFor<U>();
+    if (tid == detail::kInvalidTypeId) return false;
+    return registry_->descriptorTable().at(bits_.f1.descId).concreteType == tid;
+}
+
+template <class T>
+template <class U>
+bool Bean<T>::compatible() const noexcept {
+    if (object_ == nullptr || registry_ == nullptr) return false;
+    const detail::TypeId tid = registry_->typeIdFor<U>();
+    if (tid == detail::kInvalidTypeId) return false;
+    return registry_->descriptorTable().at(bits_.f1.descId).exposedType == tid;
+}
+
+template <class T>
+template <class U>
+Bean<U> Bean<T>::cast() const {
+    if (!compatible<U>()) {
+        throw ctr::ResolutionError(
+            "Bean::cast: the bean is not compatible with the requested type.");
+    }
+    Bean<U> result;
+    result.object_   = object_;
+    result.bits_     = std::bit_cast<typename Bean<U>::Bits>(bits_);
+    result.registry_ = registry_;
+    result.retainIfPrototype();
+    return result;
+}
+
+template <class T>
+template <class U>
+std::optional<Bean<U>> Bean<T>::tryCast() const {
+    if (!compatible<U>()) return std::nullopt;
+    Bean<U> result;
+    result.object_   = object_;
+    result.bits_     = std::bit_cast<typename Bean<U>::Bits>(bits_);
+    result.registry_ = registry_;
+    result.retainIfPrototype();
+    return result;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AnyBean — context, exact, compatible, cast, tryCast
+// ─────────────────────────────────────────────────────────────────────────────
+
+inline BeanContext& AnyBean::context() const noexcept {
+    return *registry_->rootContext();
+}
+
+template <class U>
+bool AnyBean::exact() const noexcept {
+    if (object_ == nullptr || registry_ == nullptr) return false;
+    const detail::TypeId tid = registry_->typeIdFor<U>();
+    if (tid == detail::kInvalidTypeId) return false;
+    return registry_->descriptorTable().at(bits_.f1.descId).concreteType == tid;
+}
+
+template <class U>
+bool AnyBean::compatible() const noexcept {
+    if (object_ == nullptr || registry_ == nullptr) return false;
+    const detail::TypeId tid = registry_->typeIdFor<U>();
+    if (tid == detail::kInvalidTypeId) return false;
+    return registry_->descriptorTable().at(bits_.f1.descId).exposedType == tid;
+}
+
+template <class U>
+Bean<U> AnyBean::cast() const {
+    if (!compatible<U>()) {
+        throw ctr::ResolutionError(
+            "AnyBean::cast: the bean is not compatible with the requested type.");
+    }
+    Bean<U> result;
+    result.object_   = object_;
+    result.bits_     = std::bit_cast<typename Bean<U>::Bits>(bits_);
+    result.registry_ = registry_;
+    result.retainIfPrototype();
+    return result;
+}
+
+template <class U>
+std::optional<Bean<U>> AnyBean::tryCast() const {
+    if (!compatible<U>()) return std::nullopt;
+    Bean<U> result;
+    result.object_   = object_;
+    result.bits_     = std::bit_cast<typename Bean<U>::Bits>(bits_);
+    result.registry_ = registry_;
+    result.retainIfPrototype();
+    return result;
+}
+
 } // namespace ctr
 
 namespace ctr::detail {
@@ -267,9 +395,10 @@ inline void Registry::executeDestructionLifecycle(DescriptorId descId, void* mem
     ResolutionContext ctx{*this};
 
     ctr::AnyBean anyBean;
-    anyBean.object_       = mem;
-    anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-    anyBean.registry_     = this;
+    anyBean.object_         = mem;
+    anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
+    anyBean.bits_.f1.descId = descId;
+    anyBean.registry_       = this;
 
     listeners_.dispatch(ListenerStore::phasePreDestroy(), d.exposedType, &anyBean);
 
@@ -318,10 +447,13 @@ inline void Registry::registerContextBean(BeanContext* ctx) {
     singletons_.resize(descriptors_.size()); // extend one slot for BeanContext
     singletons_.store(beanContextDescId_, static_cast<void*>(ctx));
 
+    root_ = ctx;
+
     ctr::AnyBean anyBean;
-    anyBean.object_       = ctx;
-    anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-    anyBean.registry_     = this;
+    anyBean.object_         = ctx;
+    anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
+    anyBean.bits_.f1.descId = beanContextDescId_;
+    anyBean.registry_       = this;
 
     listeners_.dispatch(ListenerStore::phaseInitialized(), typeId, &anyBean);
     listeners_.dispatch(ListenerStore::phaseCreated(),     typeId, &anyBean);
@@ -501,10 +633,10 @@ auto Registry::materializeOne(DescriptorId descId, ResolutionContext& ctx)
                 //   C++ construction → onInitialized → postConstruct → onCreated
                 if (didMaterialize) {
                     ctr::AnyBean anyBean;
-                    anyBean.object_       = instance;
-                    anyBean.bits_.f1.slot =
-                        static_cast<std::uint32_t>(kInvalidSlotId);
-                    anyBean.registry_     = this;
+                    anyBean.object_         = instance;
+                    anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
+                    anyBean.bits_.f1.descId = descId;
+                    anyBean.registry_       = this;
 
                     listeners_.dispatch(ListenerStore::phaseInitialized(),
                                         desc.exposedType, &anyBean);
@@ -518,7 +650,7 @@ auto Registry::materializeOne(DescriptorId descId, ResolutionContext& ctx)
 
             // Return Bean<T> Form 1 (kInvalidSlotId = singleton, no refcount)
             return ctr::Bean<T>::makeDirect(
-                static_cast<T*>(instance), kInvalidSlotId, this);
+                static_cast<T*>(instance), kInvalidSlotId, descId, this);
         }
 
         case Lifetime::Prototype: {
@@ -547,9 +679,11 @@ auto Registry::materializeOne(DescriptorId descId, ResolutionContext& ctx)
 
             {
                 ctr::AnyBean anyBean;
-                anyBean.object_       = mem;
-                anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
-                anyBean.registry_     = this;
+                anyBean.object_         = mem;
+                anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(slotId);
+                anyBean.bits_.f1.descId = descId;
+                anyBean.registry_       = this;
+                anyBean.retainIfPrototype(); // refcount: 1 → 2 (dispatch reference)
 
                 listeners_.dispatch(ListenerStore::phaseInitialized(),
                                     desc.exposedType, &anyBean);
@@ -561,7 +695,7 @@ auto Registry::materializeOne(DescriptorId descId, ResolutionContext& ctx)
             }
 
             return ctr::Bean<T>::makeDirect(
-                static_cast<T*>(mem), slotId, this);
+                static_cast<T*>(mem), slotId, descId, this);
         }
 
         case Lifetime::Session:

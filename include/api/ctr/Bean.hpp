@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "../../internal/DescriptorId.hpp"
 #include "../../internal/NameId.hpp"
 #include "../../internal/SlotId.hpp"
 #include "../../internal/TypeId.hpp"
@@ -226,14 +227,17 @@ private:
      * @param instance Non-null pointer to the live bean instance.
      * @param slot     `kInvalidSlotId` for singletons (no refcount management);
      *                 a valid `SlotId` for prototypes (refcount already = 1).
+     * @param descId   Descriptor index for this bean (used by cast/context queries).
      * @param reg      Registry that owns this bean.
      */
     static Bean makeDirect(T* instance, detail::SlotId slot,
+                           detail::DescriptorId descId,
                            detail::Registry* reg) noexcept {
         Bean b;
-        b.object_      = instance;
-        b.bits_.f1.slot = slot;
-        b.registry_    = reg;
+        b.object_         = instance;
+        b.bits_.f1.slot   = slot;
+        b.bits_.f1.descId = descId;
+        b.registry_       = reg;
         return b;
     }
 
@@ -297,7 +301,7 @@ private:
      * `u64` provides a single 64-bit value for identity comparison and zeroing.
      */
     union Bits {
-        struct F1 { detail::SlotId slot; std::uint32_t unused_; } f1;
+        struct F1 { detail::SlotId slot; detail::DescriptorId descId; } f1;
         struct F2 { detail::NameId scopeNameId; detail::NameId candidateNameId; } f2;
         std::uint64_t u64 = 0; // default-initializes both forms to zero
     } bits_{};

@@ -554,6 +554,7 @@ private:
     inline static std::atomic<std::uint32_t> nextRegistryId_{1};
 
     template <class> friend class ctr::Bean;
+    friend class ctr::AnyBean;
 
     /**
      * @brief Executes the full destruction lifecycle for one bean instance.
@@ -578,6 +579,10 @@ private:
     // Components
     // -------------------------------------------------------------------------
 
+    /** @brief Pointer to the owning BeanContext; set by registerContextBean(). */
+    [[nodiscard]] ctr::BeanContext* rootContext() const noexcept { return root_; }
+
+    ctr::BeanContext* root_ = nullptr;
     DescriptorId    beanContextDescId_ = kInvalidDescriptorId;
 
     DescriptorTable descriptors_;

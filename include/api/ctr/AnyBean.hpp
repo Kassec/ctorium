@@ -36,12 +36,45 @@ public:
     /** @brief Builds an empty (null) handle. */
     constexpr AnyBean() noexcept = default;
 
-    AnyBean(const AnyBean&) noexcept = default;
-    AnyBean(AnyBean&&)      noexcept = default;
-    AnyBean& operator=(const AnyBean&) noexcept = default;
-    AnyBean& operator=(AnyBean&&)      noexcept = default;
-    ~AnyBean() noexcept = default;
-    // TODO: add retain/release for prototype refcount once BeanInlineImpl.hpp is in place.
+    AnyBean(const AnyBean& other) noexcept : object_(other.object_),
+                                             bits_(other.bits_),
+                                             registry_(other.registry_) {
+        retainIfPrototype();
+    }
+
+    AnyBean(AnyBean&& other) noexcept : object_(other.object_),
+                                        bits_(other.bits_),
+                                        registry_(other.registry_) {
+        other.object_   = nullptr;
+        other.bits_     = Bits{};
+        other.registry_ = nullptr;
+    }
+
+    AnyBean& operator=(const AnyBean& other) noexcept {
+        if (this != &other) {
+            releaseIfPrototype();
+            object_   = other.object_;
+            bits_     = other.bits_;
+            registry_ = other.registry_;
+            retainIfPrototype();
+        }
+        return *this;
+    }
+
+    AnyBean& operator=(AnyBean&& other) noexcept {
+        if (this != &other) {
+            releaseIfPrototype();
+            object_       = other.object_;
+            bits_         = other.bits_;
+            registry_     = other.registry_;
+            other.object_   = nullptr;
+            other.bits_     = Bits{};
+            other.registry_ = nullptr;
+        }
+        return *this;
+    }
+
+    ~AnyBean() noexcept { releaseIfPrototype(); }
 
     // -------------------------------------------------------------------------
     // Context
@@ -104,11 +137,14 @@ private:
     friend class detail::Registry;
     template <class U> friend class Bean;
 
+    void retainIfPrototype() noexcept;   // defined in BeanInlineImpl.hpp
+    void releaseIfPrototype() noexcept;  // defined in BeanInlineImpl.hpp
+
     void*              object_  = nullptr;
 
     union Bits {
-        struct F1 { std::uint32_t slot; std::uint32_t unused_; } f1;
-        struct F2 { std::uint32_t scopeNameId; std::uint32_t candidateNameId; } f2;
+        struct F1 { detail::SlotId slot; detail::DescriptorId descId; } f1;
+        struct F2 { detail::NameId scopeNameId; detail::NameId candidateNameId; } f2;
         std::uint64_t u64 = 0;
     } bits_{};
 

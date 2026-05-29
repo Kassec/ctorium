@@ -37,6 +37,8 @@ add_executable(ctorium-tests
         ctr/discovery.cpp
         ctr/singleton.cpp
         ctr/prototype.cpp
+        ctr/context.cpp
+        ctr/bean.cpp
 )
 
 target_compile_features(ctorium-tests

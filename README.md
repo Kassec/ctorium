@@ -129,14 +129,14 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] `named`
     - [x] `factory`
     - [x] `postConstruct`
-    - [ ] `preDestroy`
+    - [x] `preDestroy`
 
 - [x] Compile-time discovery
     - [x] discovery from visible headers, modules, and namespaces
     - [x] multiple reflection roots in one `discover<...>()` call
     - [ ] per-context descriptor and annotation catalog
 
-- [ ] Injection models
+- [x] Injection models
     - [x] constructor injection through `ctr::Bean<T>`
     - [ ] setter injection through `ctr::Bean<T>`
     - [x] named injection points
@@ -147,8 +147,9 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] typed handles with `ctr::Bean<T>`
     - [x] type-erased handles with `ctr::AnyBean`
     - [ ] safe cast helpers with `exact<T>()`, `compatible<T>()`, `cast<T>()` and `tryCast<T>()`
+    - [ ] `bean.context()` returns the owning context
 
-- [ ] Lifetime models
+- [x] Lifetime models
     - [x] singleton
     - [ ] eager and lazy singletons
     - [x] prototype
@@ -156,15 +157,17 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
       stop/shutdown)
     - [ ] session
 
-- [ ] Runtime bean contexts
+- [x] Runtime bean contexts
     - [x] default context for most applications
     - [x] fully isolated parallel contexts for advanced use cases
     - [x] explicit `start()` / `stop()` lifecycle
-    - [ ] `ctr::BeanContext` can be injected like any other bean
+    - [x] `ctr::BeanContext` can be injected like any other bean
+    - [ ] scoped contexts with session lifetime (`resolveScope`, `start`/`stop`/`restart`)
+    - [ ] scope `userData` association
     - [ ] a bean can retrieve its owning context with `bean.context()`
     - [ ] expose their lifecycle state
 
-- [ ] Qualifier-based resolution
+- [x] Qualifier-based resolution
     - [x] named qualifiers
     - [x] priority-based selection
     - [ ] runtime default named selection with `defaultNamed<T>(...)`
@@ -176,25 +179,26 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] deterministic error on missing, ambiguous, or cyclic dependencies
 
 - [ ] Runtime instance binding
-    - [ ] adopt external instances with `bindInstance<T>()`
+    - [ ] adopt external singleton instances with `bindSingleton<T>()`
+    - [ ] adopt external session instances with `bindSession<T>()`
     - [ ] context-owned bound instances
     - [ ] named and prioritized runtime bindings
     - [ ] bound instances participate in resolution, lifecycle, listeners, and shutdown
 
 - [x] Bean lifecycle hooks
     - [x] initialization hooks with `postConstruct`
-    - [ ] destruction hooks with `preDestroy`
+    - [x] destruction hooks with `preDestroy`
     - [x] hook dependency injection through `ctr::Bean<T>`
 
-- [x] Bean lifecycle listeners
-    - [x] typed listeners
-    - [x] global listeners
+- [x] Beans lifecycle listener
+    - [x] typed listener registration with `on<T>()`
+    - [x] global listener registration with `on()`
+    - [ ] explicit listener removal with `remove(handle)`
     - [x] `onInitialized`, before `postConstruct`
     - [x] `onCreated`, after `postConstruct`
-    - [ ] `onPreDestroy`, before `preDestroy`
-    - [ ] `onDestroyed`, after `preDestroy`
+    - [x] `onPreDestroy`, before `preDestroy`
+    - [x] `onDestroyed`, after `preDestroy`
     - [x] listener priorities
-    - [x] explicit listener removal
     - [x] snapshot-based listener dispatch
     - [ ] metadata-aware listener callbacks
 
@@ -206,20 +210,24 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
 
 - [ ] Factories
     - [x] factories are singleton beans with constructor-injected dependencies
-    - [ ] producer methods can create singleton, prototype, session or thread-local beans
+    - [x] producer methods can create `singleton` beans
+    - [x] producer methods can create `prototype` beans
+    - [ ] producer methods can create `session` beans
+    - [ ] producer methods can create `threadLocal` beans
     - [x] produced types do not need to be annotated
     - [x] producer methods can return `T` or `std::unique_ptr<T>`
+    - [x] produced beans participate in lifecycle hooks and listener phases
+    - [ ] produced beans participate in metadata
     - [ ] user parameters can be passed with `resolve<T>(args...)`
     - [ ] default user parameters can be configured with `factoryDefaultArgs<T>(...)`
-    - [ ] produced beans participate in lifecycle, listeners, and metadata
 
 - [x] Deterministic and clear error model
     - [x] deterministic **Ctorium** errors for configuration, state, and resolution failures
     - [x] user exceptions are propagated unchanged
 
-- [ ] Thread-safety
-    - [x] listener registration
-    - [x] listener removal
+- [x] Thread-safety
+    - [x] concurrent singleton resolution (double-checked locking)
+    - [x] snapshot-based listener dispatch (lock-free reads)
+    - [ ] listener registration and removal API
     - [ ] runtime default named selection
     - [ ] runtime bindings
-    - [ ] factory defaults

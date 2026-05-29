@@ -1,0 +1,238 @@
+#pragma once
+
+#include <cstddef>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
+
+#include "AnyBean.hpp"
+#include "Errors.hpp"
+#include "Export.hpp"
+#include "ListenerHandle.hpp"
+#include "Markers.hpp"
+#include "Options.hpp"
+
+#ifndef CTORIUM_DYNAMIC_LINK
+#include <shared_mutex>
+#include "../../internal/detail/HashUtils.hpp"
+#endif
+
+namespace ctr {
+
+class BeanContext;
+class ScopedContext;
+
+namespace detail {
+
+/**
+ * @brief Internal bridge used by discover<...>() to submit discovery contributions.
+ *
+ * The concrete contribution layout is intentionally hidden from the public API.
+ */
+template <auto... Roots>
+inline void submitDiscoveryContribution(BeanContext& context, DiscoverOptions options);
+
+} // namespace detail
+
+/**
+ * @brief Public entry point for discovery, configuration, lifecycle, and resolution.
+ */
+class BeanContext {
+public:
+    virtual ~BeanContext();
+
+    /**
+     * @brief Resolves the default process-wide context.
+     * @return Stable public context instance.
+     */
+    static CTORIUM_API BeanContext& resolveContext();
+
+    /**
+     * @brief Resolves a context identified by a user-provided stable key.
+     * @param key Stable user key.
+     * @return Stable public context instance for the key.
+     */
+    static CTORIUM_API BeanContext& resolveContext(std::string_view key);
+
+    /**
+     * @brief Registers discovery contributions for compile-time roots on this root context.
+     *
+     * This operation is pre-start only. It does not materialize user beans and only records
+     * contributions for later merge/deduplication/indexing at start time.
+     *
+     * Roots must be visible at the call-site instantiation point.
+     *
+     * In dynamic-link mode, root ownership is centralized by the shared Ctorium DLL/SO.
+     *
+     * @tparam Roots Compile-time discovery roots.
+     * @param options Discovery behavior options.
+     * @return Current context for chaining.
+     * @throws ContextStateError If called after start, or on a scoped context.
+     */
+    template <auto... Roots>
+    BeanContext& discover(DiscoverOptions options = {}) {
+        detail::submitDiscoveryContribution<Roots...>(*this, options);
+        return *this;
+    }
+
+    /**
+     * @brief Starts this context.
+     * @return Current context for chaining.
+     */
+    BeanContext& start();
+
+    /**
+     * @brief Stops this context.
+     * @return Current context for chaining.
+     */
+    BeanContext& stop();
+
+    /**
+     * @brief Closes this context and releases runtime resources.
+     */
+    void close();
+
+    /**
+     * @brief Resolves a bean by type.
+     * @tparam T Requested bean type.
+     * @return Typed tracked handle.
+     */
+    template <class T>
+    Bean<T> resolve();
+
+    /**
+     * @brief Resolves a bean by type and named qualifier.
+     * @tparam T Requested bean type.
+     * @param key Named selector.
+     * @return Typed tracked handle.
+     */
+    template <class T>
+    Bean<T> resolve(named key);
+
+    /**
+     * @brief Resolves all beans compatible with type T.
+     * @tparam T Requested bean type.
+     * @return Typed tracked handles.
+     */
+    template <class T>
+    std::vector<Bean<T>> resolveAll();
+
+    /**
+     * @brief Resolves all beans compatible with type T and a named qualifier.
+     * @tparam T Requested bean type.
+     * @param key Named selector.
+     * @return Typed tracked handles.
+     */
+    template <class T>
+    std::vector<Bean<T>> resolveAll(named key);
+
+    /**
+     * @brief Sets the default named qualifier for type T.
+     * @tparam T Target type.
+     * @param name Default name.
+     * @return Current context for chaining.
+     */
+    template <class T>
+    BeanContext& defaultNamed(std::string_view name);
+
+    /**
+     * @brief Clears the default named qualifier for type T.
+     * @tparam T Target type.
+     * @param name Must be nullptr.
+     * @return Current context for chaining.
+     */
+    template <class T>
+    BeanContext& defaultNamed(std::nullptr_t name);
+
+    /**
+     * @brief Binds an externally created singleton object.
+     * @tparam T Bound type.
+     * @param object Ownership of the singleton object.
+     * @param options Binding options.
+     * @return Typed tracked handle.
+     */
+    template <class T>
+    Bean<T> bindSingleton(std::unique_ptr<T> object, BindOptions options = {});
+
+    /**
+     * @brief Resolves or creates a scoped context by stable key.
+     * @param key Stable user key.
+     * @return Scoped child context.
+     */
+    ScopedContext& resolveScope(std::string_view key);
+
+    /**
+     * @brief Registers a typed listener for a lifecycle phase.
+     * @tparam T Target bean type filter.
+     * @tparam Callback Callback type.
+     * @tparam PhaseTag Listener phase tag type.
+     * @param phase Phase tag value.
+     * @param callback Listener callback.
+     * @param options Listener registration options.
+     * @return Opaque handle that can be removed manually.
+     */
+    template <class T, class Callback, class PhaseTag>
+    ListenerHandle on(PhaseTag phase, Callback&& callback, ListenerOptions options = {});
+
+    /**
+     * @brief Registers a global listener for a lifecycle phase.
+     *
+     * Global callbacks receive `const AnyBean&`.
+     *
+     * @tparam Callback Callback type.
+     * @tparam PhaseTag Listener phase tag type.
+     * @param phase Phase tag value.
+     * @param callback Listener callback.
+     * @param options Listener registration options.
+     * @return Opaque handle that can be removed manually.
+     */
+    template <class Callback, class PhaseTag>
+    ListenerHandle on(PhaseTag phase, Callback&& callback, ListenerOptions options = {});
+
+    /**
+     * @brief Removes a listener by handle.
+     * @param handle Listener handle.
+     */
+    void remove(const ListenerHandle& handle);
+
+protected:
+    /**
+     * @brief Creates a root context with the given registry key.
+     */
+    explicit BeanContext(std::string key);
+
+    /**
+     * @brief Creates a context sharing an existing registry (used by ScopedContext).
+     */
+    explicit BeanContext(std::shared_ptr<ctr::detail::Registry> registry);
+
+    /**
+     * @brief Internal precondition guard for discover<...>().
+     *
+     * Throws ContextStateError when discovery is not allowed.
+     * Defined in BeanContextInlineImpl.hpp.
+     */
+    virtual void assertCanDiscover_() const;
+
+#ifndef CTORIUM_DYNAMIC_LINK
+    [[nodiscard]] ctr::detail::Registry& core() noexcept { return *registry_; }
+
+    std::shared_ptr<ctr::detail::Registry> registry_;
+#endif
+
+private:
+    template <auto... Roots>
+    friend void detail::submitDiscoveryContribution(BeanContext& context, DiscoverOptions options);
+
+#ifndef CTORIUM_DYNAMIC_LINK
+    std::string key_;
+    std::unordered_map<std::string, std::unique_ptr<ScopedContext>,
+                       ctr::detail::StringViewHash, std::equal_to<>> scopes_;
+    std::shared_mutex scopesMutex_;
+#endif
+};
+
+} // namespace ctr

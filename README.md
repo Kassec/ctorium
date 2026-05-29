@@ -121,59 +121,59 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] header-only library
     - [ ] dynamic link library
 
-- [ ] Easy attribute-based bean declaration model
-    - [ ] `singleton`
-    - [ ] `prototype`
+- [x] Easy attribute-based bean declaration model
+    - [x] `singleton`
+    - [x] `prototype`
     - [ ] `threadLocal`
     - [ ] `session`
-    - [ ] `named`
-    - [ ] `factory`
-    - [ ] `postConstruct`
+    - [x] `named`
+    - [x] `factory`
+    - [x] `postConstruct`
     - [ ] `preDestroy`
 
-- [ ] Compile-time discovery
-    - [ ] discovery from visible headers, modules, and namespaces
-    - [ ] multiple reflection roots in one `discover<...>()` call
+- [x] Compile-time discovery
+    - [x] discovery from visible headers, modules, and namespaces
+    - [x] multiple reflection roots in one `discover<...>()` call
     - [ ] per-context descriptor and annotation catalog
 
 - [ ] Injection models
-    - [ ] constructor injection through `ctr::Bean<T>`
+    - [x] constructor injection through `ctr::Bean<T>`
     - [ ] setter injection through `ctr::Bean<T>`
-    - [ ] named injection points
-    - [ ] automatic constructor selection
+    - [x] named injection points
+    - [x] automatic constructor selection
     - [ ] deterministic error on ambiguous constructor candidates
 
-- [ ] Tracked lightweight bean handles
-    - [ ] typed handles with `ctr::Bean<T>`
-    - [ ] type-erased handles with `ctr::AnyBean`
+- [x] Tracked lightweight bean handles
+    - [x] typed handles with `ctr::Bean<T>`
+    - [x] type-erased handles with `ctr::AnyBean`
     - [ ] safe cast helpers with `exact<T>()`, `compatible<T>()`, `cast<T>()` and `tryCast<T>()`
 
 - [ ] Lifetime models
-    - [ ] singleton
+    - [x] singleton
     - [ ] eager and lazy singletons
-    - [ ] prototype
+    - [x] prototype
     - [ ] thread-local singleton, one instance per context, key and thread (destroyed at thread end or context
       stop/shutdown)
     - [ ] session
 
 - [ ] Runtime bean contexts
-    - [ ] default context for most applications
-    - [ ] fully isolated parallel contexts for advanced use cases
-    - [ ] explicit `start()` / `stop()` lifecycle
+    - [x] default context for most applications
+    - [x] fully isolated parallel contexts for advanced use cases
+    - [x] explicit `start()` / `stop()` lifecycle
     - [ ] `ctr::BeanContext` can be injected like any other bean
     - [ ] a bean can retrieve its owning context with `bean.context()`
     - [ ] expose their lifecycle state
 
 - [ ] Qualifier-based resolution
-    - [ ] named qualifiers
-    - [ ] priority-based selection
+    - [x] named qualifiers
+    - [x] priority-based selection
     - [ ] runtime default named selection with `defaultNamed<T>(...)`
 
-- [ ] Dependency resolution
-    - [ ] single bean resolution with `resolve<T>()`
+- [x] Dependency resolution
+    - [x] single bean resolution with `resolve<T>()`
     - [ ] multiple bean resolution with `resolveAll<T>()`
-    - [ ] automatic dependency graph resolution
-    - [ ] deterministic error on missing, ambiguous, or cyclic dependencies
+    - [x] automatic dependency graph resolution
+    - [x] deterministic error on missing, ambiguous, or cyclic dependencies
 
 - [ ] Runtime instance binding
     - [ ] adopt external instances with `bindInstance<T>()`
@@ -181,21 +181,21 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [ ] named and prioritized runtime bindings
     - [ ] bound instances participate in resolution, lifecycle, listeners, and shutdown
 
-- [ ] Bean lifecycle hooks
-    - [ ] initialization hooks with `postConstruct`
+- [x] Bean lifecycle hooks
+    - [x] initialization hooks with `postConstruct`
     - [ ] destruction hooks with `preDestroy`
-    - [ ] hook dependency injection through `ctr::Bean<T>`
+    - [x] hook dependency injection through `ctr::Bean<T>`
 
-- [ ] Bean lifecycle listeners
-    - [ ] typed listeners
-    - [ ] global listeners
-    - [ ] `onInitialized`, before `postConstruct`
-    - [ ] `onCreated`, after `postConstruct`
+- [x] Bean lifecycle listeners
+    - [x] typed listeners
+    - [x] global listeners
+    - [x] `onInitialized`, before `postConstruct`
+    - [x] `onCreated`, after `postConstruct`
     - [ ] `onPreDestroy`, before `preDestroy`
     - [ ] `onDestroyed`, after `preDestroy`
-    - [ ] listener priorities
-    - [ ] explicit listener removal
-    - [ ] snapshot-based listener dispatch
+    - [x] listener priorities
+    - [x] explicit listener removal
+    - [x] snapshot-based listener dispatch
     - [ ] metadata-aware listener callbacks
 
 - [ ] Reflection metadata
@@ -205,21 +205,21 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [ ] factory method metadata for factory-produced beans
 
 - [ ] Factories
-    - [ ] factories are singleton beans with constructor-injected dependencies
+    - [x] factories are singleton beans with constructor-injected dependencies
     - [ ] producer methods can create singleton, prototype, session or thread-local beans
-    - [ ] produced types do not need to be annotated
-    - [ ] producer methods can return `T` or `std::unique_ptr<T>`
+    - [x] produced types do not need to be annotated
+    - [x] producer methods can return `T` or `std::unique_ptr<T>`
     - [ ] user parameters can be passed with `resolve<T>(args...)`
     - [ ] default user parameters can be configured with `factoryDefaultArgs<T>(...)`
     - [ ] produced beans participate in lifecycle, listeners, and metadata
 
-- [ ] Deterministic and clear error model
-    - [ ] deterministic **Ctorium** errors for configuration, state, and resolution failures
-    - [ ] user exceptions are propagated unchanged
+- [x] Deterministic and clear error model
+    - [x] deterministic **Ctorium** errors for configuration, state, and resolution failures
+    - [x] user exceptions are propagated unchanged
 
 - [ ] Thread-safety
-    - [ ] listener registration
-    - [ ] listener removal
+    - [x] listener registration
+    - [x] listener removal
     - [ ] runtime default named selection
     - [ ] runtime bindings
     - [ ] factory defaults

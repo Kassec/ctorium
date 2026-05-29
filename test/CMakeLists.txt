@@ -1,5 +1,5 @@
 add_executable(toolchain-check
-        toolchain.cpp
+        toolchain/toolchain.cpp
 )
 
 target_compile_features(toolchain-check
@@ -31,4 +31,30 @@ if (BUILD_TESTING)
             PROPERTIES
             FIXTURES_SETUP CtoriumToolchain
     )
+endif ()
+
+add_executable(ctorium-tests
+        ctr/discovery.cpp
+        ctr/singleton.cpp
+        ctr/prototype.cpp
+)
+
+target_compile_features(ctorium-tests
+        PRIVATE
+        cxx_std_26
+)
+
+target_link_libraries(ctorium-tests
+        PRIVATE
+        ctorium
+        GTest::gtest_main
+)
+
+target_include_directories(ctorium-tests
+        PRIVATE
+        ${PROJECT_SOURCE_DIR}/include/internal
+)
+
+if (BUILD_TESTING)
+    gtest_discover_tests(ctorium-tests)
 endif ()

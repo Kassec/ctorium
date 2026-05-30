@@ -1024,6 +1024,14 @@ namespace ctr::detail {
                 // ── Phase 1: claim descId or wait for a peer to complete ───
                 {
                     std::unique_lock lock(writeLock_);
+                    for (DescriptorId existing : materializationStack()) {
+                        if (existing == descId) {
+                            throw ctr::ResolutionError(
+                                "Registry::resolve: dependency cycle "
+                                "detected during singleton materialization."
+                                );
+                        }
+                    }
                     cv_.wait(
                         lock,
                         [&] {
@@ -1256,6 +1264,14 @@ namespace ctr::detail {
         // Phase 1: claim (descId, scope) or wait for a peer on the same scope.
         {
             std::unique_lock lock(writeLock_);
+            for (DescriptorId existing : materializationStack()) {
+                if (existing == descId) {
+                    throw ctr::ResolutionError(
+                        "Registry::resolve: dependency cycle detected during "
+                        "session bean materialization."
+                        );
+                }
+            }
             cv_.wait(
                 lock,
                 [&] {
@@ -1669,6 +1685,13 @@ namespace ctr::detail {
         // Phase 1: claim descId or wait for a concurrent materializer.
         {
             std::unique_lock lock(writeLock_);
+            for (DescriptorId existing : materializationStack()) {
+                if (existing == descId) {
+                    throw ctr::ResolutionError(
+                        "Registry: dependency cycle detected during eager singleton materialization."
+                        );
+                }
+            }
             cv_.wait(
                 lock,
                 [&] {

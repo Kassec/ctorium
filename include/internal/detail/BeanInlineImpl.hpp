@@ -1416,7 +1416,8 @@ namespace ctr::detail {
 
     inline TLCleanup::~TLCleanup() noexcept {
         auto &tl = tlData();
-        for (Registry *reg : registered) {
+        for (const auto &entry : registered) {
+            Registry *reg = entry.second;
             // Only call cleanupCurrentThread() if we still have live entries for this
             // registry.  If stop() already cleaned them up (and then the registry was
             // destroyed), skip — accessing a destroyed Registry is UB.  stop() always
@@ -1450,8 +1451,9 @@ namespace ctr::detail {
 
         // First-touch registration: register this thread's TLData with the registry.
         TLCleanup &cleanup = tlCleanup();
-        if (cleanup.registered.find(this) == cleanup.registered.end()) {
-            cleanup.registered.insert(this);
+        const std::uint32_t id = registryId();
+        if (cleanup.registered.find(id) == cleanup.registered.end()) {
+            cleanup.registered.emplace(id, this);
             std::lock_guard tlLock(tlMutex_);
             tlThreadStores_.push_back(&tl);
         }

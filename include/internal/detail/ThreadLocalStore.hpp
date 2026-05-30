@@ -1,8 +1,8 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -98,7 +98,7 @@ inline TLData& tlData() {
  * executing the full bean destruction lifecycle on the exiting thread.
  */
 struct TLCleanup {
-    std::unordered_set<Registry*> registered;  ///< Registries this thread registered with.
+    std::unordered_map<std::uint32_t, Registry*> registered;  ///< Registry ID to live cleanup target.
     ~TLCleanup() noexcept;                     ///< Defined in BeanInlineImpl.hpp.
 };
 

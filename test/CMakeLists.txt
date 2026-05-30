@@ -41,6 +41,7 @@ add_executable(ctorium-tests
         ctr/context.cpp
         ctr/defaults.cpp
         ctr/discovery.cpp
+        ctr/injection.cpp
         ctr/listeners.cpp
         ctr/prototype.cpp
         ctr/session.cpp

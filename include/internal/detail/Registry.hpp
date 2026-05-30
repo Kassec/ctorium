@@ -415,38 +415,7 @@ public:
      * the lifecycle contract at the public API level.
      */
     void stop() noexcept {
-        // A5: mark stopped under writeLock_, then release before destructions so
-        // that listener callbacks fired during executeDestructionLifecycle can call
-        // remove() or inspect the context without deadlocking on writeLock_.
-        {
-            std::lock_guard lock(writeLock_);
-            if (!started_.load(std::memory_order_relaxed)) return; // already stopped
-            // Mark stopped first so that Bean<T> destructors triggered by d.destroy()
-            // see startedRelaxed()==false and skip releaseIfPrototype(), preventing
-            // double-destroy when a bean holds a Bean<T> member to another prototype.
-            started_.store(false, std::memory_order_relaxed);
-        }
-
-        // Destructions run without writeLock_; started_=false prevents new resolves.
-
-        // Singletons: reverse insertion order (≈ reverse construction order).
-        const auto& order = singletons_.insertionOrder();
-        for (auto it = order.rbegin(); it != order.rend(); ++it) {
-            void* mem = singletons_.find(*it);
-            if (mem != nullptr) executeDestructionLifecycle(*it, mem);
-        }
-        singletons_.releaseAll();
-
-        // Prototypes: reverse slot index (≈ reverse allocation order).
-        const std::size_t count = prototypes_.slotCount();
-        for (std::size_t s = count; s > 0; --s) {
-            void* mem = prototypes_.memoryAt(static_cast<SlotId>(s - 1));
-            if (mem != nullptr) {
-                executeDestructionLifecycle(
-                    prototypes_.descriptorIdAt(static_cast<SlotId>(s - 1)), mem);
-            }
-        }
-        prototypes_.releaseAll();
+        if (!stopRegistryOwnedBeans()) return;
 
         // Thread-local instances on still-alive threads (specs-api §8 / §18).
         // Collect+erase under tlMutex_ (brief critical section); destroy outside it.
@@ -784,11 +753,22 @@ public:
     void materializeEagerSingletons();
     // Defined in BeanInlineImpl.hpp.
 
-    /** @brief Destroys pending runtime singleton bindings that were never started. */
-    ~Registry();
+    /** @brief Destroys registry-owned beans and pending runtime singleton bindings. */
+    ~Registry() noexcept;
     // Defined in BeanInlineImpl.hpp.
 
 private:
+    /**
+     * @brief Stops registry-owned lifetimes and destroys singleton/prototype beans.
+     *
+     * Idempotent: returns false when the registry was already stopped. Marks
+     * `started_` false before user destruction callbacks so Bean<T> members skip
+     * prototype release on the way out. Does not touch thread-local stores.
+     *
+     * @return true when this call transitioned the registry from started to stopped.
+     */
+    bool stopRegistryOwnedBeans() noexcept;
+
     /**
      * @brief Materializes a single bean descriptor and returns a tracked handle.
      *

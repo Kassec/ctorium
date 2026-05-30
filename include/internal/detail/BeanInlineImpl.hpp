@@ -1375,6 +1375,51 @@ namespace ctr::detail {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
+    // Registry::stopRegistryOwnedBeans
+    //
+    // Marks the registry stopped, then destroys registry-owned singleton and
+    // prototype instances in the same order used by Registry::stop(). Thread-local
+    // instances are intentionally excluded; explicit stop() owns that sweep.
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    inline bool Registry::stopRegistryOwnedBeans() noexcept {
+        // A5: mark stopped under writeLock_, then release before destructions so
+        // that listener callbacks fired during executeDestructionLifecycle can call
+        // remove() or inspect the context without deadlocking on writeLock_.
+        {
+            std::lock_guard lock(writeLock_);
+            if (!started_.load(std::memory_order_relaxed)) return false;
+            // Mark stopped first so that Bean<T> destructors triggered by d.destroy()
+            // see startedRelaxed()==false and skip releaseIfPrototype(), preventing
+            // double-destroy when a bean holds a Bean<T> member to another prototype.
+            started_.store(false, std::memory_order_relaxed);
+        }
+
+        // Destructions run without writeLock_; started_=false prevents new resolves.
+
+        // Singletons: reverse insertion order.
+        const auto &order = singletons_.insertionOrder();
+        for (auto it = order.rbegin(); it != order.rend(); ++it) {
+            void *mem = singletons_.find(*it);
+            if (mem != nullptr)
+                executeDestructionLifecycle(*it, mem);
+        }
+        singletons_.releaseAll();
+
+        // Prototypes: reverse slot index, matching the previous stop() sweep.
+        const std::size_t count = prototypes_.slotCount();
+        for (std::size_t s = count; s > 0; --s) {
+            void *mem = prototypes_.memoryAt(static_cast<SlotId>(s - 1));
+            if (mem != nullptr) {
+                executeDestructionLifecycle(
+                    prototypes_.descriptorIdAt(static_cast<SlotId>(s - 1)), mem);
+            }
+        }
+        prototypes_.releaseAll();
+
+        return true;
+    }
+
     // Registry::stopScope
     //
     // Destroys all session instances owned by `scope` in reverse construction order,
@@ -1557,14 +1602,9 @@ namespace ctr::detail {
 
             if (started_.load(std::memory_order_relaxed)) {
                 // Post-start: validate before taking ownership.
-                const TypeId typeId = lookupTypeId(std::type_index(typeid(T)));
-                if (typeId == kInvalidTypeId) {
-                    throw ctr::ConfigurationError(
-                        std::string("Registry::bindSingleton: type '") + kTypeName
-                        + "' is not known to this context after start(); "
-                        "discover<>() or bindSingleton() before start() to register it."
-                        );
-                }
+                TypeId typeId = lookupTypeId(std::type_index(typeid(T)));
+                if (typeId == kInvalidTypeId)
+                    typeId = typeInterning_.internByName(kTypeName, &TypeInfoGetter<T>::get);
                 // Check already instantiated (any name key).
                 const NameTable *table = typeIndex_.tableFor(typeId);
                 if (table) {
@@ -1654,7 +1694,9 @@ namespace ctr::detail {
     // Registry::~Registry
     // ─────────────────────────────────────────────────────────────────────────────
 
-    inline Registry::~Registry() {
+    inline Registry::~Registry() noexcept {
+        (void)stopRegistryOwnedBeans();
+
         // Destroy pending runtime singletons that were never started into the lifecycle.
         for (const auto &pb : pendingRuntimeSingletons_) {
             if (pb.instance) {

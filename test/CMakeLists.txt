@@ -45,6 +45,7 @@ add_executable(ctorium-tests
         ctr/listeners.cpp
         ctr/prototype.cpp
         ctr/session.cpp
+        ctr/shutdown-guarantee.cpp
         ctr/singleton.cpp
         ctr/tl-lifetime-safety.cpp
         ctr/thread-local.cpp

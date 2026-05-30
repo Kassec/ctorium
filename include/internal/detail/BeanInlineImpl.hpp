@@ -873,17 +873,32 @@ namespace ctr::detail {
             // Replaces candidatesFor() + isAmbiguousFor() (two lookups) with one.
             const auto [head, ambig] = typeIndex_.headFor(typeId, effectiveNameId);
             if (head == kInvalidDescriptorId) [[unlikely]] {
-                throw ctr::ResolutionError(
-                    "Registry::resolve: no bean registered for the requested "
-                    "type and named key."
-                    );
-            }
-            descId = head;
-            if (ambig) [[unlikely]] {
-                throw ctr::ResolutionError(
-                    "Registry::resolve: ambiguous resolution — two candidates share "
-                    "the highest priority for the requested type and named key."
-                    );
+                // Post-start bindings update the canonical entries table; the
+                // precomputed named-head map only covers candidates known at start().
+                const auto* candidates = typeIndex_.candidatesFor(typeId, effectiveNameId);
+                if (!candidates || candidates->empty()) {
+                    throw ctr::ResolutionError(
+                        "Registry::resolve: no bean registered for the requested "
+                        "type and named key."
+                        );
+                }
+                descId = (*candidates)[0];
+                if (candidates->size() >= 2
+                    && descriptors_.at((*candidates)[0]).priority
+                        == descriptors_.at((*candidates)[1]).priority) [[unlikely]] {
+                    throw ctr::ResolutionError(
+                        "Registry::resolve: ambiguous resolution — two candidates share "
+                        "the highest priority for the requested type and named key."
+                        );
+                }
+            } else {
+                descId = head;
+                if (ambig) [[unlikely]] {
+                    throw ctr::ResolutionError(
+                        "Registry::resolve: ambiguous resolution — two candidates share "
+                        "the highest priority for the requested type and named key."
+                        );
+                }
             }
         }
 

@@ -46,6 +46,7 @@ add_executable(ctorium-tests
         ctr/prototype.cpp
         ctr/session.cpp
         ctr/singleton.cpp
+        ctr/tl-lifetime-safety.cpp
         ctr/thread-local.cpp
         ctr/user-data.cpp
 )

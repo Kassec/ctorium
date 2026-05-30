@@ -159,5 +159,7 @@ TEST(ThreadLocal, InstanceDestroyedAtContextClose) {
     ctx.resolve<tl_fixture::TLSvc>();
     ctx.stop();
 
-    EXPECT_EQ(destroyCount, 1);
+    // The global onDestroyed listener observes TLSvc plus the implicit
+    // ctr::BeanContext singleton destroyed during stop() (specs-api §5.5).
+    EXPECT_EQ(destroyCount, 2);
 }

@@ -39,7 +39,7 @@ namespace ctr {
      * `operator->` resolves the current session object on every call; the result may
      * change across scope cycles.  If the target scope is stopped, `operator->` and
      * `value()` return `nullptr` — no exception (specs-api §7.1).
-     * Fields: `f2_.scopeNameId`, `f2_.candidateNameId`, `registry_`.
+     * Fields: `f2_.scopeNameId`, `f2_.descId`, `registry_`.
      *
      * Both forms share the same 24-byte layout on 64-bit:
      * `void*(8) + union{uint32_t,uint32_t}(8) + Registry*(8)`.
@@ -214,7 +214,7 @@ namespace ctr {
          * @brief Compares logical handle identity.
          *
          * Two handles are equal when they refer to the same logical bean: same Form,
-         * same object pointer (Form 1) or same scope/candidate pair (Form 2).
+         * same object pointer (Form 1) or same scope/descriptor pair (Form 2).
          */
         [[nodiscard]] bool operator==(const Bean &other) const noexcept {
             return object_ == other.object_
@@ -298,17 +298,17 @@ namespace ctr {
          * occurs on each `operator->` call against the active scope.
          *
          * @param scopeNameId     NameId of the target scope.
-         * @param candidateNameId NameId of the named qualifier within that scope.
+         * @param descId          DescriptorId of the target session bean.
          * @param reg             Root Registry.
          */
         static Bean makeProxy(
-            detail::NameId scopeNameId, detail::NameId candidateNameId,
+            detail::NameId scopeNameId, detail::DescriptorId descId,
             detail::Registry *reg
             ) noexcept {
             Bean b;
             b.object_ = nullptr;
             b.bits_.f2.scopeNameId = scopeNameId;
-            b.bits_.f2.candidateNameId = candidateNameId;
+            b.bits_.f2.descId = descId;
             b.registry_ = reg;
             return b;
         }
@@ -321,14 +321,14 @@ namespace ctr {
          * name communicates intent at the injection site.
          *
          * @param scopeNameId     NameId of the target scope.
-         * @param candidateNameId NameId of the named qualifier within that scope.
+         * @param descId          DescriptorId of the target session bean.
          * @param reg             Root Registry.
          */
         static Bean makeDeferred(
-            detail::NameId scopeNameId, detail::NameId candidateNameId,
+            detail::NameId scopeNameId, detail::DescriptorId descId,
             detail::Registry *reg
             ) noexcept {
-            return makeProxy(scopeNameId, candidateNameId, reg);
+            return makeProxy(scopeNameId, descId, reg);
         }
 
         /**
@@ -337,17 +337,17 @@ namespace ctr {
          * `operator->` on this handle always resolves the calling thread's instance
          * by looking up the thread-local store — it never caches the pointer.
          *
-         * @param candidateNameId NameId of the descriptor's named qualifier.
+         * @param descId DescriptorId of the target thread-local bean.
          * @param reg             Root Registry.
          */
         static Bean makeThreadLocal(
-            detail::NameId candidateNameId,
+            detail::DescriptorId descId,
             detail::Registry *reg
             ) noexcept {
             Bean b;
             b.object_ = nullptr;
             b.bits_.f2.scopeNameId = detail::kThreadLocalSentinel;
-            b.bits_.f2.candidateNameId = candidateNameId;
+            b.bits_.f2.descId = descId;
             b.registry_ = reg;
             return b;
         }
@@ -386,7 +386,7 @@ namespace ctr {
          * @brief Form-dependent 8-byte field sharing the same storage.
          *
          * Form 1: `f1.slot` (4 bytes) + `f1.unused_` (4 bytes padding).
-         * Form 2: `f2.scopeNameId` (4 bytes) + `f2.candidateNameId` (4 bytes).
+         * Form 2: `f2.scopeNameId` (4 bytes) + `f2.descId` (4 bytes).
          *
          * The active form is determined by `object_ != nullptr`.
          * `u64` provides a single 64-bit value for identity comparison and zeroing.
@@ -399,7 +399,7 @@ namespace ctr {
 
             struct F2 {
                 detail::NameId scopeNameId;
-                detail::NameId candidateNameId;
+                detail::DescriptorId descId;
             } f2;
 
             std::uint64_t u64 = 0; // default-initializes both forms to zero

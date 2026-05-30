@@ -164,7 +164,7 @@ namespace ctr {
 
             struct F2 {
                 detail::NameId scopeNameId;
-                detail::NameId candidateNameId;
+                detail::DescriptorId descId;
             } f2;
 
             std::uint64_t u64 = 0;

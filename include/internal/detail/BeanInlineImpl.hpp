@@ -340,7 +340,7 @@ namespace ctr {
     // Algorithm:
     //   1. Look up scope by f2.scopeNameId.
     //   2. Scope absent or stopped → nullptr (no exception, specs-api §7.1).
-    //   3. Find or materialize T in scope's SessionStore.
+    //   3. Find or materialize f2.descId in scope's SessionStore.
     //   4. Return object pointer.
     // ─────────────────────────────────────────────────────────────────────────────
 
@@ -350,18 +350,7 @@ namespace ctr {
         if (scope == nullptr || !scope->scopeStarted_)
             return nullptr;
 
-        // TypeId lookup (cached per type).
-        const detail::TypeId typeId = registry_->typeIdFor<T>();
-        if (typeId == detail::kInvalidTypeId)
-            return nullptr;
-
-        // Find the descriptor for (typeId, candidateNameId).
-        const std::vector<detail::DescriptorId> *candidates =
-            registry_->typeIndex().candidatesFor(typeId, bits_.f2.candidateNameId);
-        if (!candidates || candidates->empty())
-            return nullptr;
-
-        const detail::DescriptorId descId = (*candidates)[0];
+        const detail::DescriptorId descId = bits_.f2.descId;
 
         // Fast path: already materialized.
         void *instance = scope->sessionStore_.find(descId);
@@ -389,14 +378,7 @@ namespace ctr {
         if (object_ != nullptr) {
             return registry_->descriptorTable().at(bits_.f1.descId).concreteType == tid;
         }
-        // Form 2: look up descriptor via type index.
-        const detail::TypeId ownTypeId = registry_->typeIdFor<T>();
-        if (ownTypeId == detail::kInvalidTypeId)
-            return false;
-        const auto *candidates = registry_->typeIndex().candidatesFor(ownTypeId, bits_.f2.candidateNameId);
-        if (!candidates || candidates->empty())
-            return false;
-        return registry_->descriptorTable().at((*candidates)[0]).concreteType == tid;
+        return registry_->descriptorTable().at(bits_.f2.descId).concreteType == tid;
     }
 
     // Helper: search TypeIndex for a descriptor of type `uid` with the given primary.
@@ -442,14 +424,7 @@ namespace ctr {
             }
             return false;
         }
-        // Form 2: look up descriptor via type index.
-        const detail::TypeId ownTypeId = registry_->typeIdFor<T>();
-        if (ownTypeId == detail::kInvalidTypeId)
-            return false;
-        const auto *candidates = registry_->typeIndex().candidatesFor(ownTypeId, bits_.f2.candidateNameId);
-        if (!candidates || candidates->empty())
-            return false;
-        return registry_->descriptorTable().at((*candidates)[0]).exposedType == uid;
+        return registry_->descriptorTable().at(bits_.f2.descId).exposedType == uid;
     }
 
     template <class T>
@@ -553,22 +528,28 @@ namespace ctr {
 
     template <class U>
     bool AnyBean::exact() const noexcept {
-        if (object_ == nullptr || registry_ == nullptr)
+        if (registry_ == nullptr)
             return false;
         const detail::TypeId tid = registry_->typeIdFor<U>();
         if (tid == detail::kInvalidTypeId)
             return false;
-        return registry_->descriptorTable().at(bits_.f1.descId).concreteType == tid;
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        return registry_->descriptorTable().at(descId).concreteType == tid;
     }
 
     template <class U>
     bool AnyBean::compatible() const noexcept {
-        if (object_ == nullptr || registry_ == nullptr)
+        if (registry_ == nullptr)
             return false;
         const detail::TypeId uid = registry_->typeIdFor<U>();
         if (uid == detail::kInvalidTypeId)
             return false;
-        const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f1.descId);
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        const detail::Descriptor &d = registry_->descriptorTable().at(descId);
+        if (object_ == nullptr)
+            return d.exposedType == uid;
         if (d.exposedType == uid)
             return true;
         if (d.concreteType == uid)
@@ -586,6 +567,13 @@ namespace ctr {
             throw ctr::ResolutionError(
                 "AnyBean::cast: the bean is not compatible with the requested type."
                 );
+        }
+        if (object_ == nullptr) {
+            Bean<U> result;
+            result.object_ = nullptr;
+            result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.registry_ = registry_;
+            return result;
         }
         const detail::Descriptor &selfDesc =
             registry_->descriptorTable().at(bits_.f1.descId);
@@ -658,21 +646,13 @@ namespace ctr {
     //
     // Called by operator-> when scopeNameId == kThreadLocalSentinel.
     // Never caches the pointer — resolves against the calling thread's TL store
-    // on every invocation.  If not yet materialized on this thread, materializes.
+    // on every invocation using f2.descId. If not yet materialized on this
+    // thread, materializes.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <typename T>
     T *Bean<T>::threadLocalResolve_() const noexcept {
-        const detail::TypeId typeId = registry_->typeIdFor<T>();
-        if (typeId == detail::kInvalidTypeId)
-            return nullptr;
-
-        const std::vector<detail::DescriptorId> *candidates =
-            registry_->typeIndex().candidatesFor(typeId, bits_.f2.candidateNameId);
-        if (!candidates || candidates->empty())
-            return nullptr;
-
-        const detail::DescriptorId descId = (*candidates)[0];
+        const detail::DescriptorId descId = bits_.f2.descId;
 
         // Fast path: already materialized on this thread.
         void *instance = detail::tlData().findInstance(registry_->registryId(), descId);
@@ -702,27 +682,19 @@ namespace ctr {
                                 d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
         }
         if (registry_ != nullptr) {
-            // Form 2 (session proxy) or Form 3 (thread-local): recover descriptor from type index.
-            // Mirror the exact() Form-2 branch to avoid touching the wrong union member.
-            const detail::TypeId ownTypeId = registry_->typeIdFor<T>();
-            if (ownTypeId != detail::kInvalidTypeId) {
-                const auto *candidates =
-                    registry_->typeIndex().candidatesFor(ownTypeId, bits_.f2.candidateNameId);
-                if (candidates && !candidates->empty()) {
-                    const detail::Descriptor &d =
-                        registry_->descriptorTable().at((*candidates)[0]);
-                    return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                        d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
-                }
-            }
+            const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f2.descId);
+            return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
+                                d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
         }
         return BeanMetadata{nullptr, nullptr, "", detail::Lifetime::Singleton,
                             detail::Origin::AnnotatedType, nullptr};
     }
 
     inline BeanMetadata AnyBean::metadata() const noexcept {
-        if (object_ != nullptr && registry_ != nullptr) {
-            const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f1.descId);
+        if (registry_ != nullptr) {
+            const detail::DescriptorId descId =
+                object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+            const detail::Descriptor &d = registry_->descriptorTable().at(descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
                                 d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
         }
@@ -1262,17 +1234,15 @@ namespace ctr::detail {
                     "Registry::resolve: the scope is stopped; start the scope before resolving."
                     );
             }
-            void *instance = materializeSessionInstance(descId, ctx.scope, ctx);
-            const NameId candidateNameId = desc.name;
-            return ctr::Bean<T>::makeProxy(ctx.scope->scopeNameId_, candidateNameId, this);
+            (void)materializeSessionInstance(descId, ctx.scope, ctx);
+            return ctr::Bean<T>::makeProxy(ctx.scope->scopeNameId_, descId, this);
         }
 
         case Lifetime::ThreadLocal: {
             // Scope is transparent for threadLocal (specs-api §8): always resolve
             // as if from root — ctx.scope is ignored.
-            void *instance = materializeThreadLocalInstance(descId, ctx);
-            const NameId candidateNameId = desc.name;
-            return ctr::Bean<T>::makeThreadLocal(candidateNameId, this);
+            (void)materializeThreadLocalInstance(descId, ctx);
+            return ctr::Bean<T>::makeThreadLocal(descId, this);
         }
         }
 

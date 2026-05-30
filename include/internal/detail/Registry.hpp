@@ -543,13 +543,13 @@ public:
      *
      * @tparam U       Session bean type.
      * @param scopeNameId     NameId of the target scope.
-     * @param candidateNameId NameId of the named qualifier (or `kUnnamed`).
+     * @param descId          DescriptorId of the target session bean.
      * @param reg             Root Registry pointer.
      */
     template<typename U>
     [[nodiscard]] static ctr::Bean<U> makeDeferredHandle(
-            NameId scopeNameId, NameId candidateNameId, Registry* reg) noexcept {
-        return ctr::Bean<U>::makeDeferred(scopeNameId, candidateNameId, reg);
+            NameId scopeNameId, DescriptorId descId, Registry* reg) noexcept {
+        return ctr::Bean<U>::makeDeferred(scopeNameId, descId, reg);
     }
 
     // -------------------------------------------------------------------------

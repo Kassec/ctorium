@@ -13,11 +13,13 @@
 #include <vector>
 
 #include "../ContributedDescriptor.hpp"
+#include "../DescriptorId.hpp"
 #include "../Discovery.hpp"
 #include "../Identity.hpp"
 #include "../Lifetime.hpp"
 #include "../NameId.hpp"
 #include "../Origin.hpp"
+#include "../TypeId.hpp"
 #include "../TypeInfoGetter.hpp"
 #include "../../api/ctr/Bean.hpp"
 #include "../../api/ctr/BeanMetadata.hpp"
@@ -406,7 +408,31 @@ auto injectParam(ResolutionContext& ctx) {
             }
         }
 
-        return Registry::makeDeferredHandle<U>(scopeNameId, candidateNameId, &ctx.registry);
+        const TypeId targetTypeId = ctx.registry.typeIdFor<U>();
+        if (targetTypeId == kInvalidTypeId) {
+            throw ctr::ResolutionError(
+                "Registry::resolve: the requested type was not registered in "
+                "this context via discover<>() or bindSingleton()."
+                );
+        }
+        const auto* candidates =
+            ctx.registry.typeIndex().candidatesFor(targetTypeId, candidateNameId);
+        if (!candidates || candidates->empty()) {
+            throw ctr::ResolutionError(
+                "Registry::resolve: no bean registered for the requested "
+                "type and named key."
+                );
+        }
+        if (candidates->size() >= 2
+            && ctx.registry.descriptorTable().at((*candidates)[0]).priority
+                == ctx.registry.descriptorTable().at((*candidates)[1]).priority) {
+            throw ctr::ResolutionError(
+                "Registry::resolve: ambiguous resolution — two candidates share "
+                "the highest priority for the requested type and named key."
+                );
+        }
+        const DescriptorId descId = (*candidates)[0];
+        return Registry::makeDeferredHandle<U>(scopeNameId, descId, &ctx.registry);
     } else if constexpr (kHasNamed) {
         // Named injection: intern name and resolve.
         static constexpr const char* kNameStr = []{

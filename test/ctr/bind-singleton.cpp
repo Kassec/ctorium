@@ -127,15 +127,16 @@ TEST(BindSingleton, AllFourListenerPhasesFire) {
     EXPECT_EQ(destroyed, 1);
 }
 
-// ─── Post-start error cases ───────────────────────────────────────────────────
+// ─── Post-start binding guards ────────────────────────────────────────────────
 
-TEST(BindSingleton, PostStartUnknownTypeThrowsConfigurationError) {
+TEST(BindSingleton, PostStartUnknownTypeAdoptsAndResolves) {
     auto& ctx = ctr::BeanContext::resolveContext("bs-post-unknown");
     ctx.start();
-    EXPECT_THROW(
-        ctx.bindSingleton<bind_singleton_fixture::Widget>(
-            std::make_unique<bind_singleton_fixture::Widget>(0)),
-        ctr::ConfigurationError);
+    auto widget = std::make_unique<bind_singleton_fixture::Widget>(0);
+    bind_singleton_fixture::Widget* raw = widget.get();
+    ctx.bindSingleton<bind_singleton_fixture::Widget>(std::move(widget));
+    auto bean = ctx.resolve<bind_singleton_fixture::Widget>();
+    EXPECT_EQ(bean.operator->(), raw);
     ctx.stop();
 }
 

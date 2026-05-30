@@ -810,10 +810,10 @@ namespace ctr::detail {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // Registry::resolve<T>  — hot-path singleton resolution (specs-internal §9)
+    // Registry::resolve<T>  — hot-path resolution (specs-internal §9)
     //
-    // Lifetime coverage in this iteration: Singleton only.
-    // Prototype / Session / ThreadLocal → ConfigurationError stub.
+    // Lifetime coverage: Singleton, Prototype, Session, and ThreadLocal.
+    // Per-lifetime materialization is delegated to materializeOne<T>().
     //
     // Two-phase singleton slow path (ensures writeLock_ is NOT held during the
     // construct thunk, so injected singletons can recursively call resolve<U>()):

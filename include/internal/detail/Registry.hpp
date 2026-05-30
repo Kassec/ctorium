@@ -674,9 +674,10 @@ public:
     /**
      * @brief Resolves one bean compatible with T and the given named qualifier.
      *
-     * Implements the resolution algorithm of specs-internal §9 for singleton and
-     * prototype lifetimes.  Session and threadLocal lifetimes are stubbed pending
-     * their respective implementations.
+     * Implements the resolution algorithm of specs-internal §9 for singleton,
+     * prototype, session, and threadLocal lifetimes.  Session and threadLocal
+     * materialization is delegated to `materializeSessionInstance()` and
+     * `materializeThreadLocalInstance()`.
      *
      * Steps:
      *  1. State check: raises `ContextStateError` if not started.
@@ -689,9 +690,11 @@ public:
      * @param nameId  `NameId` of the named qualifier; `kUnnamed` for unnamed resolution.
      * @param ctx     Active `ResolutionContext` (carries the active scope if any).
      * @return Tracked `Bean<T>` handle.
-     * @throws ctr::ContextStateError  if not started.
-     * @throws ctr::ResolutionError    if no candidate, or priority ambiguity.
-     * @throws ctr::ConfigurationError on unsupported lifetime (session/threadLocal stub).
+     * @throws ctr::ContextStateError  if not started, or if a session bean is
+     *                                  resolved without a started scope.
+     * @throws ctr::ResolutionError    if no candidate, priority ambiguity, or
+     *                                  dependency cycle.
+     * @throws ctr::ConfigurationError if an internal descriptor lifetime is unhandled.
      */
     template <typename T>
     [[nodiscard]] auto resolve(NameId nameId, ResolutionContext& ctx) -> ctr::Bean<T>;
@@ -797,7 +800,9 @@ private:
      * @param descId  Descriptor to materialize.
      * @param ctx     Active `ResolutionContext`.
      * @return Tracked `Bean<T>` handle.
-     * @throws ctr::ConfigurationError for unimplemented lifetimes (session, threadLocal).
+     * @throws ctr::ContextStateError if a session bean is resolved without a started scope.
+     * @throws ctr::ResolutionError on dependency cycle.
+     * @throws ctr::ConfigurationError if an internal descriptor lifetime is unhandled.
      */
     template <typename T>
     [[nodiscard]] auto materializeOne(DescriptorId descId, ResolutionContext& ctx)

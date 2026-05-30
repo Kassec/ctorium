@@ -340,7 +340,7 @@ namespace ctr {
     // Algorithm:
     //   1. Look up scope by f2.scopeNameId.
     //   2. Scope absent or stopped → nullptr (no exception, specs-api §7.1).
-    //   3. Find or materialize f2.descId in scope's SessionStore.
+    //   3. Find or materialize f2.descId's session slot in scope's SessionStore.
     //   4. Return object pointer.
     // ─────────────────────────────────────────────────────────────────────────────
 
@@ -351,9 +351,11 @@ namespace ctr {
             return nullptr;
 
         const detail::DescriptorId descId = bits_.f2.descId;
+        const detail::SessionSlot slot =
+            registry_->descriptorTable().at(descId).sessionSlot;
 
         // Fast path: already materialized.
-        void *instance = scope->sessionStore_.find(descId);
+        void *instance = scope->sessionStore_.find(slot);
         if (instance != nullptr)
             return static_cast<T *>(instance);
 
@@ -1266,12 +1268,14 @@ namespace ctr::detail {
         ctr::ScopedContext *scope,
         ResolutionContext &ctx
         ) {
+        const Descriptor &desc = descriptors_.at(descId);
+        const SessionSlot slot = desc.sessionSlot;
+
         // Fast path: already materialized (lock-free acquire).
-        void *instance = scope->sessionStore_.find(descId);
+        void *instance = scope->sessionStore_.find(slot);
         if (instance != nullptr)
             return instance;
 
-        const Descriptor &desc = descriptors_.at(descId);
         bool didMaterialize = false;
 
         // Phase 1: claim (descId, scope) or wait for a peer on the same scope.
@@ -1288,7 +1292,7 @@ namespace ctr::detail {
             cv_.wait(
                 lock,
                 [&] {
-                    return scope->sessionStore_.find(descId) != nullptr
+                    return scope->sessionStore_.find(slot) != nullptr
                         || std::find_if(
                             materializing_.begin(),
                             materializing_.end(),
@@ -1298,7 +1302,7 @@ namespace ctr::detail {
                             ) == materializing_.end();
                 }
                 );
-            instance = scope->sessionStore_.find(descId);
+            instance = scope->sessionStore_.find(slot);
             if (instance == nullptr) {
                 // RuntimeBinding session beans must be pre-stored in sessionStore_ at
                 // scope start(). A nil slot means the binding was not renewed for this cycle.
@@ -1362,7 +1366,7 @@ namespace ctr::detail {
             // Phase 3: store under lock, then wake waiters.
             {
                 std::lock_guard reLock(writeLock_);
-                scope->sessionStore_.store(descId, mem);
+                scope->sessionStore_.store(slot, descId, mem);
                 auto it = std::find_if(
                     materializing_.begin(),
                     materializing_.end(),
@@ -1464,7 +1468,8 @@ namespace ctr::detail {
 
         // Destructions outside writeLock_.
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
-            void *mem = scope.sessionStore_.find(*it); // lock-free acquire
+            const SessionSlot slot = descriptors_.at(*it).sessionSlot;
+            void *mem = scope.sessionStore_.find(slot); // lock-free acquire
             if (mem != nullptr)
                 executeDestructionLifecycle(*it, mem);
         }

@@ -5,12 +5,12 @@
 #include <memory>
 #include <vector>
 
-#include "../DescriptorId.hpp"
+#include "../Descriptor.hpp"
 
 namespace ctr::detail {
 
 /**
- * @brief Per-scope storage for session bean instances, keyed by `DescriptorId`.
+ * @brief Per-scope storage for session bean instances, keyed by dense session slot.
  *
  * Owned by `ScopedContext`; created (via `resize`) at scope `start()` and
  * destroyed (via `releaseAll`) at scope `stop()`.  Memory model mirrors
@@ -26,15 +26,15 @@ public:
     /**
      * @brief Sizes the instance array for the current scope cycle.
      *
-     * Creates a fresh array of `descriptorCount` null atomics.
+     * Creates a fresh array of `sessionSlotCount` null atomics.
      * Called once per scope `start()`.  Safe to call repeatedly (restart).
      */
-    void resize(std::size_t descriptorCount) {
-        auto newArr = std::make_unique<std::atomic<void*>[]>(descriptorCount);
+    void resize(std::size_t sessionSlotCount) {
+        auto newArr = std::make_unique<std::atomic<void*>[]>(sessionSlotCount);
         auto* raw = newArr.get();
         instancesGraveyard_.push_back(std::move(newArr));
         instancesBase_.store(raw, std::memory_order_release);
-        instancesSize_.store(descriptorCount, std::memory_order_release);
+        instancesSize_.store(sessionSlotCount, std::memory_order_release);
     }
 
     /**
@@ -43,20 +43,20 @@ public:
      * Release store: pairs with the acquire load in `find()`.
      * Must be called under the registry write lock.
      */
-    void store(DescriptorId descId, void* mem) {
+    void store(SessionSlot slot, DescriptorId descId, void* mem) {
         insertionOrder_.push_back(descId);
         instancesBase_.load(std::memory_order_relaxed)
-            [static_cast<std::size_t>(descId)].store(mem, std::memory_order_release);
+            [static_cast<std::size_t>(slot)].store(mem, std::memory_order_release);
     }
 
     /**
-     * @brief Grows the array to accommodate `descId` if needed, then stores `mem`.
+     * @brief Grows the array to accommodate `slot` if needed, then stores `mem`.
      *
      * All arrays accumulate in `instancesGraveyard_` and are freed in `releaseAll()`.
      * Must be called under the registry write lock.
      */
-    void growAndStore(DescriptorId descId, void* mem) {
-        const std::size_t idx     = static_cast<std::size_t>(descId);
+    void growAndStore(SessionSlot slot, DescriptorId descId, void* mem) {
+        const std::size_t idx     = static_cast<std::size_t>(slot);
         const std::size_t newSize = idx + 1;
         const std::size_t oldSize = instancesSize_.load(std::memory_order_relaxed);
         if (newSize > oldSize) {
@@ -71,7 +71,7 @@ public:
             instancesBase_.store(rawNew, std::memory_order_release);
             instancesSize_.store(newSize, std::memory_order_release);
         }
-        store(descId, mem);
+        store(slot, descId, mem);
     }
 
     /**
@@ -79,12 +79,12 @@ public:
      *
      * Lock-free acquire load.  Load order: size → base → slot.
      */
-    [[nodiscard]] void* find(DescriptorId descId) const noexcept {
+    [[nodiscard]] void* find(SessionSlot slot) const noexcept {
         const std::size_t size = instancesSize_.load(std::memory_order_acquire);
-        if (static_cast<std::size_t>(descId) >= size) return nullptr;
+        if (static_cast<std::size_t>(slot) >= size) return nullptr;
         auto* base = instancesBase_.load(std::memory_order_acquire);
         if (base == nullptr) return nullptr;
-        return base[static_cast<std::size_t>(descId)].load(std::memory_order_acquire);
+        return base[static_cast<std::size_t>(slot)].load(std::memory_order_acquire);
     }
 
     /** @brief Insertion-order vector for reverse-order destruction at `stop()`. */

@@ -373,6 +373,15 @@ public:
         // registerContextBean does NOT dispatch lifecycle events; dispatch happens below,
         // after the lock is released (A5: prevent deadlock from listeners calling writeLock_).
         registerContextBean(ctx);
+        sessionSlotCount_ = 0;
+        for (std::size_t i = 0; i < descriptors_.size(); ++i) {
+            Descriptor &d = descriptors_.atMutable(static_cast<DescriptorId>(i));
+            if (d.lifetime == Lifetime::Session) {
+                d.sessionSlot = static_cast<SessionSlot>(sessionSlotCount_++);
+            } else {
+                d.sessionSlot = kInvalidSessionSlot;
+            }
+        }
         const TypeId beanCtxTypeId = descriptors_.at(beanContextDescId_).exposedType;
 
         // Store pre-start bound instances.
@@ -460,6 +469,11 @@ public:
     /** @brief True after a successful `start()`, false before or after `stop()`. */
     [[nodiscard]] bool started() const noexcept {
         return started_.load(std::memory_order_acquire);
+    }
+
+    /** @brief Number of dense session slots assigned in the descriptor table. */
+    [[nodiscard]] std::size_t sessionSlotCount() const noexcept {
+        return sessionSlotCount_;
     }
 
     // -------------------------------------------------------------------------
@@ -884,6 +898,7 @@ private:
 
     ctr::BeanContext* root_ = nullptr;
     DescriptorId    beanContextDescId_ = kInvalidDescriptorId;
+    std::size_t     sessionSlotCount_ = 0;
 
     DescriptorTable descriptors_;
     TypeInterning   typeInterning_;

@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <typeinfo>
 
 #include "DescriptorId.hpp"
@@ -13,6 +14,9 @@
 namespace ctr { struct BeanReflectiveData; } // forward decl
 
 namespace ctr::detail {
+
+using SessionSlot = std::uint32_t;
+inline constexpr SessionSlot kInvalidSessionSlot = std::numeric_limits<SessionSlot>::max();
 
 // The second parameter of construct/postConstruct/preDestroy thunks is void*.
 // At every call site in the engine it is a ctr::detail::ResolutionContext*
@@ -36,6 +40,8 @@ struct Descriptor {
     std::int32_t priority;
     /** Scope lifetime governing instance sharing and destruction. */
     Lifetime     lifetime;
+    /** Dense per-session descriptor slot; kInvalidSessionSlot for non-session descriptors. */
+    SessionSlot  sessionSlot = kInvalidSessionSlot;
     /** How this descriptor was contributed to the registry. */
     Origin       origin;
     /** Placement constructor thunk: (void* mem, void* registry). Must not be null. */

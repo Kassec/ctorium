@@ -157,11 +157,11 @@ inline ScopedContext& ScopedContext::start() {
     }
     if (scopeStarted_) return *this; // idempotent
     detail::Registry& reg = core();
-    sessionStore_.resize(reg.descriptorTable().size());
+    sessionStore_.resize(reg.sessionSlotCount());
     // Process pending session bindings entered before this start() call.
     for (const auto& psb : pendingRuntimeSessions_) {
-        sessionStore_.store(psb.descId, psb.instance);
         const detail::Descriptor& d = reg.descriptors_.at(psb.descId);
+        sessionStore_.store(d.sessionSlot, psb.descId, psb.instance);
         ctr::AnyBean anyBean;
         anyBean.object_         = psb.instance;
         anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(detail::kInvalidSlotId);
@@ -336,6 +336,9 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         d.observedTypeGetter     = &detail::TypeInfoGetter<T>::get;
         d.exactTypeGetter        = &detail::TypeInfoGetter<T>::get;
         d.nameStr                = kTypeName;
+        if (reg.started_.load(std::memory_order_relaxed)) {
+            d.sessionSlot = static_cast<detail::SessionSlot>(reg.sessionSlotCount_++);
+        }
         descId = reg.descriptors_.append(std::move(d));
         reg.typeIndex_.insertCandidate(typeId, nameId, descId);
         if (reg.started_.load(std::memory_order_relaxed)) {
@@ -366,7 +369,8 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     }
 
     // Scope running: store immediately.
-    sessionStore_.growAndStore(descId, rawPtr);
+    const detail::SessionSlot slot = reg.descriptors_.at(descId).sessionSlot;
+    sessionStore_.growAndStore(slot, descId, rawPtr);
 
     // A5: release writeLock_ before dispatching so listener callbacks can call
     // registry operations without deadlocking.

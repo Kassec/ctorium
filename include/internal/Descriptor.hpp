@@ -67,12 +67,12 @@ struct Descriptor {
     bool lazy = true;
 
     /**
-     * @brief Combined allocate-and-construct thunk for `unique_ptr<T>` factory products
-     * with `Lifetime::Prototype`.  When non-null, the prototype path of `resolve<T>`
-     * skips `::operator new` and calls this thunk instead; the thunk returns the
-     * live pointer.  Invariant: `allocAndConstruct != nullptr ↔ dealloc != nullptr`.
-     * Null for all other descriptors (annotated types, factories, value-return products,
-     * singleton factory products).
+     * @brief Combined allocate-and-construct thunk for `unique_ptr<T>` factory products.
+     *
+     * When non-null, materialization skips engine pre-allocation and calls this thunk
+     * instead; the thunk returns the live pointer released from the factory product.
+     * Invariant: `allocAndConstruct != nullptr` iff `dealloc != nullptr`.
+     * Null for annotated types, factories, value-return products, and runtime bindings.
      */
     void*      (*allocAndConstruct)(void*) = nullptr;
 

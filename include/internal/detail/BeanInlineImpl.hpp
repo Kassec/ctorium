@@ -1094,15 +1094,23 @@ namespace ctr::detail {
                     // is an internal invariant violation.
                     assert(desc.origin != Origin::RuntimeBinding);
                     try {
-                        mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                        desc.construct(mem, static_cast<void *>(&ctx));
+                        if (desc.allocAndConstruct != nullptr) {
+                            mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+                        } else {
+                            mem = ::operator new(desc.size, std::align_val_t{desc.align});
+                            desc.construct(mem, static_cast<void *>(&ctx));
+                        }
                     } catch (...) {
                         if (mem) {
-                            ::operator delete(
-                                mem,
-                                desc.size,
-                                std::align_val_t{desc.align}
-                                );
+                            if (desc.dealloc != nullptr) {
+                                desc.dealloc(mem);
+                            } else {
+                                ::operator delete(
+                                    mem,
+                                    desc.size,
+                                    std::align_val_t{desc.align}
+                                    );
+                            }
                         }
                         {
                             std::lock_guard reLock(writeLock_);
@@ -1348,11 +1356,20 @@ namespace ctr::detail {
         if (didMaterialize) {
             void *mem = nullptr;
             try {
-                mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                desc.construct(mem, static_cast<void *>(&ctx));
+                if (desc.allocAndConstruct != nullptr) {
+                    mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+                } else {
+                    mem = ::operator new(desc.size, std::align_val_t{desc.align});
+                    desc.construct(mem, static_cast<void *>(&ctx));
+                }
             } catch (...) {
-                if (mem)
-                    ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                if (mem) {
+                    if (desc.dealloc != nullptr) {
+                        desc.dealloc(mem);
+                    } else {
+                        ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                    }
+                }
                 {
                     std::lock_guard reLock(writeLock_);
                     auto it = std::find_if(
@@ -1539,11 +1556,22 @@ namespace ctr::detail {
         const Descriptor &desc = descriptors_.at(descId);
         CycleGuard guard(materializationStack(), descId);
 
-        void *mem = ::operator new(desc.size, std::align_val_t{desc.align});
+        void *mem = nullptr;
         try {
-            desc.construct(mem, static_cast<void *>(&ctx));
+            if (desc.allocAndConstruct != nullptr) {
+                mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+            } else {
+                mem = ::operator new(desc.size, std::align_val_t{desc.align});
+                desc.construct(mem, static_cast<void *>(&ctx));
+            }
         } catch (...) {
-            ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+            if (mem) {
+                if (desc.dealloc != nullptr) {
+                    desc.dealloc(mem);
+                } else {
+                    ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                }
+            }
             throw;
         }
 
@@ -1801,11 +1829,20 @@ namespace ctr::detail {
             assert(desc.origin != Origin::RuntimeBinding);
             void *mem = nullptr;
             try {
-                mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                desc.construct(mem, static_cast<void *>(&ctx));
+                if (desc.allocAndConstruct != nullptr) {
+                    mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+                } else {
+                    mem = ::operator new(desc.size, std::align_val_t{desc.align});
+                    desc.construct(mem, static_cast<void *>(&ctx));
+                }
             } catch (...) {
-                if (mem)
-                    ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                if (mem) {
+                    if (desc.dealloc != nullptr) {
+                        desc.dealloc(mem);
+                    } else {
+                        ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                    }
+                }
                 {
                     std::lock_guard reLock(writeLock_);
                     auto it = std::find_if(

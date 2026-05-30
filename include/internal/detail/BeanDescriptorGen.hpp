@@ -640,8 +640,8 @@ consteval std::meta::info unwrapUniquePtr(std::meta::info returnType) {
     return returnType;
 }
 
-// Standard construct thunk: placement-new from factory call (value return or
-// singleton unique_ptr path — the engine pre-allocates mem).
+// Standard construct thunk: placement-new from factory call for value returns
+// and fallback paths where the engine pre-allocates mem.
 template<typename T, std::meta::info FactoryType, std::meta::info Method>
 void constructFactoryProductThunk(void* mem, void* vctx) {
     auto& ctx = *static_cast<ResolutionContext*>(vctx);
@@ -659,10 +659,10 @@ void constructFactoryProductThunk(void* mem, void* vctx) {
     }
 }
 
-// Auto-allocating thunk for unique_ptr<T> factory products with Prototype lifetime.
+// Auto-allocating thunk for unique_ptr<T> factory products.
 // Calls the factory method, releases the unique_ptr, and returns the raw pointer.
 // No pre-allocated mem involved; allocation is performed by the factory's operator new.
-// Used only by the prototype path of resolve<T> when allocAndConstruct != nullptr.
+// Used by materialization paths when allocAndConstruct != nullptr.
 template<typename T, std::meta::info FactoryType, std::meta::info Method>
 void* allocAndConstructFactoryProductThunk(void* vctx) {
     auto& ctx = *static_cast<ResolutionContext*>(vctx);
@@ -910,15 +910,9 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
     constexpr bool isUniquePtrReturn = std::meta::is_same_type(
         std::meta::dealias(rawReturn), std::meta::dealias(^^std::unique_ptr<T>));
 
-    // Fill allocAndConstruct + dealloc only for Prototype+unique_ptr:
-    // – Prototype: allocation happens per-resolve, single allocation matters.
-    // – Singleton: the engine pre-allocates; construct handles the unique_ptr path.
-    constexpr bool useAllocAndConstruct =
-        isUniquePtrReturn && (ann.lifetime == Lifetime::Prototype);
-
     void* (*allocAndConstructFn)(void*)        = nullptr;
     void  (*deallocFn)(void*) noexcept         = nullptr;
-    if constexpr (useAllocAndConstruct) {
+    if constexpr (isUniquePtrReturn) {
         allocAndConstructFn =
             &allocAndConstructFactoryProductThunk<T, entity.declaringFactory, entity.entity>;
         deallocFn = &deallocFactoryProductThunk<T>;

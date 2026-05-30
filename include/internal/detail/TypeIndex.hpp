@@ -124,10 +124,8 @@ public:
                 do { vec.push_back(it->second); } while (++it != pend.end() && it->first == cur);
             }
             pend.clear();
-            pend.shrink_to_fit();
         }
         pending_.clear();
-        pending_.shrink_to_fit();
 
         // Sort each candidate vector by descending priority; compute derived state.
         const std::size_t typeCount = typeIndex_.size();

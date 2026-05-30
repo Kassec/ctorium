@@ -282,7 +282,7 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     const detail::NameId nameId = reg.internNameSafe(
         options.name ? std::string_view{options.name} : std::string_view{});
 
-    std::lock_guard lock(reg.writeLock_);
+    std::unique_lock<std::mutex> lock(reg.writeLock_);
 
     detail::TypeId typeId;
     if (!reg.started_.load(std::memory_order_relaxed)) {
@@ -371,6 +371,10 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
 
     // Scope running: store immediately.
     sessionStore_.growAndStore(descId, rawPtr);
+
+    // A5: release writeLock_ before dispatching so listener callbacks can call
+    // registry operations without deadlocking.
+    lock.unlock();
 
     ctr::AnyBean anyBean;
     anyBean.object_         = rawPtr;

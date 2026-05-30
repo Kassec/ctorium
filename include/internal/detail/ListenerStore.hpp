@@ -190,6 +190,19 @@ public:
     }
 
     /**
+     * @brief Returns true when the given lifecycle phase has at least one listener.
+     *
+     * Lock-free read used by prototype materialization to skip building a dispatch
+     * `AnyBean` when the phase cannot notify anyone.
+     *
+     * @param phaseIndex Phase index in `[0, kPhaseCount)`.
+     */
+    [[nodiscard]] bool hasListeners(std::size_t phaseIndex) const noexcept {
+        assert(phaseIndex < kPhaseCount);
+        return phaseSizes_[phaseIndex].load(std::memory_order_relaxed) != 0;
+    }
+
+    /**
      * @brief Removes all registrations.  Called at root shutdown.
      */
     void clear() {

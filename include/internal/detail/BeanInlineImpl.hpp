@@ -992,7 +992,11 @@ namespace ctr::detail {
                     if (desc.adjustToExposed != nullptr)
                         exposedPtr = desc.adjustToExposed(mem);
 
-                    {
+                    const bool dispatchInitialized =
+                        listeners_.hasListeners(ListenerStore::phaseInitialized());
+                    const bool dispatchCreated =
+                        listeners_.hasListeners(ListenerStore::phaseCreated());
+                    if (dispatchInitialized || dispatchCreated) {
                         ctr::AnyBean anyBean;
                         anyBean.object_ = exposedPtr;
                         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
@@ -1000,19 +1004,25 @@ namespace ctr::detail {
                         anyBean.registry_ = this;
                         anyBean.retainIfPrototype();
 
-                        listeners_.dispatch(
-                            ListenerStore::phaseInitialized(),
-                            desc.exposedType,
-                            &anyBean
-                            );
+                        if (dispatchInitialized) {
+                            listeners_.dispatch(
+                                ListenerStore::phaseInitialized(),
+                                desc.exposedType,
+                                &anyBean
+                                );
+                        }
                         if (primaryDesc.postConstruct) {
                             primaryDesc.postConstruct(mem, static_cast<void *>(&ctx));
                         }
-                        listeners_.dispatch(
-                            ListenerStore::phaseCreated(),
-                            desc.exposedType,
-                            &anyBean
-                            );
+                        if (dispatchCreated) {
+                            listeners_.dispatch(
+                                ListenerStore::phaseCreated(),
+                                desc.exposedType,
+                                &anyBean
+                                );
+                        }
+                    } else if (primaryDesc.postConstruct) {
+                        primaryDesc.postConstruct(mem, static_cast<void *>(&ctx));
                     }
                     return ctr::Bean<T>::makeDirect(
                         static_cast<T *>(exposedPtr),
@@ -1191,7 +1201,11 @@ namespace ctr::detail {
 
             prototypes_.activate(slotId);
 
-            {
+            const bool dispatchInitialized =
+                listeners_.hasListeners(ListenerStore::phaseInitialized());
+            const bool dispatchCreated =
+                listeners_.hasListeners(ListenerStore::phaseCreated());
+            if (dispatchInitialized || dispatchCreated) {
                 ctr::AnyBean anyBean;
                 anyBean.object_ = mem;
                 anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
@@ -1199,19 +1213,25 @@ namespace ctr::detail {
                 anyBean.registry_ = this;
                 anyBean.retainIfPrototype(); // refcount: 1 → 2 (dispatch reference)
 
-                listeners_.dispatch(
-                    ListenerStore::phaseInitialized(),
-                    desc.exposedType,
-                    &anyBean
-                    );
+                if (dispatchInitialized) {
+                    listeners_.dispatch(
+                        ListenerStore::phaseInitialized(),
+                        desc.exposedType,
+                        &anyBean
+                        );
+                }
                 if (desc.postConstruct) {
                     desc.postConstruct(mem, static_cast<void *>(&ctx));
                 }
-                listeners_.dispatch(
-                    ListenerStore::phaseCreated(),
-                    desc.exposedType,
-                    &anyBean
-                    );
+                if (dispatchCreated) {
+                    listeners_.dispatch(
+                        ListenerStore::phaseCreated(),
+                        desc.exposedType,
+                        &anyBean
+                        );
+                }
+            } else if (desc.postConstruct) {
+                desc.postConstruct(mem, static_cast<void *>(&ctx));
             }
 
             return ctr::Bean<T>::makeDirect(

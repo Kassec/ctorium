@@ -27,5 +27,8 @@ add_executable(bench-startup
         ctr/BenchMain.cpp
 )
 target_compile_features(bench-startup PRIVATE cxx_std_26)
-target_compile_definitions(bench-startup PRIVATE BENCH_MIN_TIME=${BENCH_MIN_TIME})
+target_compile_options(bench-startup PRIVATE $<$<CONFIG:Release>:-O3>)
+target_compile_definitions(bench-startup PRIVATE
+        BENCH_MIN_TIME=${BENCH_MIN_TIME}
+        $<$<CONFIG:Release>:NDEBUG>)
 target_link_libraries(bench-startup PRIVATE ctorium benchmark::benchmark)

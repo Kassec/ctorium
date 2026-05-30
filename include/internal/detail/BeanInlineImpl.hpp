@@ -675,7 +675,7 @@ namespace ctr {
         const detail::DescriptorId descId = (*candidates)[0];
 
         // Fast path: already materialized on this thread.
-        void *instance = detail::tlData().findInstance(registry_, descId);
+        void *instance = detail::tlData().findInstance(registry_->registryId(), descId);
         if (instance != nullptr)
             return static_cast<T *>(instance);
 
@@ -1462,13 +1462,10 @@ namespace ctr::detail {
     inline TLCleanup::~TLCleanup() noexcept {
         auto &tl = tlData();
         for (const auto &entry : registered) {
-            Registry *reg = entry.second;
-            // Only call cleanupCurrentThread() if we still have live entries for this
-            // registry.  If stop() already cleaned them up (and then the registry was
-            // destroyed), skip — accessing a destroyed Registry is UB.  stop() always
-            // runs before the Registry is destroyed (via close()), and it erases all
-            // entries from TLData, so hasEntriesFor() returning false is the safe signal.
-            if (tl.hasEntriesFor(reg)) {
+            const std::uint32_t id = entry.first;
+            auto reg = entry.second.lock();
+            // lock() fails if the Registry was destroyed without stop(); skip to avoid UAF.
+            if (reg && tl.hasEntriesFor(id)) {
                 reg->cleanupCurrentThread();
             }
         }
@@ -1490,7 +1487,7 @@ namespace ctr::detail {
         TLData &tl = tlData();
 
         // Fast path: already materialized on this thread.
-        void *instance = tl.findInstance(this, descId);
+        void *instance = tl.findInstance(registryId(), descId);
         if (instance != nullptr)
             return instance;
 
@@ -1498,7 +1495,7 @@ namespace ctr::detail {
         TLCleanup &cleanup = tlCleanup();
         const std::uint32_t id = registryId();
         if (cleanup.registered.find(id) == cleanup.registered.end()) {
-            cleanup.registered.emplace(id, this);
+            cleanup.registered.emplace(id, weak_from_this());
             std::lock_guard tlLock(tlMutex_);
             tlThreadStores_.push_back(&tl);
         }
@@ -1515,7 +1512,7 @@ namespace ctr::detail {
             throw;
         }
 
-        tl.storeInstance(this, descId, mem);
+        tl.storeInstance(registryId(), descId, mem);
 
         // Lifecycle: C++ construction → onInitialized → postConstruct → onCreated.
         ctr::AnyBean anyBean;
@@ -1544,7 +1541,7 @@ namespace ctr::detail {
         std::vector<std::pair<DescriptorId, void *>> toDestroy;
         {
             std::lock_guard tlLock(tlMutex_);
-            tl.collectFor(this, toDestroy);
+            tl.collectFor(registryId(), toDestroy);
             // Remove this thread's TLData from the registry's list.
             auto &stores = tlThreadStores_;
             stores.erase(std::remove(stores.begin(), stores.end(), &tl), stores.end());

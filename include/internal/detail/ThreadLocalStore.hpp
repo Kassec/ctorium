@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -10,14 +12,14 @@
 
 namespace ctr::detail {
 
-// Forward declaration: TLData uses Registry* as a map key.
+// Forward declaration: TLCleanup holds a weak_ptr<Registry>.
 class Registry;
 
 /**
  * @brief Per-thread storage for thread-local bean instances.
  *
  * One TLData lives in thread-local storage per thread.  It maps
- * `(Registry*, DescriptorId)` to live instance pointers, keyed for O(1)
+ * `(registryId, DescriptorId)` to live instance pointers, keyed for O(1)
  * lookup on the hot path (Form 3 `operator->`).  An insertion-order vector
  * enables reverse-order destruction at thread exit or `root.stop()`.
  *
@@ -27,11 +29,11 @@ class Registry;
  * access at that point (specs-api §18).
  */
 struct TLData {
-    using Key = std::pair<Registry*, DescriptorId>;
+    using Key = std::pair<std::uint32_t, DescriptorId>;
 
     struct PairHash {
         std::size_t operator()(const Key& k) const noexcept {
-            auto h1 = std::hash<void*>{}(static_cast<void*>(k.first));
+            auto h1 = std::hash<std::uint32_t>{}(k.first);
             auto h2 = std::hash<DescriptorId>{}(k.second);
             return h1 ^ (h2 * 2654435761UL);
         }
@@ -41,34 +43,34 @@ struct TLData {
     std::vector<Key>                         order;  ///< Insertion order for reverse destruction.
 
     /** O(1) lookup; returns nullptr when not present. */
-    [[nodiscard]] void* findInstance(Registry* reg, DescriptorId descId) const noexcept {
-        const auto it = instances.find({reg, descId});
+    [[nodiscard]] void* findInstance(std::uint32_t registryId, DescriptorId descId) const noexcept {
+        const auto it = instances.find({registryId, descId});
         return it != instances.end() ? it->second : nullptr;
     }
 
     /** Record a newly materialized instance. */
-    void storeInstance(Registry* reg, DescriptorId descId, void* ptr) {
-        instances[{reg, descId}] = ptr;
-        order.push_back({reg, descId});
+    void storeInstance(std::uint32_t registryId, DescriptorId descId, void* ptr) {
+        instances[{registryId, descId}] = ptr;
+        order.push_back({registryId, descId});
     }
 
-    /** Returns true when at least one entry for `reg` exists. */
-    [[nodiscard]] bool hasEntriesFor(Registry* reg) const noexcept {
+    /** Returns true when at least one entry for `registryId` exists. */
+    [[nodiscard]] bool hasEntriesFor(std::uint32_t registryId) const noexcept {
         for (const auto& key : order) {
-            if (key.first == reg) return true;
+            if (key.first == registryId) return true;
         }
         return false;
     }
 
     /**
-     * @brief Collects all instances for `reg`, erases them from this store,
+     * @brief Collects all instances for `registryId`, erases them from this store,
      * appends `(descId, ptr)` pairs to `out` in insertion order.
      * Called under `Registry::tlMutex_`.
      */
-    void collectFor(Registry* reg,
+    void collectFor(std::uint32_t registryId,
                     std::vector<std::pair<DescriptorId, void*>>& out) {
         for (const auto& key : order) {
-            if (key.first == reg) {
+            if (key.first == registryId) {
                 const auto it = instances.find(key);
                 if (it != instances.end()) {
                     out.push_back({key.second, it->second});
@@ -78,7 +80,7 @@ struct TLData {
         }
         order.erase(
             std::remove_if(order.begin(), order.end(),
-                           [reg](const Key& k) { return k.first == reg; }),
+                           [registryId](const Key& k) { return k.first == registryId; }),
             order.end());
     }
 };
@@ -98,7 +100,7 @@ inline TLData& tlData() {
  * executing the full bean destruction lifecycle on the exiting thread.
  */
 struct TLCleanup {
-    std::unordered_map<std::uint32_t, Registry*> registered;  ///< Registry ID to live cleanup target.
+    std::unordered_map<std::uint32_t, std::weak_ptr<Registry>> registered;  ///< Registry ID → weak liveness handle.
     ~TLCleanup() noexcept;                     ///< Defined in BeanInlineImpl.hpp.
 };
 

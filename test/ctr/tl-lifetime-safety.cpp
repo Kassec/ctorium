@@ -74,24 +74,20 @@ private:
     return reinterpret_cast<std::uintptr_t>(registry);
 }
 
-[[nodiscard]] bool hasCallableThreadRegistrationFor(
-        std::uint32_t registryId,
-        std::uintptr_t registryAddress) {
+[[nodiscard]] bool hasCallableThreadRegistrationFor(std::uint32_t registryId) {
     const auto& registered = ctr::detail::tlCleanup().registered;
-    return std::any_of(
-        registered.begin(), registered.end(),
-        [registryId, registryAddress](const auto& entry) {
-            return entry.first == registryId || addressOf(entry.second) == registryAddress;
-        });
+    const auto it = registered.find(registryId);
+    if (it == registered.end()) return false;
+    return it->second.lock() != nullptr;
 }
 
 template <class T>
-void collectAndDestroyThreadLocalStateFor(std::uintptr_t registryAddress) {
+void collectAndDestroyThreadLocalStateFor(std::uint32_t registryId) {
     auto& tl = ctr::detail::tlData();
     std::vector<void*> instances;
 
     for (const auto& key : tl.order) {
-        if (addressOf(key.first) == registryAddress) {
+        if (key.first == registryId) {
             const auto it = tl.instances.find(key);
             if (it != tl.instances.end()) {
                 instances.push_back(it->second);
@@ -102,14 +98,14 @@ void collectAndDestroyThreadLocalStateFor(std::uintptr_t registryAddress) {
     tl.order.erase(
         std::remove_if(
             tl.order.begin(), tl.order.end(),
-            [registryAddress](const auto& key) {
-                return addressOf(key.first) == registryAddress;
+            [registryId](const auto& key) {
+                return key.first == registryId;
             }),
         tl.order.end());
 
     auto& cleanup = ctr::detail::tlCleanup();
     for (auto it = cleanup.registered.begin(); it != cleanup.registered.end();) {
-        if (addressOf(it->second) == registryAddress) {
+        if (it->first == registryId) {
             it = cleanup.registered.erase(it);
         } else {
             ++it;
@@ -183,7 +179,7 @@ TEST(ThreadLocalLifetimeSafety, ReoccupiedRegistryAddressReturnsFreshThreadLocal
 
     ASSERT_FALSE(storage.live());
 
-    collectAndDestroyThreadLocalStateFor<TLService>(firstRegistryAddress);
+    collectAndDestroyThreadLocalStateFor<TLService>(firstRegistryId);
 }
 
 TEST(ThreadLocalLifetimeSafety, RegistryDestroyedWithoutStopLeavesNoCallableThreadRegistration) {
@@ -198,12 +194,10 @@ TEST(ThreadLocalLifetimeSafety, RegistryDestroyedWithoutStopLeavesNoCallableThre
     void* workerInstance = nullptr;
     std::exception_ptr workerException;
     std::thread worker;
-    std::uintptr_t registryAddress = 0;
     std::uint32_t registryId = 0;
 
     {
         auto registry = storage.construct();
-        registryAddress = addressOf(registry.get());
         registryId = registry->registryId();
 
         Probe ctx(std::move(registry));
@@ -228,8 +222,8 @@ TEST(ThreadLocalLifetimeSafety, RegistryDestroyedWithoutStopLeavesNoCallableThre
                 }
 
                 hasResidualRegistration =
-                    hasCallableThreadRegistrationFor(registryId, registryAddress);
-                collectAndDestroyThreadLocalStateFor<TLService>(registryAddress);
+                    hasCallableThreadRegistrationFor(registryId);
+                collectAndDestroyThreadLocalStateFor<TLService>(registryId);
             } catch (...) {
                 workerException = std::current_exception();
                 {

@@ -5,6 +5,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <cstddef>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <stdexcept>
@@ -85,7 +86,7 @@ namespace ctr::detail {
  * DescriptorId under `writeLock_`, construct outside the lock, then store under
  * the lock and notify waiters via `cv_`.
  */
-class Registry {
+class Registry : public std::enable_shared_from_this<Registry> {
 public:
     // -------------------------------------------------------------------------
     // Component accessors (used by ScopedContext and specialised engine code)
@@ -423,7 +424,7 @@ public:
         {
             std::lock_guard tlLock(tlMutex_);
             for (TLData* threadData : tlThreadStores_) {
-                threadData->collectFor(this, tlToDestroy);
+                threadData->collectFor(registryId(), tlToDestroy);
             }
             tlThreadStores_.clear();
         }

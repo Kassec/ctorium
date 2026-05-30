@@ -5,7 +5,10 @@ add_executable(bench-resolve
         ctr/BenchMain.cpp
 )
 target_compile_features(bench-resolve PRIVATE cxx_std_26)
-target_compile_definitions(bench-resolve PRIVATE BENCH_MIN_TIME=${BENCH_MIN_TIME})
+target_compile_options(bench-resolve PRIVATE $<$<CONFIG:Release>:-O3>)
+target_compile_definitions(bench-resolve PRIVATE
+        BENCH_MIN_TIME=${BENCH_MIN_TIME}
+        $<$<CONFIG:Release>:NDEBUG>)
 target_link_libraries(bench-resolve PRIVATE ctorium benchmark::benchmark)
 
 add_executable(bench-handle
@@ -13,7 +16,10 @@ add_executable(bench-handle
         ctr/BenchMain.cpp
 )
 target_compile_features(bench-handle PRIVATE cxx_std_26)
-target_compile_definitions(bench-handle PRIVATE BENCH_MIN_TIME=${BENCH_MIN_TIME})
+target_compile_options(bench-handle PRIVATE $<$<CONFIG:Release>:-O3>)
+target_compile_definitions(bench-handle PRIVATE
+        BENCH_MIN_TIME=${BENCH_MIN_TIME}
+        $<$<CONFIG:Release>:NDEBUG>)
 target_link_libraries(bench-handle PRIVATE ctorium benchmark::benchmark)
 
 add_executable(bench-startup

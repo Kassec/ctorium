@@ -129,6 +129,18 @@ public:
     /** @brief Number of interned types. */
     [[nodiscard]] std::size_t size() const noexcept { return idToName_.size(); }
 
+    /**
+     * @brief Pre-allocates buckets in all three internal maps.
+     *
+     * Call before the start() intern loop to avoid repeated rehashing.
+     * @param n Upper bound on the number of distinct types to be interned.
+     */
+    void reserve(std::size_t n) {
+        nameToId_.reserve(n);
+        indexToId_.reserve(n);
+        idToName_.reserve(n);
+    }
+
 private:
     /// C1: key is string_view; the underlying data comes from define_static_string
     /// (program-lifetime const char*) — no std::string allocation on intern or lookup.

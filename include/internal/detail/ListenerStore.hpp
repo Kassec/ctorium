@@ -37,8 +37,11 @@ namespace ctr::detail {
  *
  * When a listener is added or removed, a new `View` is built under `mutex_`, its
  * `unique_ptr` moved into `allViews_` (persistent storage), then the raw pointer is
- * published.  A View is never destroyed until the `ListenerStore` destructor runs;
- * old Views accumulate in `allViews_` (at most one per add/remove call, bounded).
+ * published.  Views are never freed until `clear()` or the destructor; `allViews_`
+ * therefore grows by one entry per `addListener`/`removeListener` call until the
+ * next `clear()` (RAM trade-off against the two `seq_cst` RMWs removed from
+ * `dispatch()`).  `clear()` runs under exclusive ownership so no `dispatch()` can
+ * hold a stale view pointer at that point — no use-after-free risk.
  *
  * Dispatch visits only global listeners (`kInvalidTypeId`) and typed listeners whose
  * filter matches `beanTypeId`, using a two-pointer merge — no scan of all listeners.
@@ -96,6 +99,46 @@ public:
     }
 
     /**
+     * @brief Inserts a listener entry without rebuilding the dispatch view.
+     *
+     * Same insertion semantics as `addListener()` — sort order maintained — but
+     * `rebuildView_()` is NOT called.  The caller must call `finalizeListeners()`
+     * exactly once after all deferred inserts to publish an updated view.
+     *
+     * Reserved for `BeanContext::flushDeferredListeners_()` internal use.
+     */
+    [[nodiscard]] ListenerHandle addListenerDeferred(std::size_t phaseIndex,
+                                                     TypeId typeId,
+                                                     Callback callback,
+                                                     int priority) {
+        assert(phaseIndex < kPhaseCount && "phase index out of range");
+        assert(callback && "callback must not be empty");
+
+        std::lock_guard lock(mutex_);
+        auto* entry = new Entry{typeId, std::move(callback), priority,
+                                nextToken_++, phaseIndex};
+        auto& vec = phases_[phaseIndex];
+        vec.push_back(entry);
+        const auto pos = std::lower_bound(
+            vec.begin(), vec.end() - 1, vec.back(),
+            [](const Entry* a, const Entry* b) { return a->priority > b->priority; });
+        std::rotate(pos, vec.end() - 1, vec.end());
+        phaseSizes_[phaseIndex].fetch_add(1, std::memory_order_relaxed);
+        // No rebuildView_() — caller finalizes in bulk via finalizeListeners().
+        return ListenerHandle{this, entry->token};
+    }
+
+    /**
+     * @brief Rebuilds the dispatch view once after a batch of `addListenerDeferred` calls.
+     *
+     * Reserved for `BeanContext::flushDeferredListeners_()` internal use.
+     */
+    void finalizeListeners() {
+        std::lock_guard lock(mutex_);
+        rebuildView_();
+    }
+
+    /**
      * @brief Dispatches a lifecycle event to all matching registered listeners.
      *
      * Loads the current immutable view without holding any lock (no heap allocation).
@@ -114,12 +157,8 @@ public:
         // Fast-exit: lock-free; avoids even the atomic load when idle.
         if (phaseSizes_[phaseIndex].load(std::memory_order_relaxed) == 0) return;
 
-        // C2: mark this dispatch as in-flight so rebuildView_() will not purge
-        // any view that this dispatch might currently hold.  seq_cst closes the
-        // store-buffer race with the rebuildView_() load on dispatchCount_.
-        dispatchCount_.fetch_add(1, std::memory_order_seq_cst);
-
         // Load the published view — no heap allocation, no spinlock.
+        // acquire pairs with the release store in rebuildView_().
         const View* view = view_.load(std::memory_order_acquire);
         if (view) {
             const PhaseView& pv = (*view)[phaseIndex];
@@ -148,8 +187,6 @@ public:
             while (gi < globals.size()) globals[gi++].callback(bean);
             while (ti < typeds.size()) typeds[ti++].callback(bean);
         }
-
-        dispatchCount_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
     /**
@@ -164,10 +201,9 @@ public:
         for (std::size_t i = 0; i < kPhaseCount; ++i)
             phaseSizes_[i].store(0, std::memory_order_relaxed);
         view_.store(nullptr, std::memory_order_release);
-        // clear() is called by Registry::stop() under exclusive ownership (§18):
-        // no concurrent dispatch() can be in-flight at this point.  Freeing
-        // allViews_ here reclaims the memory at teardown rather than waiting for
-        // the destructor.  The destructor's allViews_.clear() becomes a no-op.
+        // clear() runs under exclusive ownership (§18): no concurrent dispatch()
+        // holds a view pointer.  Freeing allViews_ here reclaims all accumulated
+        // views (one per add/remove since last clear) at shutdown.
         allViews_.clear();
     }
 
@@ -242,6 +278,8 @@ private:
         auto newView = std::make_unique<View>();
         for (std::size_t p = 0; p < kPhaseCount; ++p) {
             auto& pv = (*newView)[p];
+            // Pre-allocate global vector to avoid per-entry reallocations.
+            pv.global.reserve(phases_[p].size());
             // phases_[p] is sorted by (priority desc, token asc) — preserved in split.
             for (const Entry* e : phases_[p]) {
                 ViewEntry ve{e->callback, e->priority, e->token};
@@ -255,26 +293,12 @@ private:
         const View* rawPtr = newView.get();
         view_.store(rawPtr, std::memory_order_release);
         allViews_.push_back(std::move(newView));
-
-        // C2 runtime purge: if no dispatch is currently in-flight, free all but the
-        // just-published view.  seq_cst closes the store-buffer race: if a concurrent
-        // dispatch incremented dispatchCount_ before our store to view_, it will see
-        // the new view pointer (not the old one) — safe to release old views.
-        // This is correct under mutex_ (no concurrent rebuildView_) + dispatchCount_==0
-        // (no in-flight dispatch still holding an old view pointer).
-        if (dispatchCount_.load(std::memory_order_seq_cst) == 0
-                && allViews_.size() > 1) {
-            allViews_.erase(allViews_.begin(), allViews_.end() - 1);
-        }
+        // allViews_ grows by one per addListener/removeListener; freed at clear()/dtor.
     }
 
     // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
-
-    /// C2 runtime: counts dispatches currently in-flight (seq_cst).
-    /// rebuildView_() purges allViews_ only when this is 0.
-    mutable std::atomic<std::size_t> dispatchCount_{0};
 
     mutable std::mutex mutex_;
     std::vector<Entry*>    phases_[kPhaseCount];    ///< Master list, sorted per phase.

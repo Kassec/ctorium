@@ -158,6 +158,8 @@ public:
             factoryLinks.reserve(total);
             aliasLinks.reserve(total);
             descriptors_.reserve(total + pendingRuntimeSingletons_.size() + 1);
+            typeInterning_.reserve(total);
+            nameInterning_.reserve(total);
         }
 
         for (const auto& [span, opts] : pending_) {

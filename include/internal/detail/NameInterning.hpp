@@ -98,6 +98,18 @@ public:
      */
     [[nodiscard]] std::size_t size() const noexcept { return idToName_.size(); }
 
+    /**
+     * @brief Pre-allocates buckets in the forward and reverse maps.
+     *
+     * Call under the registry write lock before the start() intern loop.
+     * @param n Upper bound on the number of distinct named keys to be interned.
+     */
+    void reserve(std::size_t n) {
+        std::unique_lock<std::shared_mutex> lock(mutex_);
+        nameToId_.reserve(n);
+        idToName_.reserve(n);
+    }
+
 private:
     /// A6: protects all reads and writes to nameToId_ and idToName_.
     /// Lock order (when nested with Registry::writeLock_):

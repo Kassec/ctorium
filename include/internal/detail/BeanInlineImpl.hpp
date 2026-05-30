@@ -869,20 +869,17 @@ namespace ctr::detail {
         }
 
         {
-            // 4. Candidate lookup.
-            const std::vector<DescriptorId> *candidates =
-                typeIndex_.candidatesFor(typeId, effectiveNameId);
-            if (!candidates || candidates->empty()) [[unlikely]] {
+            // 4 + 5. Single flat_map lookup: head DescriptorId + ambiguity flag.
+            // Replaces candidatesFor() + isAmbiguousFor() (two lookups) with one.
+            const auto [head, ambig] = typeIndex_.headFor(typeId, effectiveNameId);
+            if (head == kInvalidDescriptorId) [[unlikely]] {
                 throw ctr::ResolutionError(
                     "Registry::resolve: no bean registered for the requested "
                     "type and named key."
                     );
             }
-
-            // 5. Priority arbitration — ambiguity state precalculated at start(), no
-            // second descriptors_.at() needed on the hot path.
-            descId = (*candidates)[0];
-            if (typeIndex_.isAmbiguousFor(typeId, effectiveNameId)) [[unlikely]] {
+            descId = head;
+            if (ambig) [[unlikely]] {
                 throw ctr::ResolutionError(
                     "Registry::resolve: ambiguous resolution — two candidates share "
                     "the highest priority for the requested type and named key."
@@ -922,12 +919,14 @@ namespace ctr::detail {
             }
         }
 
+        // Single Descriptor& reference reused in the alias block and the switch.
+        const Descriptor &desc = descriptors_.at(descId);
+
         // ── Polymorphic alias: redirect to primary then apply adjustToExposed ────
         {
-            const Descriptor &aliasDesc = descriptors_.at(descId);
-            if (aliasDesc.primaryDescriptor != descId
-                && aliasDesc.primaryDescriptor != kInvalidDescriptorId) {
-                const DescriptorId primaryId = aliasDesc.primaryDescriptor;
+            if (desc.primaryDescriptor != descId
+                && desc.primaryDescriptor != kInvalidDescriptorId) {
+                const DescriptorId primaryId = desc.primaryDescriptor;
 
                 if (lt == Lifetime::Singleton) {
                     // Fast path: primary already materialized.
@@ -938,8 +937,8 @@ namespace ctr::detail {
                         concretePtr = singletons_.find(primaryId);
                     }
                     void *exposedPtr = concretePtr;
-                    if (aliasDesc.adjustToExposed != nullptr)
-                        exposedPtr = aliasDesc.adjustToExposed(concretePtr);
+                    if (desc.adjustToExposed != nullptr)
+                        exposedPtr = desc.adjustToExposed(concretePtr);
                     return ctr::Bean<T>::makeDirect(
                         static_cast<T *>(exposedPtr),
                         kInvalidSlotId,
@@ -975,8 +974,8 @@ namespace ctr::detail {
                     prototypes_.activate(slotId);
 
                     void *exposedPtr = mem;
-                    if (aliasDesc.adjustToExposed != nullptr)
-                        exposedPtr = aliasDesc.adjustToExposed(mem);
+                    if (desc.adjustToExposed != nullptr)
+                        exposedPtr = desc.adjustToExposed(mem);
 
                     {
                         ctr::AnyBean anyBean;
@@ -988,7 +987,7 @@ namespace ctr::detail {
 
                         listeners_.dispatch(
                             ListenerStore::phaseInitialized(),
-                            aliasDesc.exposedType,
+                            desc.exposedType,
                             &anyBean
                             );
                         if (primaryDesc.postConstruct) {
@@ -996,7 +995,7 @@ namespace ctr::detail {
                         }
                         listeners_.dispatch(
                             ListenerStore::phaseCreated(),
-                            aliasDesc.exposedType,
+                            desc.exposedType,
                             &anyBean
                             );
                     }
@@ -1020,7 +1019,6 @@ namespace ctr::detail {
             void *instance = singletonInstance;
 
             if (instance == nullptr) {
-                const Descriptor &desc = descriptors_.at(descId);
                 bool didMaterialize = false;
 
                 // ── Phase 1: claim descId or wait for a peer to complete ───
@@ -1148,7 +1146,6 @@ namespace ctr::detail {
         }
 
         case Lifetime::Prototype: {
-            const Descriptor &desc = descriptors_.at(descId);
             CycleGuard guard(materializationStack(), descId);
 
             void *mem;
@@ -1215,7 +1212,7 @@ namespace ctr::detail {
                     );
             }
             void *instance = materializeSessionInstance(descId, ctx.scope, ctx);
-            const NameId candidateNameId = descriptors_.at(descId).name;
+            const NameId candidateNameId = desc.name;
             return ctr::Bean<T>::makeProxy(ctx.scope->scopeNameId_, candidateNameId, this);
         }
 
@@ -1223,7 +1220,7 @@ namespace ctr::detail {
             // Scope is transparent for threadLocal (specs-api §8): always resolve
             // as if from root — ctx.scope is ignored.
             void *instance = materializeThreadLocalInstance(descId, ctx);
-            const NameId candidateNameId = descriptors_.at(descId).name;
+            const NameId candidateNameId = desc.name;
             return ctr::Bean<T>::makeThreadLocal(candidateNameId, this);
         }
         }

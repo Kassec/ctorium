@@ -80,11 +80,15 @@ inline BeanContext& BeanContext::start() {
 }
 
 inline void BeanContext::flushDeferredListeners_() {
+    if (deferredListeners_.empty()) return;
+    // Insert all deferred entries without rebuilding the view on each call,
+    // then finalize with a single rebuild.
     for (auto& entry : deferredListeners_) {
         const detail::TypeId typeId = core().lookupTypeId(entry.typeIndex);
-        (void)core().listenerStore().addListener(
+        (void)core().listenerStore().addListenerDeferred(
             entry.phaseIndex, typeId, std::move(entry.callback), entry.priority);
     }
+    core().listenerStore().finalizeListeners();
     deferredListeners_.clear();
 }
 

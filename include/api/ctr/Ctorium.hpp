@@ -3,6 +3,7 @@
 #include "AnyBean.hpp"
 #include "Bean.hpp"
 #include "BeanContext.hpp"
+#include "BeanMetadata.hpp"
 #include "Errors.hpp"
 #include "ListenerHandle.hpp"
 #include "Markers.hpp"

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cassert>
+#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -40,6 +41,10 @@ public:
     /**
      * @brief Interns a bean name and returns its stable `NameId`.
      *
+     * Thread-safe: acquires `mutex_` exclusively (write path).
+     * Lock acquisition order: always `mutex_` alone (never while holding an outer
+     * lock that is itself taken while holding `mutex_`).
+     *
      * - Empty string `""` → `kUnnamed = 0` (fast path, no map lookup).
      * - Non-empty string: returns an existing `NameId ≥ 1`, or assigns the next
      *   available id.  The string is copied into internal storage on first insertion.
@@ -50,6 +55,7 @@ public:
     [[nodiscard]] NameId intern(std::string_view beanName) {
         if (beanName.empty()) return kUnnamed;
 
+        std::unique_lock<std::shared_mutex> lock(mutex_);
         // Transparent find: no heap alloc on hit.
         auto it = nameToId_.find(beanName);
         if (it != nameToId_.end()) return it->second;
@@ -64,22 +70,25 @@ public:
     /**
      * @brief Looks up the `NameId` for a name without inserting.
      *
-     * Used by `defaultNamed<T>(...)` validation and by post-`start()` binding
-     * paths that must not create new NameIds without the write lock.
+     * Thread-safe: acquires `mutex_` shared (read path, concurrent with other lookups).
      *
      * @return The interned `NameId`, or `kInvalidNameId` if the name is unknown.
      */
     [[nodiscard]] NameId lookup(std::string_view beanName) const noexcept {
         if (beanName.empty()) return kUnnamed;
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         const auto it = nameToId_.find(beanName); // transparent: no std::string allocation
         return it != nameToId_.end() ? it->second : kInvalidNameId;
     }
 
     /**
      * @brief Returns the original name string for a `NameId`, for use in diagnostics.
+     *
+     * Thread-safe: acquires `mutex_` shared.
      * @pre `id < size()`.
      */
     [[nodiscard]] std::string_view nameOf(NameId id) const noexcept {
+        std::shared_lock<std::shared_mutex> lock(mutex_);
         assert(static_cast<std::size_t>(id) < idToName_.size());
         return idToName_[static_cast<std::size_t>(id)];
     }
@@ -90,6 +99,12 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return idToName_.size(); }
 
 private:
+    /// A6: protects all reads and writes to nameToId_ and idToName_.
+    /// Lock order (when nested with Registry::writeLock_):
+    ///   writeLock_ (outer) → mutex_ (inner)  — only during start() intern calls.
+    ///   mutex_ alone — for post-start internNameSafe() and lookup() calls.
+    mutable std::shared_mutex mutex_;
+
     std::unordered_map<std::string, NameId,
                        StringViewHash, std::equal_to<>> nameToId_; ///< Forward map; owns string storage.
     std::vector<const char*>                idToName_; ///< Reverse map; pointers into nameToId_ keys.

@@ -1,6 +1,10 @@
 #pragma once
 
-#include <utility>
+#include <cstddef>
+
+// Forward declaration: remove() calls ListenerStore methods.
+// The definition of remove() lives in ListenerStore.hpp (which includes this header).
+namespace ctr::detail { class ListenerStore; }
 
 namespace ctr {
 
@@ -36,24 +40,23 @@ inline constexpr onDestroyed_t onDestroyed{};
  * @brief Opaque handle returned by listener registration.
  *
  * Destroying this object does not unregister the listener.
+ *
+ * ### Copy semantics
+ * Copies of a handle share the same logical registration.  The first `remove()`
+ * call on any copy unregisters the listener; subsequent calls on other copies
+ * are safe no-ops (the token is already absent from the store).
+ *
+ * ### Lifetime note
+ * `remove()` is undefined behaviour if the owning `BeanContext` has been
+ * stopped. `BeanContext::stop()` is terminal and destroys the owning context,
+ * so any surviving handle becomes dangling after `stop()` returns.
  */
 class ListenerHandle {
 public:
-    /** @brief Function type used internally by integration code to remove a listener. */
-    using RemoveFn = void (*)(void*) noexcept;
-
     /**
-     * @brief Builds an empty handle.
+     * @brief Builds an empty (no-op) handle.
      */
     constexpr ListenerHandle() noexcept = default;
-
-    /**
-     * @brief Builds a handle from an opaque token and remover function.
-     * @param token Opaque listener token.
-     * @param remover Opaque removal callback.
-     */
-    constexpr ListenerHandle(void* token, RemoveFn remover) noexcept
-        : token_(token), remover_(remover) {}
 
     ListenerHandle(const ListenerHandle&) = default;
     ListenerHandle(ListenerHandle&&) noexcept = default;
@@ -64,19 +67,23 @@ public:
     /**
      * @brief Unregisters the listener if still active.
      *
-     * This operation is idempotent.
+     * Safe to call multiple times (idempotent) while the owning context is
+     * alive. Calling this after the owning `BeanContext` has been stopped is
+     * undefined behaviour.
+     * Defined in ListenerStore.hpp (requires the full ListenerStore definition).
      */
-    void remove() noexcept {
-        if (token_ != nullptr && remover_ != nullptr) {
-            remover_(token_);
-            token_ = nullptr;
-            remover_ = nullptr;
-        }
-    }
+    void remove() noexcept;
 
 private:
-    void* token_ = nullptr;
-    RemoveFn remover_ = nullptr;
+    friend class ctr::detail::ListenerStore;
+
+    // Internal constructor used by ListenerStore::addListener().
+    explicit ListenerHandle(ctr::detail::ListenerStore* store,
+                            std::size_t token) noexcept
+        : store_(store), tokenValue_(token) {}
+
+    ctr::detail::ListenerStore* store_ = nullptr;
+    std::size_t                 tokenValue_ = 0;
 };
 
 } // namespace ctr

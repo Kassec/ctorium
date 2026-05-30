@@ -69,6 +69,26 @@ public:
     }
 
     /**
+     * @brief Updates the single-unnamed fast-path entry for `typeId` after a post-sort insertion.
+     *
+     * Call after `insertCandidate` when `finalized_` is true (i.e. from `registerContextBean`).
+     * Extends `singleUnnamed_` if `typeId` exceeds its current size.  Sets the entry to the
+     * sole unnamed candidate if exactly one exists; leaves `kInvalidDescriptorId` otherwise.
+     *
+     * @param typeId TypeId whose unnamed fast-path entry must be refreshed.
+     */
+    void updateSingleUnnamed(TypeId typeId) {
+        const auto idx = static_cast<std::size_t>(typeId);
+        if (idx >= singleUnnamed_.size())
+            singleUnnamed_.resize(idx + 1, kInvalidDescriptorId);
+        const auto* candidates = candidatesFor(typeId, kUnnamed);
+        if (candidates && candidates->size() == 1)
+            singleUnnamed_[idx] = (*candidates)[0];
+        else
+            singleUnnamed_[idx] = kInvalidDescriptorId;
+    }
+
+    /**
      * @brief Flushes pending candidates into sorted flat_map entries, then sorts by priority.
      *
      * For each type's pending (NameId, DescriptorId) pairs:

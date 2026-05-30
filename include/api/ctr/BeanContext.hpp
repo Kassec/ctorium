@@ -16,7 +16,9 @@
 #include "Options.hpp"
 
 #ifndef CTORIUM_DYNAMIC_LINK
+#include <functional>
 #include <shared_mutex>
+#include <typeindex>
 #include "../../internal/detail/HashUtils.hpp"
 #endif
 
@@ -85,15 +87,17 @@ public:
     BeanContext& start();
 
     /**
-     * @brief Stops this context.
-     * @return Current context for chaining.
+     * @brief Stops this context and releases all resources (terminal operation).
+     *
+     * Destroys all beans in reverse construction order, releases scope and
+     * singleton stores, and removes this context's entry from the global table.
+     * Any reference to this context obtained via `resolveContext()` becomes
+     * dangling after this call returns.  A subsequent `resolveContext(key)` will
+     * create a new, unstarted context for the same key.
+     *
+     * After `stop()` returns, the caller must not access `*this` again.
      */
-    BeanContext& stop();
-
-    /**
-     * @brief Closes this context and releases runtime resources.
-     */
-    void close();
+    void stop();
 
     /**
      * @brief Resolves a bean by type.
@@ -111,23 +115,6 @@ public:
      */
     template <class T>
     Bean<T> resolve(named key);
-
-    /**
-     * @brief Resolves all beans compatible with type T.
-     * @tparam T Requested bean type.
-     * @return Typed tracked handles.
-     */
-    template <class T>
-    std::vector<Bean<T>> resolveAll();
-
-    /**
-     * @brief Resolves all beans compatible with type T and a named qualifier.
-     * @tparam T Requested bean type.
-     * @param key Named selector.
-     * @return Typed tracked handles.
-     */
-    template <class T>
-    std::vector<Bean<T>> resolveAll(named key);
 
     /**
      * @brief Sets the default named qualifier for type T.
@@ -221,6 +208,8 @@ protected:
     [[nodiscard]] ctr::detail::Registry& core() noexcept { return *registry_; }
 
     std::shared_ptr<ctr::detail::Registry> registry_;
+    /** Non-null only for ScopedContext instances; set in ScopedContext constructor body. */
+    ScopedContext* asScope_ = nullptr;
 #endif
 
 private:
@@ -232,6 +221,15 @@ private:
     std::unordered_map<std::string, std::unique_ptr<ScopedContext>,
                        ctr::detail::StringViewHash, std::equal_to<>> scopes_;
     std::shared_mutex scopesMutex_;
+
+    struct DeferredListener {
+        std::type_index                  typeIndex;
+        std::size_t                      phaseIndex;
+        std::function<void(const void*)> callback;
+        int                              priority;
+    };
+    std::vector<DeferredListener> deferredListeners_;
+    void flushDeferredListeners_();
 #endif
 };
 

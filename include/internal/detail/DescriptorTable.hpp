@@ -34,6 +34,19 @@ namespace ctr::detail {
 class DescriptorTable {
 public:
     /**
+     * @brief Reserves descriptor and lifetime storage for the `start()` build phase.
+     *
+     * Changes only vector capacity; descriptor order, existing ids, and contents are
+     * unchanged.
+     *
+     * @param count Expected descriptor count.
+     */
+    void reserve(std::size_t count) {
+        entries_.reserve(count);
+        lifetimes_.reserve(count);
+    }
+
+    /**
      * @brief Appends a descriptor and returns its stable dense identifier.
      *
      * Must be called only during `start()`, before the table is sealed.
@@ -61,6 +74,22 @@ public:
         assert(static_cast<std::size_t>(id) < lifetimes_.size()
             && "DescriptorId out of range");
         return lifetimes_[static_cast<std::size_t>(id)];
+    }
+
+    /**
+     * @brief Returns a mutable reference to the descriptor at `id`.
+     *
+     * Reserved for use during the `start()` build phase only (e.g. resolving
+     * `factoryMethodDescriptor` in Phase 2).  Must not be called after `start()`
+     * seals the table.
+     *
+     * @pre `id < size()` — violated id is a programming error; asserted in debug.
+     * @param id Valid `DescriptorId` obtained from a prior `append()` call.
+     */
+    [[nodiscard]] Descriptor& atMutable(DescriptorId id) noexcept {
+        assert(static_cast<std::size_t>(id) < entries_.size()
+            && "DescriptorId out of range");
+        return entries_[static_cast<std::size_t>(id)];
     }
 
     /**

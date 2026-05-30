@@ -1,16 +1,18 @@
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <vector>
 
 #include "../DescriptorId.hpp"
 #include "../SlotId.hpp"
+#include "../../api/ctr/Errors.hpp"
 
 namespace ctr::detail {
 
@@ -19,149 +21,117 @@ struct ResolutionContext;
 /**
  * @brief Storage for prototype bean instances with per-slot atomic reference counting.
  *
- * Prototypes are the only lifetime whose destruction is driven by handle reference
- * counting (specs-internal §2.4, ADR-O3).  Each instance occupies a `SlotId`-indexed
- * slot carrying its memory pointer and an atomic refcount.
+ * ### Slot reuse  (Treiber stack — ADR-O6, ABA fix A3)
+ * The freelist head is a 64-bit value encoding `(generation << 32) | slotId`.
+ * `reclaimSlot()` increments the per-slot generation counter before pushing;
+ * `allocate()` CASes on the full 64-bit value → ABA impossible.
  *
- * ### Reference-counting protocol  (ADR-O3 §2.4)
- * ```
- * retain  (Bean<T> copy):
- *   slot.refcount.fetch_add(1, relaxed)
+ * ### Chunked storage  (A7 — race-free lock-free reads)
+ * Slots are stored in fixed-size `Chunk` objects (`kChunkSize = 256` elements).
+ * Chunk pointers are held in a fixed-size `std::array<std::atomic<Chunk*>, kMaxChunks>`.
+ * This array itself never moves in memory.  Lock-free readers load chunk pointers with
+ * `acquire`; the writer (under `growMutex_`) stores with `release`.  This eliminates the
+ * data race that would occur if chunk pointers were stored in a `std::vector` (whose
+ * internal buffer can move on push_back).
  *
- * release (Bean<T> destroy):
- *   prev = releaseAcquire(slot)           // fetch_sub(release) + fence(acquire) if last
- *   if prev == 1:
- *     Registry::executeDestructionLifecycle(descId, mem)
- *     reclaimSlot(slot)
- * ```
- * This is the canonical two-phase shared-ownership protocol (same as `shared_ptr`
- * semantics but without the control-block overhead).
- *
- * ### Separation of responsibilities
- * This store manages memory slots and reference counts only.
- * `Registry` owns the full destruction lifecycle: preDestroy hook, C++ destructor,
- * listener dispatch, and `::operator delete`. The store never calls destructors.
- *
- * ### Data layout
- * Slot metadata (memory pointer, descId) is stored in a `std::deque<SlotMeta>`.
- * Per-slot refcounts are stored in a `std::deque<std::atomic<uint32_t>>`.
- * Per-slot Treiber-stack next-free links are stored in a
- * `std::deque<std::atomic<uint32_t>>`.  `std::deque` is used for all three because
- * `push_back` on `std::deque` does not invalidate existing element references or
- * pointers, making lock-free concurrent reads of live slots safe while new slots
- * are being grown under `growMutex_`.
- *
- * ### Slot reuse  (Treiber stack — ADR-O6)
- * Free slots are returned to a lock-free Treiber stack (`freelistHead_`, `nextFree_`)
- * and reused by subsequent `allocate()` calls.  Growing the slot table (when the
- * freelist is empty) is serialised by `growMutex_`, which is never held by `retain()`,
- * `releaseAcquire()`, or `activate()`.
- *
- * ### ABA invariant
- * `SlotId` carries no generation tag.  ABA is safe because a slot's refcount reaches
- * zero — and `reclaimSlot` is therefore called — only after `executeDestructionLifecycle`
- * completes.  That lifecycle encompasses `preDestroy`, `~T()`, listener dispatch, and
- * `::operator delete`, a duration structurally incompatible with another thread being
- * simultaneously inside the CAS window for the same slot in `allocate()`.
+ * `kMaxChunks = 256` → max 65536 simultaneous prototype slots; trivial overhead.
  *
  * ### Thread safety
- * `retain()` and `releaseAcquire()` are lock-free: atomic operations only, no mutex.
- * `allocate()`, `reclaim()`, and `reclaimSlot()` are lock-free on the freelist hot path
- * (Treiber pop/push); they acquire `growMutex_` only on the slot-table growth path.
- * `releaseAll()` runs under exclusive root ownership (`Registry::stop()`); no concurrent access.
+ * `retain()` and `releaseAcquire()` are lock-free: atomic operations only.
+ * `allocate()`, `reclaim()`, and `reclaimSlot()` are lock-free on the freelist hot path;
+ * they acquire `growMutex_` only on the chunk-allocation growth path.
+ * `releaseAll()` runs under exclusive root ownership; no concurrent access.
  */
 class PrototypeStore {
 public:
     /**
      * @brief Phase 1 of two-phase prototype materialization.
      *
-     * Acquires a free slot via lock-free Treiber pop, or grows the slot table under
-     * `growMutex_` when the freelist is empty, and records the pre-allocated memory.
-     * The slot is not yet live (refcount remains 0); no instance is constructed.
-     * Memory must be allocated by the caller before this call.
-     *
-     * @param descId Descriptor for the bean being materialised.
-     * @param mem    Pre-allocated heap memory (caller owns until activate() or reclaim()).
+     * Acquires a free slot via lock-free ABA-safe Treiber pop, or allocates a new
+     * chunk under `growMutex_` when the freelist is empty.
+     * The slot is not yet live (refcount remains 0).
      */
     [[nodiscard]] SlotId allocate(DescriptorId descId, void* mem) {
-        // Lock-free pop from Treiber stack.
-        std::uint32_t head = freelistHead_.load(std::memory_order_acquire);
-        while (head != kInvalidSlotId) {
-            const std::uint32_t next = nextFree_[head].load(std::memory_order_relaxed);
-            if (freelistHead_.compare_exchange_weak(head, next,
+        // Lock-free pop from ABA-safe Treiber stack.
+        std::uint64_t head = freelistHead_.load(std::memory_order_acquire);
+        while ((head & 0xFFFF'FFFFu) != static_cast<std::uint64_t>(kInvalidSlotId)) {
+            const std::uint32_t slotId =
+                static_cast<std::uint32_t>(head & 0xFFFF'FFFFu);
+            const std::size_t offset = slotId % kChunkSize;
+            Chunk* chunk = chunks_[slotId / kChunkSize].load(std::memory_order_acquire);
+            const std::uint32_t next =
+                chunk->nextFree[offset].load(std::memory_order_relaxed);
+            if (freelistHead_.compare_exchange_weak(
+                    head, static_cast<std::uint64_t>(next),
                     std::memory_order_release, std::memory_order_acquire)) {
-                metas_[head] = {mem, descId};
-                return head;
+                chunk->metas[offset] = {mem, descId};
+                return static_cast<SlotId>(slotId);
             }
-            // CAS failure reloaded head; retry.
         }
-        // Freelist empty — grow under mutex.
+        // Freelist empty — ensure the target chunk exists, then claim the slot.
         std::lock_guard lock(growMutex_);
-        const SlotId id = static_cast<SlotId>(metas_.size());
-        metas_.push_back({mem, descId});
-        refcounts_.emplace_back(0);
-        nextFree_.emplace_back(kInvalidSlotId);
-        return id;
+#ifdef CTORIUM_PROTOTYPE_MAX_SLOTS
+        // C3: enforce user-configured slot cap before growing the table.
+        if (slotCount_ >= static_cast<std::size_t>(CTORIUM_PROTOTYPE_MAX_SLOTS)) {
+            throw ctr::ResolutionError(
+                "PrototypeStore: CTORIUM_PROTOTYPE_MAX_SLOTS limit reached; "
+                "cannot allocate a new prototype slot.");
+        }
+#endif
+        const std::size_t id = slotCount_++;
+        const std::size_t chunkIdx = id / kChunkSize;
+        const std::size_t offset = id % kChunkSize;
+        assert(chunkIdx < kMaxChunks && "PrototypeStore: exceeded kMaxChunks slots");
+        Chunk* chunk = chunks_[chunkIdx].load(std::memory_order_acquire);
+        if (chunk == nullptr) {
+            auto owned = std::make_unique<Chunk>();
+            chunk = owned.get();
+            chunks_[chunkIdx].store(chunk, std::memory_order_release);
+            ownedChunks_.push_back(std::move(owned));
+        }
+        chunk->metas[offset] = {mem, descId};
+        // refcounts, nextFree, generation are value-initialised to 0 by Chunk ctor.
+        return static_cast<SlotId>(id);
     }
 
-    /**
-     * @brief Phase 3a of two-phase prototype materialization (success path).
-     *
-     * Sets the refcount to 1. The slot becomes live after this call.
-     * May be called outside any lock: the slot is not yet reachable by other threads.
-     *
-     * @param id SlotId returned by allocate().
-     */
+    /** @brief Sets the refcount to 1 (slot becomes live). */
     void activate(SlotId id) noexcept {
-        refcounts_[id].store(1, std::memory_order_relaxed);
+        refcountAt(id).store(1, std::memory_order_relaxed);
     }
 
     /**
-     * @brief Phase 3b of two-phase prototype materialization (failure path).
-     *
-     * Returns the slot to the Treiber freelist via lock-free push. The caller must
-     * free the heap memory (via `::operator delete`) before calling this method.
-     *
-     * @param id SlotId returned by allocate().
+     * @brief Phase 3b: failure path — returns the slot to the Treiber freelist.
+     * Does NOT increment the generation counter (only reclaimSlot does).
      */
     void reclaim(SlotId id) noexcept {
-        metas_[id].memory = nullptr;
-        // Lock-free push onto Treiber stack.
-        std::uint32_t head = freelistHead_.load(std::memory_order_relaxed);
+        const std::size_t offset = id % kChunkSize;
+        Chunk* chunk = chunks_[id / kChunkSize].load(std::memory_order_acquire);
+        chunk->metas[offset].memory = nullptr;
+        const std::uint32_t generation = chunk->generation[offset];
+        std::uint64_t head = freelistHead_.load(std::memory_order_relaxed);
         do {
-            nextFree_[id].store(head, std::memory_order_relaxed);
-        } while (!freelistHead_.compare_exchange_weak(head, id,
-                    std::memory_order_release, std::memory_order_relaxed));
+            chunk->nextFree[offset].store(
+                static_cast<std::uint32_t>(head & 0xFFFF'FFFFu),
+                std::memory_order_relaxed);
+        } while (!freelistHead_.compare_exchange_weak(
+            head,
+            (static_cast<std::uint64_t>(generation) << 32)
+                | static_cast<std::uint64_t>(id),
+            std::memory_order_release, std::memory_order_relaxed));
     }
 
-    /**
-     * @brief Increments the reference count for the given slot.
-     *
-     * Called by the `Bean<T>` copy constructor.  Uses `memory_order_relaxed` because
-     * the slot is guaranteed live (refcount ≥ 1) before this call — the copy source
-     * holds a reference, so no synchronization with the last decrement is needed here.
-     * Lock-free: acquires no mutex.
-     *
-     * @pre Slot is live (refcount ≥ 1 at call time).
-     * @param id Valid `SlotId` returned by `allocate()` after `activate()`.
-     */
+    /** @brief Increments the reference count (Bean<T> copy). Lock-free. */
     void retain(SlotId id) noexcept {
-        assert(id < metas_.size() && metas_[id].memory != nullptr);
-        refcounts_[id].fetch_add(1, std::memory_order_relaxed);
+        assert(static_cast<std::size_t>(id) < slotCount_
+            && metaAt(id).memory != nullptr);
+        refcountAt(id).fetch_add(1, std::memory_order_relaxed);
     }
 
-    /**
-     * @brief Returns the raw instance pointer for the given live slot.
-     *
-     * Used by `Bean<T>::operator->` Form 1 fast path.
-     * Valid as long as the slot's refcount is > 0.
-     *
-     * @param id Valid, live `SlotId`.
-     * @return Non-null pointer to the prototype instance.
-     */
+    /** @brief Returns the raw instance pointer for the given live slot. */
     [[nodiscard]] void* pointerAt(SlotId id) const noexcept {
-        assert(id < metas_.size() && metas_[id].memory != nullptr);
-        return metas_[id].memory;
+        assert(static_cast<std::size_t>(id) < slotCount_
+            && metaAt(id).memory != nullptr);
+        return metaAt(id).memory;
     }
 
     struct SlotMetaSnapshot {
@@ -169,38 +139,22 @@ public:
         DescriptorId descId;
     };
 
-    /**
-     * @brief Returns the memory pointer and DescriptorId for a slot in one access.
-     *
-     * Groups the two `metas_[id]` reads (`pointerAt` + `descriptorIdAt`) into a
-     * single struct copy, improving locality on the prototype release path.
-     * Called by `Bean<T>::releaseIfPrototype()` after `releaseAcquire()` returns true.
-     *
-     * @param id Valid `SlotId` (live or being reclaimed; memory must not be null).
-     */
+    /** @brief Returns memory pointer and DescriptorId in one access. */
     [[nodiscard]] SlotMetaSnapshot slotMetaAt(SlotId id) const noexcept {
-        assert(id < metas_.size());
-        const auto& m = metas_[id];
+        assert(static_cast<std::size_t>(id) < slotCount_);
+        const auto& m = metaAt(id);
         return {m.memory, m.descId};
     }
 
     /**
      * @brief Phase 1 of two-phase prototype release: decrements refcount atomically.
      *
-     * Implements the ADR-O3 two-phase release protocol:
-     *  1. `fetch_sub(1, release)` — publishes all prior writes to the object.
-     *  2. If the previous count was 1 (now zero): `atomic_thread_fence(acquire)` to
-     *     synchronize with all prior retains, then returns `true`.
-     * Lock-free: acquires no mutex.
-     *
-     * @pre Slot is live (refcount ≥ 1 at call time).
-     * @param id Valid `SlotId`.
-     * @return `true` if this was the last reference and the caller must destroy the instance.
+     * @return `true` if this was the last reference.
      */
     [[nodiscard]] bool releaseAcquire(SlotId id) noexcept {
-        assert(id < metas_.size());
+        assert(static_cast<std::size_t>(id) < slotCount_);
         const std::uint32_t prev =
-            refcounts_[id].fetch_sub(1, std::memory_order_release);
+            refcountAt(id).fetch_sub(1, std::memory_order_release);
         if (prev == 1) {
             std::atomic_thread_fence(std::memory_order_acquire);
             return true;
@@ -208,67 +162,60 @@ public:
         return false;
     }
 
-    /**
-     * @brief Returns the `DescriptorId` recorded for the given slot.
-     *
-     * Read-only, no lock required (safe after `allocate()` and before `reclaimSlot()`).
-     *
-     * @param id Valid `SlotId`.
-     */
+    /** @brief Returns the DescriptorId for the given slot. */
     [[nodiscard]] DescriptorId descriptorIdAt(SlotId id) const noexcept {
-        assert(id < metas_.size());
-        return metas_[id].descId;
+        assert(static_cast<std::size_t>(id) < slotCount_);
+        return metaAt(id).descId;
     }
 
     /**
-     * @brief Returns the raw instance pointer for the given slot, or `nullptr` for freed slots.
-     *
-     * Non-asserting sibling of `pointerAt()` for use in `Registry::stop()` which must
-     * tolerate freed/reclaimed slots (memory == nullptr) without tripping the assert.
-     *
-     * @param id Slot index; returns `nullptr` if out of range or if memory was reclaimed.
+     * @brief Returns the raw instance pointer, or `nullptr` for freed/out-of-range slots.
+     * Used by `Registry::stop()` under exclusive ownership.
      */
     [[nodiscard]] void* memoryAt(SlotId id) const noexcept {
-        if (static_cast<std::size_t>(id) >= metas_.size()) return nullptr;
-        return metas_[id].memory;
+        if (static_cast<std::size_t>(id) >= slotCount_) return nullptr;
+        const Chunk* c = chunks_[id / kChunkSize].load(std::memory_order_relaxed);
+        if (c == nullptr) return nullptr;
+        return c->metas[id % kChunkSize].memory;
     }
 
     /**
      * @brief Phase 2 of two-phase prototype release: returns the slot to the freelist.
      *
-     * Must be called by the caller after `releaseAcquire()` returned `true`,
-     * and only after `Registry::executeDestructionLifecycle` has freed the memory.
-     * Lock-free: uses a Treiber push. Never calls any destructor or `::operator delete` —
-     * the caller (Registry) is responsible for those operations.
-     *
-     * @param id Valid `SlotId` whose memory was freed by the caller.
+     * Increments per-slot generation counter first (A3: ABA prevention).
      */
     void reclaimSlot(SlotId id) noexcept {
-        metas_[id].memory = nullptr;
-        // Lock-free push onto Treiber stack.
-        std::uint32_t head = freelistHead_.load(std::memory_order_relaxed);
+        const std::size_t offset = id % kChunkSize;
+        Chunk* chunk = chunks_[id / kChunkSize].load(std::memory_order_acquire);
+        chunk->metas[offset].memory = nullptr;
+        const std::uint32_t generation = ++chunk->generation[offset];
+        std::uint64_t head = freelistHead_.load(std::memory_order_relaxed);
         do {
-            nextFree_[id].store(head, std::memory_order_relaxed);
-        } while (!freelistHead_.compare_exchange_weak(head, id,
-                    std::memory_order_release, std::memory_order_relaxed));
+            chunk->nextFree[offset].store(
+                static_cast<std::uint32_t>(head & 0xFFFF'FFFFu),
+                std::memory_order_relaxed);
+        } while (!freelistHead_.compare_exchange_weak(
+            head,
+            (static_cast<std::uint64_t>(generation) << 32)
+                | static_cast<std::uint64_t>(id),
+            std::memory_order_release, std::memory_order_relaxed));
     }
 
     /**
-     * @brief Clears all slot metadata without calling any destructors or freeing memory.
+     * @brief Clears all slot metadata without calling destructors.
      *
-     * Called by `Registry::stop()` after every live slot has been destroyed via
-     * `executeDestructionLifecycle`. Empties `metas_`, `refcounts_`, `nextFree_`, and
-     * resets `freelistHead_`.  Must run under exclusive root ownership; no concurrent access.
+     * Called by `Registry::stop()` under exclusive root ownership.
      */
     void releaseAll() noexcept {
-        metas_.clear();
-        refcounts_.clear();
-        nextFree_.clear();
-        freelistHead_.store(kInvalidSlotId, std::memory_order_relaxed);
+        ownedChunks_.clear();
+        for (auto& ap : chunks_) ap.store(nullptr, std::memory_order_relaxed);
+        slotCount_ = 0;
+        freelistHead_.store(
+            static_cast<std::uint64_t>(kInvalidSlotId), std::memory_order_relaxed);
     }
 
     /** @brief Total number of allocated slots (live + free). */
-    [[nodiscard]] std::size_t slotCount() const noexcept { return metas_.size(); }
+    [[nodiscard]] std::size_t slotCount() const noexcept { return slotCount_; }
 
 private:
     struct SlotMeta {
@@ -276,26 +223,72 @@ private:
         DescriptorId descId = 0;
     };
 
-    /// Slot metadata.  Indexed by SlotId.  `std::deque` provides address stability on
-    /// push_back, allowing lock-free reads of live slots concurrent with slot-table growth.
-    std::deque<SlotMeta> metas_;
+    // -------------------------------------------------------------------------
+    // Chunked storage  (A7 — lock-free safe)
+    // -------------------------------------------------------------------------
 
-    /// Per-slot atomic refcounts.  `std::deque` preserves pointer/reference stability on
-    /// push_back (std::atomic is non-movable).
-    /// Cache-line padding (alignas(64)) may be reintroduced only if a benchmark
-    /// demonstrates measurable false-sharing contention; the benchmark reference is
-    /// required in the comment at that point.
-    std::deque<std::atomic<std::uint32_t>> refcounts_;
+    static constexpr std::size_t kChunkSize = 256;
+    static constexpr std::size_t kMaxChunks = 256; // max 65536 slots
 
-    /// Per-slot Treiber-stack next-free links.  `nextFree_[i]` holds the index of the
-    /// next free slot in the stack when slot `i` is in the freelist, or `kInvalidSlotId`.
-    std::deque<std::atomic<std::uint32_t>> nextFree_;
+    /**
+     * Fixed-size chunk of kChunkSize slots.  Heap-allocated; pointer stored
+     * atomically in chunks_[].  Value-initialised: atomics = 0, generation = 0.
+     */
+    struct Chunk {
+        SlotMeta              metas[kChunkSize];
+        std::atomic<uint32_t> refcounts[kChunkSize];
+        std::atomic<uint32_t> nextFree[kChunkSize];
+        uint32_t              generation[kChunkSize];
+    };
 
-    /// Head of the Treiber freelist.  `kInvalidSlotId` when the freelist is empty.
-    std::atomic<std::uint32_t> freelistHead_{kInvalidSlotId};
+    // Chunk pointers: fixed-size atomic array — never reallocates.
+    // Lock-free readers load with acquire; grower stores with release.
+    std::array<std::atomic<Chunk*>, kMaxChunks> chunks_{};
 
-    /// Serialises slot-table growth (push_back on metas_, refcounts_, nextFree_).
-    /// Never acquired by retain(), releaseAcquire(), or activate().
+    // Ownership of live chunks; only accessed under growMutex_ or in releaseAll().
+    std::vector<std::unique_ptr<Chunk>> ownedChunks_;
+
+    // -------------------------------------------------------------------------
+    // Accessors (load chunk pointer with acquire for lock-free readers)
+    // -------------------------------------------------------------------------
+
+    SlotMeta& metaAt(std::size_t id) noexcept {
+        return chunks_[id / kChunkSize].load(std::memory_order_acquire)
+                   ->metas[id % kChunkSize];
+    }
+    const SlotMeta& metaAt(std::size_t id) const noexcept {
+        return chunks_[id / kChunkSize].load(std::memory_order_acquire)
+                   ->metas[id % kChunkSize];
+    }
+    std::atomic<uint32_t>& refcountAt(std::size_t id) noexcept {
+        return chunks_[id / kChunkSize].load(std::memory_order_acquire)
+                   ->refcounts[id % kChunkSize];
+    }
+    std::atomic<uint32_t>& nextFreeAt(std::size_t id) noexcept {
+        return chunks_[id / kChunkSize].load(std::memory_order_acquire)
+                   ->nextFree[id % kChunkSize];
+    }
+    uint32_t& generationAt(std::size_t id) noexcept {
+        return chunks_[id / kChunkSize].load(std::memory_order_acquire)
+                   ->generation[id % kChunkSize];
+    }
+
+    // -------------------------------------------------------------------------
+    // State
+    // -------------------------------------------------------------------------
+
+    /// Total allocated slots.  Protected by growMutex_ on write;
+    /// read lock-free only in stop() (exclusive) and in debug asserts (benign).
+    std::size_t slotCount_ = 0;
+
+    /// ABA-safe Treiber freelist head: `(generation << 32) | slotId`.
+    /// Empty sentinel: `static_cast<uint64_t>(kInvalidSlotId)` (bits 32-63 = 0).
+    std::atomic<std::uint64_t> freelistHead_{
+        static_cast<std::uint64_t>(kInvalidSlotId)};
+
+    /// Serialises chunk allocation (ownedChunks_ push_back, slotCount_ increment,
+    /// chunks_[idx] release-store).  Never acquired by retain(), releaseAcquire(),
+    /// or activate().
     std::mutex growMutex_;
 };
 

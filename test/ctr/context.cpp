@@ -27,20 +27,20 @@ TEST(BeanContextIdentity, DefaultKeyEquivalentToEmptyString) {
     auto& def   = ctr::BeanContext::resolveContext();
     auto& empty = ctr::BeanContext::resolveContext("");
     EXPECT_EQ(&def, &empty);
-    def.close();
+    def.stop();
 }
 
-TEST(BeanContextIdentity, CloseAndReopenGivesFreshContext) {
-    // After close(), the same key produces a new context that has not been
+TEST(BeanContextIdentity, StopAndReopenGivesFreshContext) {
+    // After stop(), the same key produces a new context that has not been
     // started: discover<>() must not raise ContextStateError.
     {
         auto& ctx = ctr::BeanContext::resolveContext("ctx-reopen");
         ctx.discover<^^context_fixture>().start();
-        ctx.close();
+        ctx.stop();
     }
     auto& ctx2 = ctr::BeanContext::resolveContext("ctx-reopen");
     EXPECT_NO_THROW(ctx2.discover<^^context_fixture>());
-    ctx2.close();
+    ctx2.stop();
 }
 
 // ─── Self-injectable BeanContext (§5.5) ───────────────────────────────────────
@@ -50,7 +50,7 @@ TEST(BeanContextSelfInjectable, ResolvedHandleIsValid) {
     ctx.discover<^^context_fixture>().start();
     auto bean = ctx.resolve<ctr::BeanContext>();
     EXPECT_NE(bean.operator->(), nullptr);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanContextSelfInjectable, ResolveReturnsSelf) {
@@ -59,14 +59,14 @@ TEST(BeanContextSelfInjectable, ResolveReturnsSelf) {
     ctx.discover<^^context_fixture>().start();
     auto bean = ctx.resolve<ctr::BeanContext>();
     EXPECT_EQ(bean.operator->(), &ctx);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanContextSelfInjectable, ResolveBeforeStartRaisesContextStateError) {
     auto& ctx = ctr::BeanContext::resolveContext("ctx-self-pre-start");
     ctx.discover<^^context_fixture>();
     EXPECT_THROW(ctx.resolve<ctr::BeanContext>(), ctr::ContextStateError);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanContextSelfInjectable, ContextInjectableIntoBean) {
@@ -76,5 +76,41 @@ TEST(BeanContextSelfInjectable, ContextInjectableIntoBean) {
     ctx.discover<^^context_fixture>().start();
     auto bean = ctx.resolve<context_fixture::ContextAware>();
     EXPECT_EQ(bean->ctx.operator->(), &ctx);
-    ctx.close();
+    ctx.stop();
+}
+
+TEST(BeanContextStop, StopPreventsResolve) {
+    // After stop() (terminal), the context reference becomes dangling.
+    // Verify: a fresh context for the same key is unstarted → resolve throws.
+    {
+        auto& ctx = ctr::BeanContext::resolveContext("ctx-stop");
+        ctx.discover<^^context_fixture>().start();
+        ctx.stop(); // terminal; ctx reference is now dangling
+    }
+    auto& fresh = ctr::BeanContext::resolveContext("ctx-stop");
+    EXPECT_THROW(fresh.resolve<context_fixture::Svc>(), ctr::ContextStateError);
+    fresh.stop();
+}
+
+TEST(BeanContextStop, StopIsTerminal) {
+    // stop() releases the global-table entry; a subsequent resolveContext
+    // on the same key returns a fresh, unstarted context.
+    {
+        auto& ctx = ctr::BeanContext::resolveContext("ctx-stop-close");
+        ctx.discover<^^context_fixture>().start();
+        ctx.stop(); // terminal; ctx reference is now dangling
+    }
+    auto& fresh = ctr::BeanContext::resolveContext("ctx-stop-close");
+    EXPECT_THROW(fresh.resolve<context_fixture::Svc>(), ctr::ContextStateError);
+    fresh.stop();
+}
+
+TEST(BeanContextDiscover, MultipleDiscoverCallsDeduplicateCandidates) {
+    auto& ctx = ctr::BeanContext::resolveContext("ctx-multi-discover");
+    ctx.discover<^^context_fixture>();
+    ctx.discover<^^context_fixture>();
+    ctx.start();
+    // If deduplication fails, two candidates with equal priority would cause ambiguity.
+    EXPECT_NO_THROW(ctx.resolve<context_fixture::Svc>());
+    ctx.stop();
 }

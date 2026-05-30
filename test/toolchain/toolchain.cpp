@@ -1078,6 +1078,46 @@ int main() {
 }
 )cpp"
         },
+        {
+            "MetaExtractScopedParamName",
+            R"cpp(
+// Reproduces the exact path BeanDescriptorGen::makeParamDescriptors uses for
+// [[=ctr::scoped{.name=...}]]: extract a const char* member from a PARAMETER
+// annotation in consteval context. Validates that scoped name extraction works
+// (mirrors MetaAnnotationsOfParameter, which does the same for an int member).
+// The name uses define_static_string, matching the normalized provenance the
+// descriptor builder relies on.
+#include <meta>
+#include <string_view>
+struct sc { const char* name = nullptr; };
+struct dep {};
+struct sample {
+    explicit sample([[=sc{.name = std::define_static_string("db")}]] dep) {}
+};
+consteval bool check() {
+    static constexpr auto members = std::define_static_array(
+        std::meta::members_of(^^sample, std::meta::access_context::unchecked()));
+    template for (constexpr auto member : members) {
+        if constexpr (std::meta::is_constructor(member)) {
+            static constexpr auto params = std::define_static_array(std::meta::parameters_of(member));
+            if constexpr (params.size() == 1) {
+                static constexpr auto anns = std::define_static_array(
+                    std::meta::annotations_of(params[0]));
+                if constexpr (anns.size() == 1) {
+                    constexpr auto val = std::meta::extract<sc>(anns[0]);
+                    return std::string_view(val.name) == std::string_view("db");
+                }
+            }
+        }
+    }
+    return false;
+}
+int main() {
+    static_assert(check());
+    return 0;
+}
+)cpp"
+        },
     };
 
     const auto tempDirectory = toolchain_check::createTempDirectory();

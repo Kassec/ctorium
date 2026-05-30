@@ -18,8 +18,8 @@ struct prototype {
 struct singleton {
     /** Priority used to arbitrate among candidates. */
     int priority = 0;
-    /** Whether creation can be deferred until first resolution. */
-    bool lazy = false;
+    /** Whether creation is deferred until first resolution. true = lazy (default), false = eager. */
+    bool lazy = true;
 };
 
 /**
@@ -46,12 +46,12 @@ struct threadLocal {
 // named is an aggregate (no user-provided constructors) so that:
 //  - it is a structural type and can be used as an annotation value (P2996), and
 //  - GCC's reflect_constant can extract it from annotation info.
-// std::string_view is structural ({const char*, size_t}, both structural members)
-// and is extracted reliably by GCC. String literals convert implicitly to
-// std::string_view; define_static_string is not required at annotation sites.
+// const char* is a structural type ([temp.param]); std::string_view is NOT structural
+// in GCC 16.1.0 (private internal members disqualify it). String literals and
+// define_static_string results both produce static-duration const char* values.
 struct named {
-    /** Name key; an empty string_view means the unnamed key. */
-    std::string_view name{};
+    /** Name key; nullptr or "" means the unnamed key. */
+    const char* name = nullptr;
 };
 
 /**
@@ -77,7 +77,7 @@ struct preDestroy {};
  */
 struct scoped {
     /** Name of the scope the session dependency is resolved against. */
-    std::string_view name{};
+    const char* name = nullptr;
 };
 
 } // namespace ctr

@@ -17,6 +17,7 @@
 // Forward declarations to allow method signatures without circular includes.
 namespace ctr { template <class> class Bean; }
 namespace ctr { class BeanContext; }
+namespace ctr { class ScopedContext; }
 
 #include "../ContributedDescriptor.hpp"
 #include "../Descriptor.hpp"
@@ -142,18 +143,21 @@ public:
      * @throws Any exception from eager user constructors / hooks.
      */
     void start(BeanContext* ctx) {
-        std::lock_guard lock(writeLock_);
+        std::unique_lock<std::mutex> lock(writeLock_);
         if (started_.load(std::memory_order_relaxed)) return;
 
         // --- Phase 1: merge contributions ---
         // Local identity → DescriptorId map, used only during start().
         std::unordered_map<Identity, DescriptorId> identityMap;
         std::vector<std::pair<DescriptorId, Identity>> factoryLinks;
+        std::vector<std::pair<DescriptorId, Identity>> aliasLinks; // exposed alias → primary
         {
             std::size_t total = 0;
             for (const auto& [span, opts] : pending_) total += span.size();
             identityMap.reserve(total);
             factoryLinks.reserve(total);
+            aliasLinks.reserve(total);
+            descriptors_.reserve(total + pendingRuntimeSingletons_.size() + 1);
         }
 
         for (const auto& [span, opts] : pending_) {
@@ -179,12 +183,29 @@ public:
                     d.preDestroy        = cd.preDestroy;
                     d.size              = cd.size;
                     d.align             = cd.align;
+                    d.lazy              = cd.lazy;
                     d.allocAndConstruct = cd.allocAndConstruct;
                     d.dealloc           = cd.dealloc;
                     d.factoryMethodDescriptor = kInvalidDescriptorId; // resolved in Phase 2
+                    d.adjustToExposed  = cd.adjustToExposed;
+                    d.adjustToConcrete = cd.adjustToConcrete;
+                    // primaryDescriptor: set to self for primaries; resolved in Phase 2 for aliases.
+                    d.primaryDescriptor = kInvalidDescriptorId;
+                    // Bean-metadata fields.
+                    d.observedTypeGetter = cd.exposedTypeInfo;
+                    d.exactTypeGetter    = cd.concreteTypeInfo;
+                    d.nameStr            = cd.beanName;
+                    d.reflectiveData     = cd.reflectiveData;
 
                     const DescriptorId id = descriptors_.append(std::move(d));
                     it->second = id;
+
+                    if (!cd.isExposedAlias) {
+                        // Primary: link to self.
+                        descriptors_.atMutable(id).primaryDescriptor = id;
+                    } else if (cd.aliasOfPrimaryIdentity != kNoFactoryMethod) {
+                        aliasLinks.push_back({id, cd.aliasOfPrimaryIdentity});
+                    }
 
                     if (cd.factoryMethodIdentity != kNoFactoryMethod) {
                         factoryLinks.push_back({id, cd.factoryMethodIdentity});
@@ -193,9 +214,57 @@ public:
                     // Register in the TypeIndex using locals captured before the move.
                     typeIndex_.insertCandidate(exposedType, name, id);
                 }
-                // Duplicate: no error — duplicate contributions are expected and correct.
+                // Duplicate: verify key fields match (guards against hash collision / bugs).
+                {
+                    const Descriptor& existing = descriptors_.at(it->second);
+                    if (std::string_view{typeInterning_.nameOf(existing.exposedType)}
+                                != std::string_view{cd.exposedTypeName}
+                            || nameInterning_.nameOf(existing.name)
+                                != std::string_view{cd.beanName}
+                            || existing.lifetime != cd.lifetime) {
+                        throw ctr::ConfigurationError(
+                            std::string("Registry::start(): Identity collision between '"
+                                )
+                            + cd.exposedTypeName + "' and existing '"
+                            + typeInterning_.nameOf(existing.exposedType)
+                            + "' — divergent exposedTypeName, beanName, or lifetime "
+                              "for the same Identity value.");
+                    }
+                }
             }
         }
+
+        // --- Phase 1.5: process pending runtime singleton bindings ---
+        // Processed before sortAllCandidates() so they participate in priority sort.
+        struct BoundAtStart { DescriptorId descId; void* instance; TypeId exposedTypeId; };
+        std::vector<BoundAtStart> runtimeBound;
+        runtimeBound.reserve(pendingRuntimeSingletons_.size());
+        for (auto& pb : pendingRuntimeSingletons_) {
+            const TypeId typeId = typeInterning_.internByName(pb.typeName, pb.typeInfoGetter);
+            Descriptor d;
+            d.exposedType            = typeId;
+            d.concreteType           = typeId;
+            d.name                   = pb.nameId;
+            d.priority               = pb.priority;
+            d.lifetime               = Lifetime::Singleton;
+            d.origin                 = Origin::RuntimeBinding;
+            d.construct              = [](void*, void*) noexcept {};
+            d.destroy                = pb.destroy;
+            d.postConstruct          = nullptr;
+            d.preDestroy             = pb.preDestroy;
+            d.size                   = pb.size;
+            d.align                  = pb.align;
+            d.allocAndConstruct      = nullptr;
+            d.dealloc                = pb.dealloc;
+            d.factoryMethodDescriptor = kInvalidDescriptorId;
+            d.observedTypeGetter     = pb.typeInfoGetter;
+            d.exactTypeGetter        = pb.typeInfoGetter;
+            d.nameStr                = pb.typeName;
+            const DescriptorId descId = descriptors_.append(std::move(d));
+            typeIndex_.insertCandidate(typeId, pb.nameId, descId);
+            runtimeBound.push_back({descId, pb.instance, typeId});
+        }
+        pendingRuntimeSingletons_.clear();
 
         // --- Phase 2: resolve factory method identities → DescriptorIds ---
         for (const auto& [beanId, factoryMethodIdentity] : factoryLinks) {
@@ -207,8 +276,20 @@ public:
             }
             // Write factoryMethodDescriptor into the already-appended Descriptor.
             // Safe: descriptors_ is append-only during start(); the reference is stable.
-            const_cast<Descriptor&>(descriptors_.at(beanId))
-                .factoryMethodDescriptor = fit->second;
+            descriptors_.atMutable(beanId).factoryMethodDescriptor = fit->second;
+        }
+
+        // --- Phase 2.5: resolve exposed alias → primary DescriptorId ---
+        for (const auto& [aliasId, primaryIdentity] : aliasLinks) {
+            const auto fit = identityMap.find(primaryIdentity);
+            if (fit == identityMap.end()) {
+                throw ctr::ConfigurationError(
+                    std::string("Registry::start(): primary descriptor not found for "
+                                "exposed alias '")
+                    + typeInterning_.nameOf(descriptors_.at(aliasId).exposedType)
+                    + "'.");
+            }
+            descriptors_.atMutable(aliasId).primaryDescriptor = fit->second;
         }
 
         // --- Phase 3: sort candidate vectors by descending priority ---
@@ -248,10 +329,58 @@ public:
             }
         }
 
+        // --- Phase 3.75: session/scoped injection graph validation ---
+        // (a) [[=ctr::scoped{...}]] on non-session target → ConfigurationError.
+        // (b) session dep injected into non-session consumer without [[=ctr::scoped]] → ConfigurationError.
+        for (const auto& [span, opts] : pending_) {
+            for (const ContributedDescriptor& cd : span) {
+                if (!cd.params || cd.paramCount == 0) continue;
+                for (std::size_t pi = 0; pi < cd.paramCount; ++pi) {
+                    const ContributedParamDescriptor& p = cd.params[pi];
+                    const TypeId injTypeId =
+                        typeInterning_.lookupByTypeIndex(std::type_index(p.injectedTypeInfo()));
+                    if (injTypeId == kInvalidTypeId) continue;
+                    const std::vector<DescriptorId>* injCandidates =
+                        typeIndex_.candidatesFor(injTypeId, kUnnamed);
+                    if (!injCandidates || injCandidates->empty()) continue;
+                    const Lifetime injLt = descriptors_.at((*injCandidates)[0]).lifetime;
+                    // (a): [[=ctr::scoped]] on a non-session dependency target
+                    if (p.hasScopedAnnotation && injLt != Lifetime::Session) {
+                        throw ctr::ConfigurationError(
+                            std::string("start(): [[=ctr::scoped]] targets non-session bean '")
+                            + (p.injectedTypeName ? p.injectedTypeName : "?") + "'.");
+                    }
+                    // (b): session dep injected into a non-session consumer without [[=ctr::scoped]]
+                    if (!p.hasScopedAnnotation
+                            && injLt == Lifetime::Session
+                            && cd.lifetime != Lifetime::Session) {
+                        throw ctr::ConfigurationError(
+                            std::string("start(): session bean '")
+                            + (p.injectedTypeName ? p.injectedTypeName : "?")
+                            + "' injected into a non-session consumer without [[=ctr::scoped]].");
+                    }
+                }
+            }
+        }
+
         // --- Phase 4: register BeanContext bean (resizes singletons_), freeze TypeId space ---
         // BeanContext must be interned before freeze(); defaults_ and started_ publish after.
         // singletons_ is resized once inside registerContextBean, after its descriptor is appended.
+        // The resize covers all descriptors including Phase 1.5 runtime bindings.
+        // registerContextBean does NOT dispatch lifecycle events; dispatch happens below,
+        // after the lock is released (A5: prevent deadlock from listeners calling writeLock_).
         registerContextBean(ctx);
+        const TypeId beanCtxTypeId = descriptors_.at(beanContextDescId_).exposedType;
+
+        // Store pre-start bound instances.
+        // Lifecycle dispatch (onInitialized/onCreated) is deferred to
+        // dispatchBoundSingletonLifecycle(), called by BeanContext::start() after
+        // flushing deferred listeners so that pre-start listeners observe the events.
+        for (const auto& rb : runtimeBound) {
+            singletons_.store(rb.descId, rb.instance);
+            startLifecyclePending_.push_back({rb.descId, rb.instance, rb.exposedTypeId});
+        }
+
         typeInterning_.freeze();
         defaults_.resize(typeInterning_.size());
 
@@ -259,25 +388,44 @@ public:
         // to threads that subsequently read started_ with memory_order_acquire.
         started_.store(true, std::memory_order_release);
         pending_.clear(); // Release contribution spans (no longer needed).
+
+        // A5: release writeLock_ before dispatching BeanContext lifecycle events so
+        // that listener callbacks can call resolve() or other registry operations
+        // without deadlocking on writeLock_.
+        lock.unlock();
+
+        ctr::AnyBean beanCtxBean;
+        beanCtxBean.object_         = static_cast<void*>(ctx);
+        beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
+        beanCtxBean.bits_.f1.descId = beanContextDescId_;
+        beanCtxBean.registry_       = this;
+        listeners_.dispatch(ListenerStore::phaseInitialized(), beanCtxTypeId, &beanCtxBean);
+        listeners_.dispatch(ListenerStore::phaseCreated(),     beanCtxTypeId, &beanCtxBean);
     }
 
     /**
      * @brief Permanently stops the registry and destroys all owned bean instances.
      *
-     * Destroys singletons in reverse construction order via `executeDestructionLifecycle`,
-     * then prototypes in reverse slot order.  Listeners are cleared last so that
-     * `onPreDestroy`/`onDestroyed` callbacks fire during the sweep.
+     * Destroys singletons, prototypes, and thread-local instances of still-alive
+     * threads in order (specs-api §8).  Listeners are cleared last so lifecycle
+     * callbacks fire throughout the sweep.
      * After this call the registry must not be used; `BeanContext::stop()` handles
      * the lifecycle contract at the public API level.
      */
     void stop() noexcept {
-        std::lock_guard lock(writeLock_);
+        // A5: mark stopped under writeLock_, then release before destructions so
+        // that listener callbacks fired during executeDestructionLifecycle can call
+        // remove() or inspect the context without deadlocking on writeLock_.
+        {
+            std::lock_guard lock(writeLock_);
+            if (!started_.load(std::memory_order_relaxed)) return; // already stopped
+            // Mark stopped first so that Bean<T> destructors triggered by d.destroy()
+            // see startedRelaxed()==false and skip releaseIfPrototype(), preventing
+            // double-destroy when a bean holds a Bean<T> member to another prototype.
+            started_.store(false, std::memory_order_relaxed);
+        }
 
-        // Mark stopped first so that Bean<T> destructors triggered by d.destroy()
-        // calls below see startedRelaxed()==false and skip releaseIfPrototype(),
-        // preventing double-destroy when a bean holds a Bean<T> member to another
-        // prototype that the sweep has already (or will) destroy.
-        started_.store(false, std::memory_order_relaxed);
+        // Destructions run without writeLock_; started_=false prevents new resolves.
 
         // Singletons: reverse insertion order (≈ reverse construction order).
         const auto& order = singletons_.insertionOrder();
@@ -298,8 +446,44 @@ public:
         }
         prototypes_.releaseAll();
 
+        // Thread-local instances on still-alive threads (specs-api §8 / §18).
+        // Collect+erase under tlMutex_ (brief critical section); destroy outside it.
+        std::vector<std::pair<DescriptorId, void*>> tlToDestroy;
+        {
+            std::lock_guard tlLock(tlMutex_);
+            for (TLData* threadData : tlThreadStores_) {
+                threadData->collectFor(this, tlToDestroy);
+            }
+            tlThreadStores_.clear();
+        }
+        for (auto it = tlToDestroy.rbegin(); it != tlToDestroy.rend(); ++it) {
+            executeDestructionLifecycle(it->first, it->second);
+        }
+
         listeners_.clear();
     }
+
+    /**
+     * @brief Destroys all thread-local instances owned by the calling thread for
+     * this registry.  Called by the per-thread TLCleanup sentinel on thread exit.
+     *
+     * Executes the full destruction lifecycle (specs-api §13.1) on the exiting thread.
+     * Collect+erase under `tlMutex_`; destroy outside to avoid holding the lock
+     * during user destructors.
+     */
+    void cleanupCurrentThread() noexcept;
+    // Defined in BeanInlineImpl.hpp.
+
+    /**
+     * @brief Materializes (or retrieves) the thread-local instance for `descId`
+     * on the calling thread.  No lock needed — the TL store is thread-private.
+     *
+     * @param descId Descriptor of the threadLocal bean.
+     * @param ctx    Active ResolutionContext.
+     * @return Live instance pointer (never null on success).
+     */
+    void* materializeThreadLocalInstance(DescriptorId descId, ResolutionContext& ctx);
+    // Defined in BeanInlineImpl.hpp.
 
     /** @brief True after a successful `start()`, false before or after `stop()`. */
     [[nodiscard]] bool started() const noexcept {
@@ -324,7 +508,10 @@ public:
      */
     [[nodiscard]] NameId internNameSafe(std::string_view name) {
         if (name.empty()) return kUnnamed;
-        std::lock_guard lock(writeLock_);
+        // A6: NameInterning::intern() acquires its own shared_mutex (write).
+        // Do NOT acquire writeLock_ here — the lock order is always
+        // writeLock_ (outer) → NI::mutex_ (inner) when start() calls intern(),
+        // so taking NI::mutex_ without writeLock_ avoids any inversion.
         return nameInterning_.intern(name);
     }
 
@@ -374,6 +561,73 @@ public:
 
     /** @brief Unique identifier for this Registry instance. Never zero. */
     [[nodiscard]] std::uint32_t registryId() const noexcept { return registryId_; }
+
+    /**
+     * @brief Static factory shim: constructs a deferred Form 2 `Bean<U>` handle.
+     *
+     * Delegates to `Bean<U>::makeDeferred` (private, accessible here because
+     * `Registry` is a declared friend of `Bean<T>`).  Called from `injectParam`
+     * for `[[=ctr::scoped{...}]]` parameters (specs-internal §10.3).
+     *
+     * @tparam U       Session bean type.
+     * @param scopeNameId     NameId of the target scope.
+     * @param candidateNameId NameId of the named qualifier (or `kUnnamed`).
+     * @param reg             Root Registry pointer.
+     */
+    template<typename U>
+    [[nodiscard]] static ctr::Bean<U> makeDeferredHandle(
+            NameId scopeNameId, NameId candidateNameId, Registry* reg) noexcept {
+        return ctr::Bean<U>::makeDeferred(scopeNameId, candidateNameId, reg);
+    }
+
+    // -------------------------------------------------------------------------
+    // Scope table  (NameId → ScopedContext*)
+    // -------------------------------------------------------------------------
+
+    /**
+     * @brief Registers a scope under its interned NameId.
+     * Called by `BeanContext::resolveScope` under `writeLock_`.
+     */
+    void registerScope(NameId id, ctr::ScopedContext* scope) {
+        std::lock_guard lock(scopesMutex_);
+        scopeTable_.emplace(id, scope);
+    }
+
+    /**
+     * @brief Looks up a scope by its NameId.  Returns `nullptr` if not found.
+     * Used by the Form 2 proxy path in `Bean<T>::operator->`.  Cold path.
+     */
+    [[nodiscard]] ctr::ScopedContext* findScope(NameId id) const noexcept {
+        std::lock_guard lock(scopesMutex_);
+        const auto it = scopeTable_.find(id);
+        return it != scopeTable_.end() ? it->second : nullptr;
+    }
+
+    /**
+     * @brief Interns a scope name (same interning table as named keys), with a
+     * per-call-site 64-bit packed cache for multi-registry correctness.
+     *
+     * `resolveScope("x")` and `internScopeNameCached("x", cache)` both use
+     * `nameInterning_.intern()` and therefore produce the same NameId.
+     *
+     * @param name  Scope name string; null or empty → `kUnnamed`.
+     * @param cache Per-call-site static atomic: `(registryId << 32) | NameId`.
+     * @return Interned NameId.
+     */
+    [[nodiscard]] NameId internScopeNameCached(const char* name,
+                                               std::atomic<std::uint64_t>& cache) {
+        if (!name || *name == '\0') return kUnnamed;
+        const std::uint64_t e = cache.load(std::memory_order_relaxed);
+        if ((e >> 32) == static_cast<std::uint64_t>(registryId_)) {
+            return static_cast<NameId>(e & 0xFFFF'FFFFu);
+        }
+        const NameId nid = internNameSafe(std::string_view{name});
+        cache.store(
+            (static_cast<std::uint64_t>(registryId_) << 32)
+            | static_cast<std::uint64_t>(nid),
+            std::memory_order_relaxed);
+        return nid;
+    }
 
     // -------------------------------------------------------------------------
     // typeIdFor<T>  (thunk-facing, hot-path cache)
@@ -443,21 +697,21 @@ public:
     // avoid a circular dependency between Registry.hpp and Bean.hpp.
 
     /**
-     * @brief Returns all candidates for (TypeId of T, nameId), materializing each.
+     * @brief Finds or two-phase-materializes a session instance.
      *
-     * Unlike `resolve<T>()`, no priority arbitration is performed: every registered
-     * candidate is materialized and returned.  Returns an empty vector when there are
-     * no candidates (no exception).
+     * Shared between `materializeOne` (session case) and `proxyResolve_()` (Form 2
+     * operator->).  Uses the registry `writeLock_` / `cv_` and the scope's
+     * `SessionStore`.  Returns the live instance pointer.
      *
-     * @tparam T Requested bean interface type.
-     * @param nameId NameId of the qualifier; `kUnnamed` for unnamed resolution.
-     * @param ctx    Active `ResolutionContext`.
-     * @return Vector of `Bean<T>` handles, one per candidate.
-     * @throws ctr::ContextStateError if not started.
+     * @param descId Descriptor of the session bean.
+     * @param scope  Non-null owning scope.
+     * @param ctx    Active `ResolutionContext` (scope must be set).
+     * @return Live instance pointer (never null on success).
+     * @throws ctr::ResolutionError on dependency cycle.
      */
-    template <typename T>
-    [[nodiscard]] auto resolveAll(NameId nameId, ResolutionContext& ctx)
-        -> std::vector<ctr::Bean<T>>;
+    void* materializeSessionInstance(DescriptorId descId,
+                                     ctr::ScopedContext* scope,
+                                     ResolutionContext& ctx);
     // Defined in BeanInlineImpl.hpp.
 
     // -------------------------------------------------------------------------
@@ -484,9 +738,50 @@ public:
      * @param priority Candidate priority; default 0.
      * @throws ctr::ConfigurationError on post-`start()` unknown type or double-bind.
      */
+    /**
+     * @brief Binds an externally constructed singleton to the registry.
+     *
+     * Pre-`start()`: enqueues a pending descriptor; the instance enters the lifecycle
+     * during `start()`.  Post-`start()`: type must be known, must not be instantiated,
+     * must not be concurrently materializing.
+     *
+     * @tparam T Bound type.
+     * @param object   Ownership of the instance.  Transferred to the registry.
+     * @param nameId   Named qualifier; `kUnnamed` for unnamed.
+     * @param priority Candidate priority.
+     * @return `Bean<T>` handle to the bound instance (empty handle when pre-`start()`).
+     * @throws ctr::ConfigurationError on forbidden or invalid post-`start()` bind.
+     */
     template <typename T>
-    void bindSingleton(std::unique_ptr<T> object, NameId nameId, int32_t priority);
-    // TODO: implement after Bean<T> and the full materialization chain are in place.
+    [[nodiscard]] ctr::Bean<T> bindSingleton(std::unique_ptr<T> object,
+                                             NameId nameId, int32_t priority);
+    // Defined in BeanInlineImpl.hpp.
+
+    /**
+     * @brief Fires onInitialized/onCreated for pre-start bound singletons.
+     *
+     * Called by BeanContext::start() AFTER flushDeferredListeners_() so that
+     * listeners registered before start() observe the events.
+     */
+    void dispatchBoundSingletonLifecycle();
+
+    /**
+     * @brief Materializes all eager singletons (`lazy == false`) after `start()`.
+     *
+     * Iterates the descriptor table for `Lifetime::Singleton`, `origin != RuntimeBinding`,
+     * `lazy == false`, sorted by descending priority, and constructs each via the standard
+     * two-phase lock pattern.  Exceptions from user constructors propagate to the caller
+     * (specs-api §17 pass-through policy).
+     *
+     * Called by `BeanContext::start()` after `dispatchBoundSingletonLifecycle()`, outside
+     * the registry's internal write lock (`started_` is already published before this call).
+     */
+    void materializeEagerSingletons();
+    // Defined in BeanInlineImpl.hpp.
+
+    /** @brief Destroys pending runtime singleton bindings that were never started. */
+    ~Registry();
+    // Defined in BeanInlineImpl.hpp.
 
 private:
     /**
@@ -494,7 +789,7 @@ private:
      *
      * Contains the lifetime switch extracted from `resolve<T>`: singleton two-phase
      * lock, prototype CycleGuard + slot activation, and lifecycle dispatch.
-     * Used by both `resolve<T>` (single candidate) and `resolveAll<T>` (all candidates).
+     * Used by `resolve<T>` for single-candidate materialization.
      *
      * @tparam T Requested bean interface type.
      * @param descId  Descriptor to materialize.
@@ -506,6 +801,15 @@ private:
     [[nodiscard]] auto materializeOne(DescriptorId descId, ResolutionContext& ctx)
         -> ctr::Bean<T>;
     // Defined in BeanInlineImpl.hpp.
+
+    /**
+     * @brief Non-template singleton materialization for eager construction.
+     *
+     * Replicates the Singleton case of `materializeOne` without a type parameter;
+     * dispatches lifecycle events via `AnyBean`.  Called by `materializeEagerSingletons()`.
+     * Defined in BeanInlineImpl.hpp.
+     */
+    void materializeEagerSingleton(DescriptorId descId, ResolutionContext& ctx);
     // -------------------------------------------------------------------------
     // Dependency cycle detection  (specs-internal §13)
     // -------------------------------------------------------------------------
@@ -555,6 +859,7 @@ private:
 
     template <class> friend class ctr::Bean;
     friend class ctr::AnyBean;
+    friend class ctr::ScopedContext;
 
     /**
      * @brief Executes the full destruction lifecycle for one bean instance.
@@ -564,6 +869,13 @@ private:
      * Defined in BeanInlineImpl.hpp on the model of `resolve<T>()`.
      */
     void executeDestructionLifecycle(DescriptorId descId, void* mem) noexcept;
+
+    /**
+     * @brief Destroys all session instances owned by `scope` in reverse construction
+     * order.  Marks the scope stopped, clears its SessionStore.
+     * Called by `ScopedContext::stop()`.  Defined in BeanInlineImpl.hpp.
+     */
+    void stopScope(ctr::ScopedContext& scope) noexcept;
 
     /**
      * @brief Registers the owning `BeanContext` as a self-injectable singleton.
@@ -599,18 +911,51 @@ private:
     // -------------------------------------------------------------------------
 
     mutable std::mutex writeLock_;
-    std::condition_variable cv_; ///< Notified when a singleton finishes materializing.
+    std::condition_variable cv_; ///< Notified when a singleton or session finishes materializing.
 
-    /// DescriptorIds currently being constructed (thunk executing without the lock).
-    /// Guarded by writeLock_.  Small vector: contains at most one entry per thread.
-    /// Swap-and-pop-back O(1) removal; linear scan is fast for N ≤ thread count.
-    std::vector<DescriptorId> materializing_;
+    /// (DescriptorId, ScopedContext*) pairs currently being constructed outside the lock.
+    /// scope == nullptr for singletons; scope != nullptr for session beans.
+    /// Guarded by writeLock_.  Small vector: at most one entry per thread in practice.
+    std::vector<std::pair<DescriptorId, ctr::ScopedContext*>> materializing_;
+
+    /// Scope name → ScopedContext* lookup table.  Populated by registerScope().
+    /// Protected by scopesMutex_ (separate from writeLock_ to avoid blocking hot path).
+    mutable std::mutex scopesMutex_;
+    std::unordered_map<NameId, ctr::ScopedContext*> scopeTable_;
+
+    /// Thread-local store pointers: one per registered thread.
+    /// Protected by tlMutex_.  Each pointer remains valid as long as the owning
+    /// thread is alive.  Used by stop() and cleanupCurrentThread() to find and
+    /// destroy threadLocal instances without holding writeLock_ (avoids deadlock
+    /// because neither path acquires writeLock_ while holding tlMutex_).
+    mutable std::mutex tlMutex_;
+    std::vector<TLData*> tlThreadStores_;
 
     struct PendingContribution {
         DiscoverContribution contribution;
         DiscoverOptions      options;
     };
     std::vector<PendingContribution> pending_;
+
+    /// Bound singletons awaiting lifecycle dispatch after deferred-listener flush.
+    /// Populated by start() Phase 4.5; consumed by dispatchBoundSingletonLifecycle().
+    struct StartBound { DescriptorId descId; void* instance; TypeId exposedTypeId; };
+    std::vector<StartBound> startLifecyclePending_;
+
+    /// Pre-start runtime singleton bindings: processed in Phase 1.5 of start().
+    struct PendingRuntimeSingleton {
+        void*        instance;
+        const char*  typeName;
+        const std::type_info& (*typeInfoGetter)();
+        NameId       nameId;   // already interned via internNameSafe()
+        int32_t      priority;
+        void       (*destroy)(void*) noexcept;
+        void       (*preDestroy)(void*, void*);  // null for non-Ctorium types
+        void       (*dealloc)(void*) noexcept;
+        std::size_t  size;
+        std::size_t  align;
+    };
+    std::vector<PendingRuntimeSingleton> pendingRuntimeSingletons_;
 };
 
 inline std::vector<DescriptorId>& Registry::materializationStack() noexcept {

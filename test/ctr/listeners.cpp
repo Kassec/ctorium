@@ -2,11 +2,6 @@
 #include <ctr/Ctorium.hpp>
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
-//
-// Typed listeners are registered after start() so typeIdFor<T>() returns the
-// correct TypeId.  Pre-start typed listeners are a known gap (specs-api §14.2):
-// typeIdFor<T>() returns kInvalidTypeId before start(), causing the listener
-// to be registered as global.  This deviation is noted in the deviation report.
 
 namespace listener_fixture {
 
@@ -31,7 +26,7 @@ TEST(Listener, TypedListenerFiresOnlyForTargetType) {
     ctx.resolve<listener_fixture::ServiceB>();
 
     EXPECT_EQ(countA, 1); // only ServiceA triggered the typed listener
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Listener, TypedListenerNotFiredBySubsequentResolvesOfSameSingleton) {
@@ -46,7 +41,7 @@ TEST(Listener, TypedListenerNotFiredBySubsequentResolvesOfSameSingleton) {
     ctx.resolve<listener_fixture::ServiceA>();
     ctx.resolve<listener_fixture::ServiceA>(); // already materialized; no event
     EXPECT_EQ(countA, 1);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Global listener — fires for all beans ───────────────────────────────────
@@ -64,7 +59,7 @@ TEST(Listener, GlobalListenerFiresForAllBeans) {
     ctx.resolve<listener_fixture::ServiceB>();
 
     EXPECT_EQ(callCount, 2);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Multiple independent registrations ──────────────────────────────────────
@@ -84,7 +79,7 @@ TEST(Listener, MultipleListenerRegistrationsAreIndependent) {
     ctx.resolve<listener_fixture::ServiceA>();
     EXPECT_EQ(count1, 1);
     EXPECT_EQ(count2, 1);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Priority ordering ────────────────────────────────────────────────────────
@@ -106,7 +101,7 @@ TEST(Listener, HigherPriorityListenerFiresFirst) {
     ctx.resolve<listener_fixture::ServiceA>();
     // Listener with priority 5 fired last (lower priority executes last).
     EXPECT_EQ(lastFired, 2);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── remove — idempotent unregistration ──────────────────────────────────────
@@ -124,7 +119,7 @@ TEST(Listener, RemoveByHandlePreventsSubsequentDispatches) {
 
     ctx.resolve<listener_fixture::ServiceA>();
     EXPECT_EQ(count, 0);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Listener, ContextRemoveByHandlePreventsSubsequentDispatches) {
@@ -140,7 +135,7 @@ TEST(Listener, ContextRemoveByHandlePreventsSubsequentDispatches) {
 
     ctx.resolve<listener_fixture::ServiceA>();
     EXPECT_EQ(count, 0);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Listener, RemoveIsIdempotent) {
@@ -158,7 +153,41 @@ TEST(Listener, RemoveIsIdempotent) {
 
     ctx.resolve<listener_fixture::ServiceA>();
     EXPECT_EQ(count, 0);
-    ctx.close();
+    ctx.stop();
+}
+
+// ─── Pre-start typed listener registration (specs-api §14.2) ─────────────────
+
+TEST(Listener, PreStartTypedListenerFiresOnlyForTargetType) {
+    auto& ctx = ctr::BeanContext::resolveContext("ls-prestart-typed-filter");
+    ctx.discover<^^listener_fixture>();
+
+    int countA = 0;
+    ctx.on<listener_fixture::ServiceA>(
+        ctr::onCreated,
+        [&countA](const ctr::Bean<listener_fixture::ServiceA>&) { ++countA; });
+
+    ctx.start();
+    ctx.resolve<listener_fixture::ServiceA>();
+    ctx.resolve<listener_fixture::ServiceB>();
+
+    EXPECT_EQ(countA, 1); // must fire for ServiceA, not for ServiceB
+    ctx.stop();
+}
+
+TEST(Listener, PreStartTypedListenerContinuesWorkingPostStart) {
+    auto& ctx = ctr::BeanContext::resolveContext("ls-prestart-post-start");
+    ctx.discover<^^listener_fixture>();
+
+    int countA = 0;
+    ctx.on<listener_fixture::ServiceA>(
+        ctr::onCreated,
+        [&countA](const ctr::Bean<listener_fixture::ServiceA>&) { ++countA; });
+
+    ctx.start();
+    ctx.resolve<listener_fixture::ServiceA>();
+    EXPECT_EQ(countA, 1);
+    ctx.stop();
 }
 
 // ─── All four lifecycle phases ────────────────────────────────────────────────
@@ -194,7 +223,75 @@ TEST(Listener, AllFourPhasesFireInOrderForSingleton) {
     EXPECT_EQ(initOrder, 1);
     EXPECT_EQ(createdOrder, 2);
 
-    ctx.close(); // triggers preDestroy and destroyed
+    ctx.stop(); // triggers preDestroy and destroyed
     EXPECT_EQ(preDestroyOrder, 3);
     EXPECT_EQ(destroyedOrder, 4);
 }
+
+TEST(Listener, PrototypeAllFourPhasesFireInOrder) {
+    auto& ctx = ctr::BeanContext::resolveContext("ls-proto-phases");
+    ctx.discover<^^listener_fixture>().start();
+
+    int phaseOrder = 0;
+    int initOrder = 0, createdOrder = 0, preDestroyOrder = 0, destroyedOrder = 0;
+    ctx.on<listener_fixture::Widget>(
+        ctr::onInitialized,
+        [&](const ctr::Bean<listener_fixture::Widget>&) { initOrder = ++phaseOrder; });
+    ctx.on<listener_fixture::Widget>(
+        ctr::onCreated,
+        [&](const ctr::Bean<listener_fixture::Widget>&) { createdOrder = ++phaseOrder; });
+    ctx.on<listener_fixture::Widget>(
+        ctr::onPreDestroy,
+        [&](const ctr::Bean<listener_fixture::Widget>&) { preDestroyOrder = ++phaseOrder; });
+    ctx.on<listener_fixture::Widget>(
+        ctr::onDestroyed,
+        [&](const ctr::Bean<listener_fixture::Widget>&) { destroyedOrder = ++phaseOrder; });
+
+    {
+        auto handle = ctx.resolve<listener_fixture::Widget>();
+        EXPECT_EQ(initOrder, 1);
+        EXPECT_EQ(createdOrder, 2);
+    }
+
+    EXPECT_EQ(preDestroyOrder, 3);
+    EXPECT_EQ(destroyedOrder, 4);
+    ctx.stop();
+}
+
+TEST(Listener, GlobalListenerHigherPriorityFiresFirst) {
+    auto& ctx = ctr::BeanContext::resolveContext("ls-global-priority");
+    ctx.discover<^^listener_fixture>().start();
+
+    int lastFired = 0;
+    ctx.on(ctr::onCreated,
+        [&lastFired](const ctr::AnyBean&) { lastFired = 1; },
+        ctr::ListenerOptions{.priority = 10});
+    ctx.on(ctr::onCreated,
+        [&lastFired](const ctr::AnyBean&) { lastFired = 2; },
+        ctr::ListenerOptions{.priority = 5});
+
+    ctx.resolve<listener_fixture::ServiceA>();
+    EXPECT_EQ(lastFired, 2);
+    ctx.stop();
+}
+
+// ─── A1 — ListenerHandle: copy + double remove (UAF fix) ─────────────────────
+
+TEST(ListenerHandle, CopyThenDoubleRemoveDoesNotCrash) {
+    auto& ctx = ctr::BeanContext::resolveContext("lh-copy-double-remove");
+    ctx.discover<^^listener_fixture>().start();
+
+    int count = 0;
+    auto h1 = ctx.on<listener_fixture::ServiceA>(
+        ctr::onCreated,
+        [&count](const ctr::Bean<listener_fixture::ServiceA>&) { ++count; });
+    auto h2 = h1; // copy: both share the same token in the store
+
+    h1.remove(); // removes the token from the store
+    h2.remove(); // token already absent → removeByToken is a no-op, no UAF
+
+    ctx.resolve<listener_fixture::ServiceA>();
+    EXPECT_EQ(count, 0); // listener was removed before resolve
+    ctx.stop();
+}
+

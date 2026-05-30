@@ -26,9 +26,9 @@ struct BindOptions {
     /**
      * @brief Named selector for the binding.
      *
-     * An empty name means no named selector.
+     * A nullptr or empty string means no named selector.
      */
-    named name{};
+    const char* name = nullptr;
 
     /**
      * @brief Priority used to arbitrate among candidates.

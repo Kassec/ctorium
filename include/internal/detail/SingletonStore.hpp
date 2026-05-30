@@ -14,99 +14,117 @@ namespace ctr::detail {
 /**
  * @brief Storage for singleton bean instances, keyed by `DescriptorId`.
  *
- * A singleton is materialized at most once per root context and key.  Once live,
- * its pointer is stable until `destroyAll()` is called at root shutdown.
+ * ### Memory model  (A4 revision)
+ * The instance array is accessed via two atomic fields:
+ *   - `instancesBase_`  — `atomic<atomic<void*>*>`: raw pointer to the live array.
+ *   - `instancesSize_`  — `atomic<size_t>`:         capacity of the live array.
  *
- * ### Memory model  (specs-internal §12)
- * Each instance is heap-allocated with `::operator new(size, align)` (C++17 aligned
- * allocation).  `Descriptor::size` and `Descriptor::align` supply the parameters.
- * The `construct` thunk performs `placement-new` into the block.  `destroyAll()`
- * calls the `destroy` thunk (in-place destructor) then frees the block with the
- * matching `::operator delete(ptr, size, align)`.
+ * `growAndStore()` allocates a new array, copies existing slots, then publishes:
+ *   1. store(base, release)
+ *   2. store(size, release)
  *
- * The allocation strategy (heap, pool, arena) is a store implementation concern
- * (specs-internal §12) and can be replaced without touching thunk contracts.
+ * `find()` loads size (acquire) then base (acquire): because size is published
+ * after base, observing the new size guarantees observing the new base.
+ *
+ * All arrays (old and new) are pushed to `instancesGraveyard_` and freed only in
+ * `releaseAll()` (called after `stop()`), ensuring no in-flight `find()` ever
+ * dereferences a freed array.
  *
  * ### Thread safety
- * `store()` must be called under the registry write lock.
- * `find()` is lock-free after `start()` (read-only atomic array).
- * `releaseAll()` runs under exclusive root ownership (`Registry::stop()`); no concurrent access.
- *
- * ### Separation of responsibilities
- * This store manages instance pointers and insertion order only.
- * `Registry` owns the full destruction lifecycle via `executeDestructionLifecycle`.
+ * `store()` and `growAndStore()` must be called under the registry write lock.
+ * `find()` is lock-free after `start()` (acquire loads on size, base, and slot).
+ * `releaseAll()` runs under exclusive root ownership; no concurrent access.
  */
 class SingletonStore {
 public:
     /**
-     * @brief Stores a fully-constructed singleton that was built outside the store.
+     * @brief Stores a fully-constructed singleton.
      *
-     * Used by the two-phase materialization path in `Registry::resolve<T>`:
-     * the registry allocates and constructs the object without holding the write
-     * lock, then calls this method under the lock to register the result.
-     *
-     * @pre `find(descId) == nullptr` — the caller must guard against duplicates.
-     * @pre `mem` points to a fully-constructed object.
-     * @param descId  Descriptor this singleton maps to.
-     * @param mem     Pre-constructed instance (ownership transferred to this store).
+     * @pre `find(descId) == nullptr`.
+     * @pre Called under the registry write lock.
      */
     void store(DescriptorId descId, void* mem) {
-        assert(instances_[static_cast<std::size_t>(descId)]
+        assert(instancesBase_.load(std::memory_order_relaxed)
+                   [static_cast<std::size_t>(descId)]
                    .load(std::memory_order_relaxed) == nullptr
             && "SingletonStore: double store");
         insertionOrder_.push_back(descId);
-        // Release store: publishes the constructed object to any thread that
-        // subsequently reads this slot with memory_order_acquire in find().
-        instances_[static_cast<std::size_t>(descId)].store(
-            mem, std::memory_order_release);
+        instancesBase_.load(std::memory_order_relaxed)
+            [static_cast<std::size_t>(descId)].store(mem, std::memory_order_release);
     }
 
     /**
-     * @brief Sizes the lock-free instance table.  Must be called at the end of
-     * `start()` after all descriptors are interned (descriptor count frozen).
+     * @brief Grows the array to accommodate `descId` if needed, then stores `mem`.
+     *
+     * All arrays (including the old one) accumulate in `instancesGraveyard_` and
+     * are freed atomically in `releaseAll()`.  Concurrent `find()` calls that
+     * loaded the old base remain valid until `releaseAll()` runs.
+     * Must be called under the registry write lock.
+     */
+    void growAndStore(DescriptorId descId, void* mem) {
+        const std::size_t idx     = static_cast<std::size_t>(descId);
+        const std::size_t newSize = idx + 1;
+        const std::size_t oldSize = instancesSize_.load(std::memory_order_relaxed);
+        if (newSize > oldSize) {
+            auto newArr = std::make_unique<std::atomic<void*>[]>(newSize);
+            auto* oldBase = instancesBase_.load(std::memory_order_relaxed);
+            for (std::size_t i = 0; i < oldSize; ++i)
+                newArr[i].store(
+                    oldBase[i].load(std::memory_order_relaxed),
+                    std::memory_order_relaxed);
+            auto* rawNew = newArr.get();
+            // Graveyard owns the new array; old array already owned by a prior entry.
+            instancesGraveyard_.push_back(std::move(newArr));
+            // Publish: base first, then size (find() loads size first — see class doc).
+            instancesBase_.store(rawNew, std::memory_order_release);
+            instancesSize_.store(newSize, std::memory_order_release);
+        }
+        store(descId, mem);
+    }
+
+    /**
+     * @brief Sizes the lock-free instance array.  Called at the end of `start()`.
      *
      * @param descriptorCount Total number of descriptors after `start()` Phase 1.
      */
     void resize(std::size_t descriptorCount) {
-        // std::vector<std::atomic<void*>>::resize() requires MoveInsertable.
-        // std::atomic is not movable; use make_unique<T[]> which value-initialises
-        // each element (sets each atomic to nullptr) without any move or copy.
-        instances_ = std::make_unique<std::atomic<void*>[]>(descriptorCount);
-        instancesSize_ = descriptorCount;
+        auto newArr = std::make_unique<std::atomic<void*>[]>(descriptorCount);
+        auto* raw = newArr.get();
+        instancesGraveyard_.push_back(std::move(newArr));
+        instancesBase_.store(raw, std::memory_order_release);
+        instancesSize_.store(descriptorCount, std::memory_order_release);
     }
 
     /**
      * @brief Returns a raw pointer to the materialized instance, or `nullptr`.
      *
-     * Lock-free after `start()`: uses a per-slot `atomic<void*>` acquire load.
-     * Pairs with the release store in `store()`.
-     *
-     * @param descId `DescriptorId` to look up.
-     * @return Pointer to the live singleton instance, or `nullptr` if not materialized.
+     * Lock-free after `start()`.  Load order: size (acquire) → base (acquire) →
+     * slot (acquire).  The acquire on size synchronises with the release on size
+     * in `growAndStore()`/`resize()`, guaranteeing the base is also visible.
      */
     [[nodiscard]] void* find(DescriptorId descId) const noexcept {
-        if (static_cast<std::size_t>(descId) >= instancesSize_) return nullptr;
-        return instances_[static_cast<std::size_t>(descId)].load(
-            std::memory_order_acquire);
+        const std::size_t size = instancesSize_.load(std::memory_order_acquire);
+        if (static_cast<std::size_t>(descId) >= size) return nullptr;
+        auto* base = instancesBase_.load(std::memory_order_acquire);
+        if (base == nullptr) return nullptr;
+        return base[static_cast<std::size_t>(descId)].load(std::memory_order_acquire);
     }
 
-    /**
-     * @brief Returns the insertion-order vector for reverse-order destruction by `Registry::stop()`.
-     *
-     * Entries are appended by `store()` in materialization order.  `Registry::stop()`
-     * iterates this vector in reverse to approximate reverse construction order.
-     */
+    /** @brief Insertion-order vector for reverse-order destruction by `stop()`. */
     [[nodiscard]] const std::vector<DescriptorId>& insertionOrder() const noexcept {
         return insertionOrder_;
     }
 
     /**
-     * @brief Clears insertion order without calling any destructors or freeing memory.
+     * @brief Frees all arrays and clears insertion order.
      *
-     * Called by `Registry::stop()` after every singleton has been destroyed via
-     * `executeDestructionLifecycle`. Must run under exclusive root ownership.
+     * Called by `Registry::stop()` after every singleton has been destroyed.
+     * Must run under exclusive root ownership.
      */
     void releaseAll() noexcept {
+        instancesGraveyard_.clear();
+        instancesBase_.store(nullptr, std::memory_order_relaxed);
+        instancesSize_.store(0, std::memory_order_relaxed);
         insertionOrder_.clear();
     }
 
@@ -114,15 +132,10 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return insertionOrder_.size(); }
 
 private:
-    /// Lock-free hot-path: one atomic<void*> per descriptor, indexed by DescriptorId.
-    /// Sized by resize() at end of start(); nullptr = not yet materialized.
-    /// Pairs: store(release) in store() ↔ load(acquire) in find().
-    /// unique_ptr<T[]> instead of vector<T> because std::atomic is not MoveInsertable
-    /// (vector::resize() would require it); make_unique<T[]>(n) value-initialises all
-    /// elements to nullptr without any move or copy.
-    std::unique_ptr<std::atomic<void*>[]>  instances_;
-    std::size_t                            instancesSize_ = 0;
-    std::vector<DescriptorId>              insertionOrder_;  ///< For reverse-order destruction.
+    std::atomic<std::atomic<void*>*>                    instancesBase_{nullptr};
+    std::atomic<std::size_t>                            instancesSize_{0};
+    std::vector<std::unique_ptr<std::atomic<void*>[]>> instancesGraveyard_;
+    std::vector<DescriptorId>                           insertionOrder_;
 };
 
 } // namespace ctr::detail

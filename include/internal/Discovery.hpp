@@ -66,6 +66,12 @@ consteval bool hasLifetimeMarker(std::meta::info entity) {
 /** Classifies a class/struct type and appends matching entities to @p result. */
 consteval void classifyType(std::meta::info type, std::vector<DiscoveredEntity>& result) {
     if (hasAnnotationOfType(type, ^^ctr::factory)) {
+        // B7: a factory must not carry a lifetime marker (singleton/prototype/session/threadLocal).
+        if (hasLifetimeMarker(type)) {
+            throw "Ctorium: a type annotated with [[=ctr::factory{}]] must not "
+                  "carry a lifetime marker (singleton/prototype/session/threadLocal) "
+                  "— factory types are always singleton beans implicitly.";
+        }
         result.push_back(DiscoveredEntity{type, EntityKind::Factory, std::meta::info{}});
         // Scan member methods for lifetime-marker annotations.
         // Guard: is_type() is safe for any reflection; is_special_member_function()

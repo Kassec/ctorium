@@ -7,6 +7,7 @@
 namespace bean_fixture {
 
 struct [[=ctr::singleton{}]] Svc {};
+struct [[=ctr::prototype{}]] Proto {};
 
 } // namespace bean_fixture
 
@@ -26,7 +27,7 @@ TEST(BeanHandle, MoveConstructionTransfersPointer) {
     auto* ptr = b1.operator->();
     auto b2   = std::move(b1);
     EXPECT_EQ(b2.operator->(), ptr);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanHandle, MoveAssignmentTransfersPointer) {
@@ -37,7 +38,7 @@ TEST(BeanHandle, MoveAssignmentTransfersPointer) {
     ctr::Bean<bean_fixture::Svc> b2;
     b2 = std::move(b1);
     EXPECT_EQ(b2.operator->(), ptr);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanHandle, OperatorStarEquivalentToArrow) {
@@ -45,7 +46,7 @@ TEST(BeanHandle, OperatorStarEquivalentToArrow) {
     ctx.discover<^^bean_fixture>().start();
     auto b = ctx.resolve<bean_fixture::Svc>();
     EXPECT_EQ(&(*b), b.operator->());
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanHandle, ValueEquivalentToArrow) {
@@ -53,7 +54,7 @@ TEST(BeanHandle, ValueEquivalentToArrow) {
     ctx.discover<^^bean_fixture>().start();
     auto b = ctx.resolve<bean_fixture::Svc>();
     EXPECT_EQ(&b.value(), b.operator->());
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(BeanHandle, CopyAssignmentPreservesPointerAndEquality) {
@@ -64,5 +65,38 @@ TEST(BeanHandle, CopyAssignmentPreservesPointerAndEquality) {
     b2 = b1;
     EXPECT_EQ(b1.operator->(), b2.operator->());
     EXPECT_EQ(b1, b2);
-    ctx.close();
+    ctx.stop();
+}
+
+TEST(BeanHandle, DefaultConstructedHandleHasNullPointer) {
+    ctr::Bean<bean_fixture::Svc> b;
+    EXPECT_EQ(b.operator->(), nullptr);
+}
+
+TEST(BeanHandle, MoveConstructionLeavesSourceNull) {
+    auto& ctx = ctr::BeanContext::resolveContext("bh-move-null-ctor");
+    ctx.discover<^^bean_fixture>().start();
+    auto b1 = ctx.resolve<bean_fixture::Svc>();
+    auto b2 = std::move(b1);
+    EXPECT_EQ(b1.operator->(), nullptr);
+    ctx.stop();
+}
+
+TEST(BeanHandle, MoveAssignmentLeavesSourceNull) {
+    auto& ctx = ctr::BeanContext::resolveContext("bh-move-null-assign");
+    ctx.discover<^^bean_fixture>().start();
+    auto b1 = ctx.resolve<bean_fixture::Svc>();
+    ctr::Bean<bean_fixture::Svc> b2;
+    b2 = std::move(b1);
+    EXPECT_EQ(b1.operator->(), nullptr);
+    ctx.stop();
+}
+
+TEST(BeanHandle, InequalityOperatorReturnsTrueForDistinctBeans) {
+    auto& ctx = ctr::BeanContext::resolveContext("bh-neq");
+    ctx.discover<^^bean_fixture>().start();
+    auto b1 = ctx.resolve<bean_fixture::Proto>();
+    auto b2 = ctx.resolve<bean_fixture::Proto>();
+    EXPECT_TRUE(b1 != b2);
+    ctx.stop();
 }

@@ -74,14 +74,17 @@ public:
         }
         assert(qualifiedName && qualifiedName[0] != '\0');
 
-        // Transparent find: no heap alloc on hit (common during start() for duplicates).
-        auto it = nameToId_.find(std::string_view{qualifiedName});
+        // C1: key is string_view (no heap allocation, even on miss).
+        // qualifiedName comes from qualifiedNameOf() via define_static_string —
+        // static storage lifetime guaranteed.
+        const std::string_view sv{qualifiedName};
+        auto it = nameToId_.find(sv);
         if (it != nameToId_.end()) return it->second;
 
-        auto [ins, _] = nameToId_.emplace(qualifiedName, TypeId{0});
+        auto [ins, _] = nameToId_.emplace(sv, TypeId{0}); // no string copy
         const TypeId id = static_cast<TypeId>(idToName_.size());
         ins->second = id;
-        idToName_.push_back(ins->first.c_str());         // stable pointer into map key
+        idToName_.push_back(ins->first.data()); // stable: points into static string
         indexToId_.emplace(std::type_index(typeInfoGetter()), id);
         return id;
     }
@@ -127,13 +130,11 @@ public:
     [[nodiscard]] std::size_t size() const noexcept { return idToName_.size(); }
 
 private:
-    std::unordered_map<std::string, TypeId,
-                       StringViewHash, std::equal_to<>> nameToId_; ///< Forward map.
-    /// Reverse map: pointers into nameToId_ keys.
-    /// Valid only while nameToId_ is a node-based container (std::unordered_map).
-    /// Any migration to a flat or open-addressed container would invalidate these
-    /// pointers; that migration must either preserve address stability or switch to
-    /// owned copies.
+    /// C1: key is string_view; the underlying data comes from define_static_string
+    /// (program-lifetime const char*) — no std::string allocation on intern or lookup.
+    std::unordered_map<std::string_view, TypeId> nameToId_;
+    /// Reverse map: const char* pointers to the same static strings used as keys.
+    /// Stable because the strings are program-lifetime; does not depend on map internals.
     std::vector<const char*> idToName_;
     std::unordered_map<std::type_index, TypeId>  indexToId_;  ///< Runtime reverse map for typeIdFor<T>.
     bool frozen_ = false;

@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <meta>
 #include <ctr/Ctorium.hpp>
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
@@ -43,12 +44,17 @@ struct [[=ctr::singleton{}]] Consumer {
     explicit Consumer(ctr::Bean<Dependency> d) : dep(std::move(d)) {}
 };
 
-// Named-bean annotations (ctr::named{.name = define_static_string("x")}) require
-// GCC 16 to support reflect_constant on class types with const char* members.
-// This is not yet stable in GCC 16.1.0: extract<named>(ann) throws 'reflect_constant
-// failed'.  Named-bean tests are therefore deferred until compiler support improves.
-
 } // namespace singleton_fixture
+
+// Named-bean fixture.  Name MUST use define_static_string — raw literals are
+// ill-formed on GCC 16.1.0 (docs/gcc-P2996R13.md §3/§4.3).
+namespace singleton_named_fixture {
+
+struct [[=ctr::singleton{}]]
+       [[=ctr::named{.name = std::define_static_string("console")}]]
+       ConsoleSink {};
+
+} // namespace singleton_named_fixture
 
 // Unregistered type — deliberately not discovered in any test context.
 struct NotRegistered {};
@@ -59,21 +65,21 @@ TEST(Singleton, ResolveBeforeStartRaisesContextStateError) {
     auto& ctx = ctr::BeanContext::resolveContext("st-pre-start");
     ctx.discover<^^singleton_fixture>();
     EXPECT_THROW(ctx.resolve<singleton_fixture::Service>(), ctr::ContextStateError);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Singleton, DiscoverAfterStartRaisesContextStateError) {
     auto& ctx = ctr::BeanContext::resolveContext("st-post-start-discover");
     ctx.discover<^^singleton_fixture>().start();
     EXPECT_THROW(ctx.discover<^^singleton_fixture>(), ctr::ContextStateError);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Singleton, StartIsIdempotent) {
     auto& ctx = ctr::BeanContext::resolveContext("st-start-idempotent");
     ctx.discover<^^singleton_fixture>().start();
     EXPECT_NO_THROW(ctx.start());
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Resolution and identity tests ───────────────────────────────────────────
@@ -83,7 +89,7 @@ TEST(Singleton, ResolveReturnsValidBean) {
     ctx.discover<^^singleton_fixture>().start();
     auto bean = ctx.resolve<singleton_fixture::Service>();
     EXPECT_NE(bean.operator->(), nullptr);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Singleton, SameObjectReturnedOnRepeatedResolve) {
@@ -92,14 +98,14 @@ TEST(Singleton, SameObjectReturnedOnRepeatedResolve) {
     auto b1 = ctx.resolve<singleton_fixture::Service>();
     auto b2 = ctx.resolve<singleton_fixture::Service>();
     EXPECT_EQ(b1, b2);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Singleton, SameContextKeyReturnsSameContextInstance) {
     auto& ctx1 = ctr::BeanContext::resolveContext("st-same-key");
     auto& ctx2 = ctr::BeanContext::resolveContext("st-same-key");
     EXPECT_EQ(&ctx1, &ctx2);
-    ctx1.close();
+    ctx1.stop();
 }
 
 TEST(Singleton, DifferentContextKeysYieldIndependentInstances) {
@@ -110,14 +116,36 @@ TEST(Singleton, DifferentContextKeysYieldIndependentInstances) {
     auto b1 = ctx1.resolve<singleton_fixture::Service>();
     auto b2 = ctx2.resolve<singleton_fixture::Service>();
     EXPECT_NE(b1, b2);
-    ctx1.close();
-    ctx2.close();
+    ctx1.stop();
+    ctx2.stop();
 }
 
 // ─── Named key tests ─────────────────────────────────────────────────────────
-// Note: named-bean annotation tests (resolve by name, unnamed-resolve-of-named-only)
-// require GCC 16 support for reflect_constant on const char* class members.
-// See fixture comment above.
+
+TEST(Singleton, NamedSingletonResolvesSuccessfullyByName) {
+    auto& ctx = ctr::BeanContext::resolveContext("sn-named-resolve");
+    ctx.discover<^^singleton_named_fixture>().start();
+    EXPECT_NO_THROW(ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"}));
+    auto bean = ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"});
+    EXPECT_NE(bean.operator->(), nullptr);
+    ctx.stop();
+}
+
+TEST(Singleton, UnnamedResolveOfNamedOnlyBeanRaisesResolutionError) {
+    auto& ctx = ctr::BeanContext::resolveContext("sn-named-unnamed-fail");
+    ctx.discover<^^singleton_named_fixture>().start();
+    EXPECT_THROW(ctx.resolve<singleton_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+    ctx.stop();
+}
+
+TEST(Singleton, NamedSingletonSameInstanceOnRepeatedResolve) {
+    auto& ctx = ctr::BeanContext::resolveContext("sn-named-identity");
+    ctx.discover<^^singleton_named_fixture>().start();
+    auto b1 = ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"});
+    auto b2 = ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"});
+    EXPECT_EQ(b1.operator->(), b2.operator->());
+    ctx.stop();
+}
 
 TEST(Singleton, NamedResolveWithUnknownKeyRaisesResolutionError) {
     auto& ctx = ctr::BeanContext::resolveContext("st-unknown-key");
@@ -126,14 +154,14 @@ TEST(Singleton, NamedResolveWithUnknownKeyRaisesResolutionError) {
     EXPECT_THROW(
         ctx.resolve<singleton_fixture::Service>(ctr::named{"nonexistent"}),
         ctr::ResolutionError);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Singleton, ResolveOfUnregisteredTypeRaisesResolutionError) {
     auto& ctx = ctr::BeanContext::resolveContext("st-unknown-type");
     ctx.discover<^^singleton_fixture>().start();
     EXPECT_THROW(ctx.resolve<NotRegistered>(), ctr::ResolutionError);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Hook tests ───────────────────────────────────────────────────────────────
@@ -146,7 +174,7 @@ TEST(Singleton, PostConstructHookFiresOnceOnFirstMaterialization) {
     auto b2 = ctx.resolve<singleton_fixture::HookedService>();
     EXPECT_EQ(b2->callCount, 1); // hook not re-fired; same instance
     EXPECT_EQ(b1, b2);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Dependency injection tests ───────────────────────────────────────────────
@@ -159,9 +187,79 @@ TEST(Singleton, InjectedDependencyIsSameInstanceAsDirectResolve) {
     auto dep      = ctx.resolve<singleton_fixture::Dependency>();
     auto consumer = ctx.resolve<singleton_fixture::Consumer>();
     EXPECT_EQ(consumer->dep.operator->(), dep.operator->());
-    ctx.close();
+    ctx.stop();
 }
 
 // Shutdown — full destruction lifecycle test (preDestroy + onDestroyed) deferred:
 // GCC 16 reflect_constant fails when discovering types whose destructor references
 // a non-constexpr global, preventing `Destructible`-style fixtures from compiling.
+
+// ─── Eager singleton tests ─────────────────────────────────────────────────────
+// Each sub-fixture is in its own namespace so discovering it only materializes
+// the types under test, avoiding cross-test interference.
+
+namespace eager_basic_fixture {
+inline int eagerCount = 0;
+struct [[=ctr::singleton{.lazy = false}]] EagerSvc {
+    EagerSvc() { ++eagerCount; }
+};
+} // namespace eager_basic_fixture
+
+namespace lazy_basic_fixture {
+inline int lazyCount = 0;
+struct [[=ctr::singleton{}]] LazySvc { // default: lazy = true
+    LazySvc() { ++lazyCount; }
+};
+} // namespace lazy_basic_fixture
+
+namespace eager_dep_fixture {
+inline int depCount = 0;
+struct [[=ctr::singleton{.lazy = false}]] EagerDep {
+    EagerDep() { ++depCount; }
+};
+struct [[=ctr::singleton{.lazy = false}]] EagerConsumer {
+    ctr::Bean<EagerDep> dep;
+    explicit EagerConsumer(ctr::Bean<EagerDep> d) : dep(std::move(d)) { ++depCount; }
+};
+} // namespace eager_dep_fixture
+
+namespace eager_throw_fixture {
+struct [[=ctr::singleton{.lazy = false}]] EagerThrowing {
+    EagerThrowing() { throw std::runtime_error("eager ctor failed"); }
+};
+} // namespace eager_throw_fixture
+
+TEST(Singleton, EagerSingleton_BuiltAtStart) {
+    eager_basic_fixture::eagerCount = 0;
+    auto& ctx = ctr::BeanContext::resolveContext("st-eager-built-at-start");
+    ctx.discover<^^eager_basic_fixture>().start();
+    EXPECT_EQ(eager_basic_fixture::eagerCount, 1); // built before any resolve
+    ctx.stop();
+}
+
+TEST(Singleton, LazySingleton_NotBuiltAtStart) {
+    lazy_basic_fixture::lazyCount = 0;
+    auto& ctx = ctr::BeanContext::resolveContext("st-lazy-not-built-at-start");
+    ctx.discover<^^lazy_basic_fixture>().start();
+    EXPECT_EQ(lazy_basic_fixture::lazyCount, 0); // not built at start
+    ctx.resolve<lazy_basic_fixture::LazySvc>();
+    EXPECT_EQ(lazy_basic_fixture::lazyCount, 1); // built on first resolve
+    ctx.stop();
+}
+
+TEST(Singleton, EagerSingletonWithDep_BothBuiltAtStart) {
+    eager_dep_fixture::depCount = 0;
+    auto& ctx = ctr::BeanContext::resolveContext("st-eager-with-dep");
+    ctx.discover<^^eager_dep_fixture>().start();
+    EXPECT_EQ(eager_dep_fixture::depCount, 2); // EagerDep + EagerConsumer both built
+    auto b = ctx.resolve<eager_dep_fixture::EagerConsumer>();
+    EXPECT_NE(b->dep.operator->(), nullptr);
+    ctx.stop();
+}
+
+TEST(Singleton, EagerSingleton_ExceptionPropagatesFromStart) {
+    auto& ctx = ctr::BeanContext::resolveContext("st-eager-throws");
+    ctx.discover<^^eager_throw_fixture>();
+    EXPECT_THROW(ctx.start(), std::runtime_error);
+    ctx.stop();
+}

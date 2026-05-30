@@ -8,6 +8,8 @@
 #include "Lifetime.hpp"
 #include "Origin.hpp"
 
+namespace ctr { struct BeanReflectiveData; } // forward decl for metadata field
+
 namespace ctr::detail {
 
 /**
@@ -43,6 +45,49 @@ namespace ctr::detail {
  * The `void*` avoids a circular include dependency between `internal/` headers
  * and `detail/ResolutionContext.hpp`.
  */
+/**
+ * @brief Per-injection-parameter metadata stored alongside `ContributedDescriptor`.
+ *
+ * Produced at `consteval` time in `BeanDescriptorGen` for each `Bean<U>` constructor
+ * parameter.  Carried in a `constexpr static` array with static lifetime.
+ */
+struct ContributedParamDescriptor {
+    /** Qualified name of the injected type `U` (e.g. `"ns::MyService"`). */
+    const char* injectedTypeName;
+    /** `typeid(U)` getter — allows `lookupByTypeIndex` in `start()` without
+     *  a name-based lookup.  Always non-null. */
+    const std::type_info& (*injectedTypeInfo)();
+    /**
+     * @brief True when `[[=ctr::scoped{...}]]` is present on this parameter.
+     *
+     * Presence detection only; the scope name itself is carried in `scopeName`.
+     * Kept as a distinct flag so graph validation can branch on presence without
+     * inspecting the (possibly empty) name value.
+     */
+    bool hasScopedAnnotation;
+    /** True when `[[=ctr::named{...}]]` is present on this parameter. */
+    bool hasNamedAnnotation;
+    /**
+     * @brief Scope name from `[[=ctr::scoped{.name=...}]]`; `""` when absent or unnamed.
+     *
+     * Always a static-storage `const char*`: the consteval descriptor builder
+     * normalizes the extracted annotation member through `std::define_static_string`,
+     * so the stored pointer is template-argument-equivalent and valid in this
+     * `constexpr` descriptor regardless of how the annotation was written at the
+     * call site (raw literal or `define_static_string`).  Meaningful only when
+     * `hasScopedAnnotation` is true.
+     *
+     * NOTE: extracting a `const char*` annotation member is supported (see the
+     * `MetaExtract` toolchain probe); the earlier claim that `reflect_constant`
+     * could not do so was unverified and is contradicted by that probe and by
+     * `BeanDescriptorGen::scanAnnotations`.  The remaining work for scoped beans is
+     * the session proxy-injection path (specs-internal §10.3, `Bean::makeDeferred`
+     * / `proxyResolve_`), not annotation extraction.  Until that path is wired this
+     * field feeds graph-validation diagnostics that need to name the scope.
+     */
+    const char* scopeName;
+};
+
 struct ContributedDescriptor {
     // --- Identity (consumed at start(), not retained in runtime Descriptor) ---
 
@@ -99,6 +144,17 @@ struct ContributedDescriptor {
     /** Priority used to arbitrate among candidates sharing the same exposed type and name. */
     std::int32_t priority;
 
+    // --- Lazy/eager ---
+
+    /**
+     * @brief Whether materialization is deferred until first resolution.
+     *
+     * Meaningful only for `Lifetime::Singleton`.  Propagated from the `lazy` field
+     * of the `[[=ctr::singleton]]` annotation.  `true` = lazy (default); `false` = eager
+     * (`materializeEagerSingletons()` constructs the instance at `start()`).
+     */
+    bool lazy = true;
+
     // --- Classification ---
 
     /** Scope lifetime governing instance sharing and destruction. */
@@ -111,7 +167,7 @@ struct ContributedDescriptor {
     /** Placement constructor: `(void* mem, void* ResolutionContext*)`. Must not be null. */
     void       (*construct)(void*, void*);
     /** In-place destructor: `(void* instance)`. Must not be null. */
-    void       (*destroy)(void*);
+    void       (*destroy)(void*) noexcept;
     /** Post-construction hook: `(void* instance, void* ResolutionContext*)`. Null when absent. */
     void       (*postConstruct)(void*, void*);
     /** Pre-destruction hook: `(void* instance, void* ResolutionContext*)`. Null when absent. */
@@ -151,7 +207,71 @@ struct ContributedDescriptor {
      * (which was already called by the `destroy` thunk).
      * Non-null ↔ `allocAndConstruct` non-null.
      */
-    void       (*dealloc)(void*) = nullptr;
+    void       (*dealloc)(void*) noexcept = nullptr;
+
+    // --- Injection parameter metadata (for graph validation at start()) ---
+
+    /**
+     * @brief Per-parameter injection metadata for graph validation.
+     *
+     * Each element describes one `ctr::Bean<U>` constructor parameter of the bean.
+     * Populated by `BeanDescriptorGen::makeDescriptorForAnnotatedType` for scanned
+     * beans with injectable constructors.  Null (with `paramCount == 0`) for default
+     * constructors, factory products, and factories.
+     *
+     * Used by `Registry::start()` Phase 3.5 to detect:
+     *  (a) `[[=ctr::scoped{...}]]` on a non-`session` dependency target.
+     *  (b) `session` dependency injected into a non-session bean without `[[=ctr::scoped]]`.
+     */
+    const ContributedParamDescriptor* params = nullptr;
+    /** Number of elements in `params`. Zero when `params` is null. */
+    std::size_t paramCount = 0;
+
+    // ── Bean-metadata fields (SPEC-bean-metadata) ────────────────────────────
+
+    /**
+     * @brief Retained reflective method data; `nullptr` when `retainAllMetadata = false`.
+     * Produced by `makeReflectiveData<T>()` in `BeanDescriptorGen.hpp`.
+     */
+    const ctr::BeanReflectiveData* reflectiveData = nullptr;
+
+    // ── Polymorphic-exposure fields (SPEC-polymorphic-exposure) ──────────────
+
+    /**
+     * @brief True when this descriptor is a polymorphic alias for a base class.
+     *
+     * Alias descriptors are generated by `makeExposedDescriptors` for each
+     * accessible direct public base of a discovered type.  They are linked to
+     * their primary (concrete) descriptor during `start()` Phase 2 via
+     * `aliasOfPrimaryIdentity`.
+     */
+    bool isExposedAlias = false;
+
+    /**
+     * @brief Identity of the primary (concrete) descriptor to link against.
+     *
+     * Set for alias descriptors; `kNoFactoryMethod` (zero) for non-aliases.
+     * Resolved to a `DescriptorId` (`primaryDescriptor` in `Descriptor`) during
+     * `start()` Phase 2 via the local `Identity → DescriptorId` map, mirroring
+     * the `factoryMethodIdentity` resolution pattern.
+     */
+    Identity aliasOfPrimaryIdentity = kNoFactoryMethod;
+
+    /**
+     * @brief Upcast thunk: `(void* concrete) → void* base`.
+     *
+     * Non-null for alias descriptors.  Equivalent to
+     * `static_cast<Base*>(static_cast<Concrete*>(p))`.
+     */
+    void* (*adjustToExposed)(void*) = nullptr;
+
+    /**
+     * @brief Downcast thunk: `(void* base) → void* concrete`.
+     *
+     * Non-null for non-virtual alias descriptors.  `nullptr` for virtual-base
+     * aliases (downcast from a virtual base is ill-formed as a static_cast).
+     */
+    void* (*adjustToConcrete)(void*) noexcept = nullptr;
 };
 
 } // namespace ctr::detail

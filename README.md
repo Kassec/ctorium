@@ -125,7 +125,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] `singleton`
     - [x] `prototype`
     - [ ] `threadLocal`
-    - [ ] `session`
+    - [x] `session`
     - [x] `named`
     - [x] `factory`
     - [x] `postConstruct`
@@ -146,35 +146,34 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
 - [x] Tracked lightweight bean handles
     - [x] typed handles with `ctr::Bean<T>`
     - [x] type-erased handles with `ctr::AnyBean`
-    - [ ] safe cast helpers with `exact<T>()`, `compatible<T>()`, `cast<T>()` and `tryCast<T>()`
-    - [ ] `bean.context()` returns the owning context
+    - [x] safe cast helpers with `exact<T>()`, `compatible<T>()`, `cast<T>()` and `tryCast<T>()`
+    - [x] `bean.context()` returns the owning context
 
 - [x] Lifetime models
     - [x] singleton
-    - [ ] eager and lazy singletons
+    - [x] eager and lazy singletons
     - [x] prototype
     - [ ] thread-local singleton, one instance per context, key and thread (destroyed at thread end or context
       stop/shutdown)
-    - [ ] session
+    - [x] session
 
 - [x] Runtime bean contexts
     - [x] default context for most applications
     - [x] fully isolated parallel contexts for advanced use cases
     - [x] explicit `start()` / `stop()` lifecycle
     - [x] `ctr::BeanContext` can be injected like any other bean
-    - [ ] scoped contexts with session lifetime (`resolveScope`, `start`/`stop`/`restart`)
-    - [ ] scope `userData` association
-    - [ ] a bean can retrieve its owning context with `bean.context()`
+    - [x] scoped contexts with session lifetime (`resolveScope`, `start`/`stop`/`restart`)
+    - [x] scope `userData` association
+    - [x] a bean can retrieve its owning context with `bean.context()`
     - [ ] expose their lifecycle state
 
 - [x] Qualifier-based resolution
     - [x] named qualifiers
     - [x] priority-based selection
-    - [ ] runtime default named selection with `defaultNamed<T>(...)`
+    - [x] runtime default named selection with `defaultNamed<T>(...)`
 
 - [x] Dependency resolution
     - [x] single bean resolution with `resolve<T>()`
-    - [ ] multiple bean resolution with `resolveAll<T>()`
     - [x] automatic dependency graph resolution
     - [x] deterministic error on missing, ambiguous, or cyclic dependencies
 
@@ -193,7 +192,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
 - [x] Beans lifecycle listener
     - [x] typed listener registration with `on<T>()`
     - [x] global listener registration with `on()`
-    - [ ] explicit listener removal with `remove(handle)`
+    - [x] explicit listener removal with `remove(handle)`
     - [x] `onInitialized`, before `postConstruct`
     - [x] `onCreated`, after `postConstruct`
     - [x] `onPreDestroy`, before `preDestroy`

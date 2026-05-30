@@ -3,9 +3,16 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <typeindex>
+#include <typeinfo>
 
 #include "BeanContext.hpp"
 #include "Errors.hpp"
+
+#ifndef CTORIUM_DYNAMIC_LINK
+#include "../../internal/NameId.hpp"
+#include "../../internal/detail/SessionStore.hpp"
+#endif
 
 namespace ctr {
 
@@ -13,9 +20,34 @@ namespace ctr {
  * @brief Context bound to a user scope key.
  *
  * Inherits standard resolution and lifecycle operations from BeanContext.
+ * Adds its own `start`/`stop`/`restart` cycle that governs the session store.
  */
 class ScopedContext : public BeanContext {
 public:
+    /**
+     * @brief Starts this scope: sizes the session store, marks the scope started.
+     *
+     * Idempotent: calling after a successful `start()` is a no-op.
+     * Does NOT call `Registry::start`; the root must already be started.
+     * @throws ContextStateError if the root registry has not been started.
+     */
+    ScopedContext& start();
+
+    /**
+     * @brief Stops this scope: destroys all session instances in reverse construction
+     * order, clears the session store, marks the scope stopped.
+     *
+     * Preserves `scopeNameId_`, `userData`, and tracked handles (specs-api §5.3).
+     * Idempotent: calling on an already-stopped scope is a no-op.
+     */
+    ScopedContext& stop();
+
+    /**
+     * @brief Restarts this scoped context: equivalent to `stop()` followed by `start()`.
+     * @return Current scoped context for chaining.
+     */
+    ScopedContext& restart();
+
     /**
      * @brief Attaches mutable user data to this scope.
      * @tparam T User data type.
@@ -23,14 +55,14 @@ public:
      * @return Current scoped context for chaining.
      */
     template <class T>
-    ScopedContext& setUserData(T& value);
+    ScopedContext& userData(T& value);
 
     /**
      * @brief Clears user data from this scope.
      * @param value Must be nullptr.
      * @return Current scoped context for chaining.
      */
-    ScopedContext& setUserData(std::nullptr_t value);
+    ScopedContext& userData(std::nullptr_t value);
 
     /**
      * @brief Gets mutable user data when type-compatible.
@@ -49,17 +81,30 @@ public:
     std::optional<std::reference_wrapper<const T>> userData() const;
 
     /**
-     * @brief Restarts this scoped context.
-     * @return Current scoped context for chaining.
-     */
-    ScopedContext& restart();
-
-    /**
      * @brief Resolves or creates a scoped context by stable key under the owning root.
      * @param key Stable user key.
      * @return Scoped child context.
      */
     ScopedContext& resolveScope(std::string_view key);
+
+    /**
+     * @brief Binds an externally constructed session instance to this scope.
+     *
+     * Before the scope's `start()`, registers a pending instance that enters
+     * the lifecycle at `start()`.  On a stopped scope, accepted for the next
+     * `start()`.  After `start()`, stores immediately in the session store.
+     *
+     * @tparam T Bound type.
+     * @param object  Ownership of the session instance.
+     * @param options Binding options (`name`, `priority`).
+     * @return This scope for chaining.
+     * @throws ctr::ConfigurationError if T is unknown after root `start()`.
+     */
+    template <class T>
+    ScopedContext& bindSession(std::unique_ptr<T> object, BindOptions options = {});
+
+    /** @brief Destroys pending session instances that were never started. */
+    ~ScopedContext();
 
 protected:
     /**
@@ -79,7 +124,28 @@ protected:
 
 private:
     friend class BeanContext;
+    template <class> friend class Bean;
+    friend class detail::Registry;
+
     BeanContext* root_;
+
+#ifndef CTORIUM_DYNAMIC_LINK
+    detail::NameId   scopeNameId_ = detail::kInvalidNameId;
+    detail::SessionStore sessionStore_;
+    bool             scopeStarted_ = false;
+
+    /// Non-owning userData pointer; null when no userData is attached.
+    void*            userData_     = nullptr;
+    /// Exact type of the stored userData; typeid(void) when null.
+    std::type_index  userDataType_{typeid(void)};
+
+    /// Pre-start (or stopped-scope) runtime session bindings pending the next start().
+    struct PendingRuntimeSession {
+        detail::DescriptorId descId;
+        void*                instance;
+    };
+    std::vector<PendingRuntimeSession> pendingRuntimeSessions_;
+#endif
 };
 
 } // namespace ctr

@@ -40,7 +40,7 @@ TEST(Prototype, ResolveBeforeStartRaisesContextStateError) {
     auto& ctx = ctr::BeanContext::resolveContext("pt-pre-start");
     ctx.discover<^^prototype_fixture>();
     EXPECT_THROW(ctx.resolve<prototype_fixture::Proto>(), ctr::ContextStateError);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Resolution and identity tests ───────────────────────────────────────────
@@ -50,7 +50,7 @@ TEST(Prototype, ResolveReturnsValidBean) {
     ctx.discover<^^prototype_fixture>().start();
     auto bean = ctx.resolve<prototype_fixture::Proto>();
     EXPECT_NE(bean.operator->(), nullptr);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Prototype, EachResolveReturnsDistinctInstance) {
@@ -59,7 +59,7 @@ TEST(Prototype, EachResolveReturnsDistinctInstance) {
     auto b1 = ctx.resolve<prototype_fixture::Proto>();
     auto b2 = ctx.resolve<prototype_fixture::Proto>();
     EXPECT_NE(b1.operator->(), b2.operator->());
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Prototype, HandleCopySharesInstancePointer) {
@@ -70,7 +70,7 @@ TEST(Prototype, HandleCopySharesInstancePointer) {
     auto b1 = ctx.resolve<prototype_fixture::Proto>();
     auto b2 = b1; // copy — retainIfPrototype fires
     EXPECT_EQ(b1.operator->(), b2.operator->());
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Prototype, DifferentContextKeysYieldIndependentInstances) {
@@ -81,15 +81,15 @@ TEST(Prototype, DifferentContextKeysYieldIndependentInstances) {
     auto b1 = ctx1.resolve<prototype_fixture::Proto>();
     auto b2 = ctx2.resolve<prototype_fixture::Proto>();
     EXPECT_NE(b1.operator->(), b2.operator->());
-    ctx1.close();
-    ctx2.close();
+    ctx1.stop();
+    ctx2.stop();
 }
 
 TEST(Prototype, ResolveOfUnregisteredTypeRaisesResolutionError) {
     auto& ctx = ctr::BeanContext::resolveContext("pt-unknown-type");
     ctx.discover<^^prototype_fixture>().start();
     EXPECT_THROW(ctx.resolve<ProtoNotRegistered>(), ctr::ResolutionError);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Hook tests ───────────────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ TEST(Prototype, PostConstructHookFiresOncePerInstance) {
     auto b2 = ctx.resolve<prototype_fixture::ProtoHooked>();
     EXPECT_EQ(b2->callCount, 1);        // hook fires once on b2's own instance
     EXPECT_NE(b1.operator->(), b2.operator->()); // distinct objects
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Dependency injection tests ───────────────────────────────────────────────
@@ -118,5 +118,20 @@ TEST(Prototype, EachConsumerReceivesOwnDependencyInstance) {
     auto c1 = ctx.resolve<prototype_fixture::ProtoConsumer>();
     auto c2 = ctx.resolve<prototype_fixture::ProtoConsumer>();
     EXPECT_NE(c1->dep.operator->(), c2->dep.operator->());
-    ctx.close();
+    ctx.stop();
+}
+
+TEST(Prototype, LastHandleReleaseFiresDestroyedListener) {
+    auto& ctx = ctr::BeanContext::resolveContext("pt-last-release");
+    ctx.discover<^^prototype_fixture>().start();
+
+    int destroyCount = 0;
+    ctx.on(ctr::onDestroyed, [&](const ctr::AnyBean&) { ++destroyCount; });
+
+    {
+        auto handle = ctx.resolve<prototype_fixture::Proto>();
+    }
+
+    EXPECT_EQ(destroyCount, 1);
+    ctx.stop();
 }

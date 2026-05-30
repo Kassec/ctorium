@@ -1,21 +1,35 @@
 #include <gtest/gtest.h>
+#include <meta>
 #include <ctr/Ctorium.hpp>
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 //
-// Named-bean annotation tests (ctr::named{.name=...}) are deferred: GCC 16.1.0
-// does not yet support reflect_constant on class types with const char* members.
-// The acceptance criterion "defaultNamed<T>("x") puis resolve<T>() sélectionne
-// le candidat "x"" is therefore validated indirectly: after setting a default to
-// an unknown key "console", resolve<T>() raises ResolutionError (the default IS
-// applied, but no candidate exists for that key).  After clearing with nullptr,
-// unnamed resolution succeeds again.
+// Named-bean annotations (ctr::named{.name=...}) work on GCC 16.1.0 when the name
+// is backed by std::define_static_string (the required provenance: a raw string
+// literal makes extract throw "reflect_constant failed" — see docs/specs-gcc.md
+// §3 / §4.3). The direct acceptance criterion
+//   defaultNamed<T>("console") then resolve<T>() selects the "console" candidate
+// is exercised below (NamedBeanDiscoversAndStarts / ResolveByNamedSelector /
+// DefaultNamedRedirectsUnnamedResolveToNamedCandidate).
+//
+// The indirect tests on the unnamed `Logger` bean are kept: they validate the
+// redirect mechanism when no candidate exists for the defaulted key.
 
 namespace defaults_fixture {
 
 struct [[=ctr::singleton{}]] Logger {};
 
 } // namespace defaults_fixture
+
+namespace defaults_named_fixture {
+
+// Named singleton bean. The name MUST be promoted with define_static_string:
+// a raw literal in the annotation is ill-formed on GCC 16.1.0 (docs/specs-gcc.md).
+struct [[=ctr::singleton{}]]
+       [[=ctr::named{.name = std::define_static_string("console")}]]
+       ConsoleSink {};
+
+} // namespace defaults_named_fixture
 
 // Unregistered type — deliberately not discovered in any test context.
 struct DefaultsNotRegistered {};
@@ -28,7 +42,7 @@ TEST(Defaults, DefaultNamedBeforeStartRaisesContextStateError) {
     EXPECT_THROW(
         ctx.defaultNamed<defaults_fixture::Logger>("console"),
         ctr::ContextStateError);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Unknown type guard ───────────────────────────────────────────────────────
@@ -39,7 +53,7 @@ TEST(Defaults, DefaultNamedUnknownTypeRaisesConfigurationError) {
     EXPECT_THROW(
         ctx.defaultNamed<DefaultsNotRegistered>("console"),
         ctr::ConfigurationError);
-    ctx.close();
+    ctx.stop();
 }
 
 // ─── Default mechanism ────────────────────────────────────────────────────────
@@ -53,7 +67,7 @@ TEST(Defaults, SetDefaultRedirectsUnnamedResolveToNamedKey) {
 
     ctx.defaultNamed<defaults_fixture::Logger>("console");
     EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), ctr::ResolutionError);
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Defaults, ClearDefaultWithNullptrRestoresUnnamedResolve) {
@@ -67,7 +81,7 @@ TEST(Defaults, ClearDefaultWithNullptrRestoresUnnamedResolve) {
     // Clear: unnamed resolve must succeed again.
     ctx.defaultNamed<defaults_fixture::Logger>(nullptr);
     EXPECT_NO_THROW(ctx.resolve<defaults_fixture::Logger>());
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Defaults, ClearDefaultWithEmptyStringRestoresUnnamedResolve) {
@@ -79,7 +93,7 @@ TEST(Defaults, ClearDefaultWithEmptyStringRestoresUnnamedResolve) {
 
     ctx.defaultNamed<defaults_fixture::Logger>("");
     EXPECT_NO_THROW(ctx.resolve<defaults_fixture::Logger>());
-    ctx.close();
+    ctx.stop();
 }
 
 TEST(Defaults, DefaultNamedNullptrOnUnregisteredTypeIsNoOp) {
@@ -87,5 +101,44 @@ TEST(Defaults, DefaultNamedNullptrOnUnregisteredTypeIsNoOp) {
     ctx.start();
     // Clearing a default for a type that was never registered must not throw.
     EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(nullptr));
-    ctx.close();
+    ctx.stop();
+}
+
+// ─── Named beans: previously deferred, now exercised directly ─────────────────
+//
+// These replace the indirect validation described in the file header. They rely
+// on define_static_string-backed names (docs/specs-gcc.md §4.3).
+
+TEST(Defaults, NamedBeanDiscoversAndStarts) {
+    // The path that was actually blocked: a [[=ctr::named{.name=...}]] bean must
+    // discover and start without error (scanAnnotations extracts the name).
+    auto& ctx = ctr::BeanContext::resolveContext("dn-named-discover");
+    EXPECT_NO_THROW(ctx.discover<^^defaults_named_fixture>().start());
+    ctx.stop();
+}
+
+TEST(Defaults, ResolveByNamedSelectorReturnsNamedBean) {
+    auto& ctx = ctr::BeanContext::resolveContext("dn-named-resolve");
+    ctx.discover<^^defaults_named_fixture>().start();
+    auto bean = ctx.resolve<defaults_named_fixture::ConsoleSink>(ctr::named{"console"});
+    EXPECT_NE(bean.operator->(), nullptr);
+    ctx.stop();
+}
+
+TEST(Defaults, DefaultNamedRedirectsUnnamedResolveToNamedCandidate) {
+    auto& ctx = ctr::BeanContext::resolveContext("dn-named-default");
+    ctx.discover<^^defaults_named_fixture>().start();
+
+    // No unnamed candidate exists for ConsoleSink → unnamed resolve fails.
+    EXPECT_THROW(ctx.resolve<defaults_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+
+    // Default to the existing "console" candidate → unnamed resolve now succeeds.
+    ctx.defaultNamed<defaults_named_fixture::ConsoleSink>("console");
+    auto byDefault = ctx.resolve<defaults_named_fixture::ConsoleSink>();
+    EXPECT_NE(byDefault.operator->(), nullptr);
+
+    // It resolves to the same singleton instance as the explicit named resolve.
+    auto byName = ctx.resolve<defaults_named_fixture::ConsoleSink>(ctr::named{"console"});
+    EXPECT_EQ(byDefault.operator->(), byName.operator->());
+    ctx.stop();
 }

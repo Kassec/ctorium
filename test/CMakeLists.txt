@@ -34,15 +34,19 @@ if (BUILD_TESTING)
 endif ()
 
 add_executable(ctorium-tests
-        ctr/discovery.cpp
-        ctr/singleton.cpp
-        ctr/prototype.cpp
-        ctr/context.cpp
         ctr/bean.cpp
-        ctr/defaults.cpp
-        ctr/listeners.cpp
-        ctr/resolve-all.cpp
+        ctr/bind-session.cpp
+        ctr/bind-singleton.cpp
         ctr/casts.cpp
+        ctr/context.cpp
+        ctr/defaults.cpp
+        ctr/discovery.cpp
+        ctr/listeners.cpp
+        ctr/prototype.cpp
+        ctr/session.cpp
+        ctr/singleton.cpp
+        ctr/thread-local.cpp
+        ctr/user-data.cpp
 )
 
 target_compile_features(ctorium-tests

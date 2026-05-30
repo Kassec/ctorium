@@ -92,15 +92,7 @@ public:
 
         rebuildView_();
 
-        static const auto remover = [](void* token) noexcept {
-            reinterpret_cast<ListenerStore*>(
-                reinterpret_cast<PendingRemoval*>(token)->store
-            )->removeByToken(reinterpret_cast<PendingRemoval*>(token)->token);
-            delete reinterpret_cast<PendingRemoval*>(token);
-        };
-
-        auto* removal = new PendingRemoval{this, entry->token};
-        return ListenerHandle{static_cast<void*>(removal), remover};
+        return ListenerHandle{this, entry->token};
     }
 
     /**
@@ -122,31 +114,42 @@ public:
         // Fast-exit: lock-free; avoids even the atomic load when idle.
         if (phaseSizes_[phaseIndex].load(std::memory_order_relaxed) == 0) return;
 
+        // C2: mark this dispatch as in-flight so rebuildView_() will not purge
+        // any view that this dispatch might currently hold.  seq_cst closes the
+        // store-buffer race with the rebuildView_() load on dispatchCount_.
+        dispatchCount_.fetch_add(1, std::memory_order_seq_cst);
+
         // Load the published view — no heap allocation, no spinlock.
         const View* view = view_.load(std::memory_order_acquire);
-        if (!view) return;
+        if (view) {
+            const PhaseView& pv = (*view)[phaseIndex];
 
-        const PhaseView& pv = (*view)[phaseIndex];
-
-        static const std::vector<ViewEntry> kEmpty;
-        const auto it = pv.typed.find(beanTypeId);
-        const auto& typeds = (it != pv.typed.end()) ? it->second : kEmpty;
-        const auto& globals = pv.global;
-
-        // Two-pointer merge: both lists sorted by (priority desc, token asc).
-        std::size_t gi = 0, ti = 0;
-        while (gi < globals.size() && ti < typeds.size()) {
-            const auto& g = globals[gi];
-            const auto& t = typeds[ti];
-            if (g.priority > t.priority
-                    || (g.priority == t.priority && g.token < t.token)) {
-                g.callback(bean); ++gi;
-            } else {
-                t.callback(bean); ++ti;
+            static const std::vector<ViewEntry> kEmpty;
+            const std::vector<ViewEntry>* typedList = &kEmpty;
+            if (!pv.typed.empty()) {
+                const auto it = pv.typed.find(beanTypeId);
+                if (it != pv.typed.end()) typedList = &it->second;
             }
+            const auto& typeds = *typedList;
+            const auto& globals = pv.global;
+
+            // Two-pointer merge: both lists sorted by (priority desc, token asc).
+            std::size_t gi = 0, ti = 0;
+            while (gi < globals.size() && ti < typeds.size()) {
+                const auto& g = globals[gi];
+                const auto& t = typeds[ti];
+                if (g.priority > t.priority
+                        || (g.priority == t.priority && g.token < t.token)) {
+                    g.callback(bean); ++gi;
+                } else {
+                    t.callback(bean); ++ti;
+                }
+            }
+            while (gi < globals.size()) globals[gi++].callback(bean);
+            while (ti < typeds.size()) typeds[ti++].callback(bean);
         }
-        while (gi < globals.size()) globals[gi++].callback(bean);
-        while (ti < typeds.size()) typeds[ti++].callback(bean);
+
+        dispatchCount_.fetch_sub(1, std::memory_order_seq_cst);
     }
 
     /**
@@ -161,8 +164,33 @@ public:
         for (std::size_t i = 0; i < kPhaseCount; ++i)
             phaseSizes_[i].store(0, std::memory_order_relaxed);
         view_.store(nullptr, std::memory_order_release);
-        // allViews_ is NOT cleared here: in-flight dispatch() calls may still hold
-        // raw pointers loaded before this store; Views are freed in the destructor.
+        // clear() is called by Registry::stop() under exclusive ownership (§18):
+        // no concurrent dispatch() can be in-flight at this point.  Freeing
+        // allViews_ here reclaims the memory at teardown rather than waiting for
+        // the destructor.  The destructor's allViews_.clear() becomes a no-op.
+        allViews_.clear();
+    }
+
+    /**
+     * @brief Removes the listener identified by `token`.  Called by `ListenerHandle::remove()`.
+     *
+     * No-op if the token is not found (safe for double-remove and for copies that
+     * share the same token).  Acquires `mutex_` internally.
+     */
+    void removeByToken(std::size_t token) {
+        std::lock_guard lock(mutex_);
+        for (auto& phase : phases_) {
+            for (auto it = phase.begin(); it != phase.end(); ++it) {
+                if ((*it)->token == token) {
+                    const std::size_t phaseIdx = (*it)->phaseIndex;
+                    delete *it;
+                    phase.erase(it);
+                    phaseSizes_[phaseIdx].fetch_sub(1, std::memory_order_relaxed);
+                    rebuildView_();
+                    return;
+                }
+            }
+        }
     }
 
     // --- Phase index helpers -------------------------------------------------
@@ -187,11 +215,6 @@ private:
         int         priority;
         std::size_t token;        ///< Unique monotone token: lower = earlier registration.
         std::size_t phaseIndex;
-    };
-
-    struct PendingRemoval {
-        ListenerStore* store;
-        std::size_t    token;
     };
 
     // -------------------------------------------------------------------------
@@ -232,31 +255,26 @@ private:
         const View* rawPtr = newView.get();
         view_.store(rawPtr, std::memory_order_release);
         allViews_.push_back(std::move(newView));
-    }
 
-    // -------------------------------------------------------------------------
-    // Removal
-    // -------------------------------------------------------------------------
-
-    void removeByToken(std::size_t token) {
-        std::lock_guard lock(mutex_);
-        for (auto& phase : phases_) {
-            for (auto it = phase.begin(); it != phase.end(); ++it) {
-                if ((*it)->token == token) {
-                    const std::size_t phaseIdx = (*it)->phaseIndex;
-                    delete *it;
-                    phase.erase(it);
-                    phaseSizes_[phaseIdx].fetch_sub(1, std::memory_order_relaxed);
-                    rebuildView_();
-                    return;
-                }
-            }
+        // C2 runtime purge: if no dispatch is currently in-flight, free all but the
+        // just-published view.  seq_cst closes the store-buffer race: if a concurrent
+        // dispatch incremented dispatchCount_ before our store to view_, it will see
+        // the new view pointer (not the old one) — safe to release old views.
+        // This is correct under mutex_ (no concurrent rebuildView_) + dispatchCount_==0
+        // (no in-flight dispatch still holding an old view pointer).
+        if (dispatchCount_.load(std::memory_order_seq_cst) == 0
+                && allViews_.size() > 1) {
+            allViews_.erase(allViews_.begin(), allViews_.end() - 1);
         }
     }
 
     // -------------------------------------------------------------------------
     // State
     // -------------------------------------------------------------------------
+
+    /// C2 runtime: counts dispatches currently in-flight (seq_cst).
+    /// rebuildView_() purges allViews_ only when this is 0.
+    mutable std::atomic<std::size_t> dispatchCount_{0};
 
     mutable std::mutex mutex_;
     std::vector<Entry*>    phases_[kPhaseCount];    ///< Master list, sorted per phase.
@@ -273,3 +291,15 @@ private:
 };
 
 } // namespace ctr::detail
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ListenerHandle::remove() — defined here because it requires the full
+// ListenerStore definition (calls removeByToken()).
+// ─────────────────────────────────────────────────────────────────────────────
+
+inline void ctr::ListenerHandle::remove() noexcept {
+    if (store_ != nullptr) {
+        store_->removeByToken(tokenValue_);
+        store_ = nullptr;
+    }
+}

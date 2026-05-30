@@ -9,10 +9,19 @@
 namespace ctr::detail {
 
 /**
- * @brief Per-type candidate index. Vectors are sorted by descending priority at start().
+ * @brief Per-name candidate entry. Candidates are sorted by descending priority at start().
+ */
+struct NameEntry {
+    std::vector<DescriptorId> candidates;
+    DescriptorId head = kInvalidDescriptorId;
+    bool ambiguous = false;
+};
+
+/**
+ * @brief Per-type candidate index.
  */
 struct NameTable {
-    std::flat_map<NameId, std::vector<DescriptorId>> entries;
+    std::flat_map<NameId, NameEntry> entries;
 };
 
 } // namespace ctr::detail

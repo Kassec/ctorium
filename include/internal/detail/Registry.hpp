@@ -309,9 +309,9 @@ public:
                 ++typeId) {
             const NameTable* table = typeIndex_.tableFor(typeId);
             if (!table) continue;
-            for (const auto& [nameId, candidates] : table->entries) {
+            for (const auto& [nameId, entry] : table->entries) {
                 factoryIds.clear();
-                for (DescriptorId id : candidates) {
+                for (DescriptorId id : entry.candidates) {
                     const Descriptor& d = descriptors_.at(id);
                     if (d.origin == Origin::FactoryProduct
                             && d.factoryMethodDescriptor != kInvalidDescriptorId) {

@@ -848,7 +848,7 @@ namespace ctr::detail {
             const auto [head, ambig] = typeIndex_.headFor(typeId, effectiveNameId);
             if (head == kInvalidDescriptorId) [[unlikely]] {
                 // Post-start bindings update the canonical entries table; the
-                // precomputed named-head map only covers candidates known at start().
+                // precomputed entry head only covers candidates known at start().
                 const auto* candidates = typeIndex_.candidatesFor(typeId, effectiveNameId);
                 if (!candidates || candidates->empty()) {
                     throw ctr::ResolutionError(
@@ -1643,8 +1643,8 @@ namespace ctr::detail {
                 // Check already instantiated (any name key).
                 const NameTable *table = typeIndex_.tableFor(typeId);
                 if (table) {
-                    for (const auto &[nid, candidates] : table->entries) {
-                        for (DescriptorId did : candidates) {
+                    for (const auto &[nid, entry] : table->entries) {
+                        for (DescriptorId did : entry.candidates) {
                             if (singletons_.find(did) != nullptr) {
                                 throw ctr::ConfigurationError(
                                     std::string("Registry::bindSingleton: type '") + kTypeName

@@ -303,7 +303,7 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         if (table) {
             auto it = table->entries.find(nameId);
             if (it != table->entries.end()) {
-                for (detail::DescriptorId did : it->second) {
+                for (detail::DescriptorId did : it->second.candidates) {
                     const detail::Descriptor& d = reg.descriptors_.at(did);
                     if (d.origin == detail::Origin::RuntimeBinding
                             && d.lifetime == detail::Lifetime::Session) {

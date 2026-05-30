@@ -22,7 +22,7 @@ namespace ctr::detail {
  * vector<NameTable*>   typeIndex_         — TypeId → heap-allocated NameTable
  *                                           (pointer stable across outer-vector growth)
  * NameTable {
- *   flat_map<NameId, vector<DescriptorId>>  entries
+ *   flat_map<NameId, NameEntry>  entries
  * }
  * ```
  * `NameTable` objects live on the heap and are owned by `ownedTables_`.  The outer
@@ -32,8 +32,8 @@ namespace ctr::detail {
  *
  * ### Sort invariant
  * After `sortAllCandidates()`, every candidate vector is sorted in **descending
- * priority order**.  `resolve<T>()` reads the head element in O(1) and checks
- * index 1 for ambiguity (one extra read).  No further sorting is needed at runtime.
+ * priority order**. `resolve<T>()` reads the colocalized head and ambiguity bit
+ * from the name entry. No further sorting is needed at runtime.
  *
  * ### Thread safety
  * `insertCandidate()` and `sortAllCandidates()` run during `start()` under its lock,
@@ -64,7 +64,7 @@ public:
         } else {
             // Post-sort phase (e.g. registerContextBean): direct flat_map insert.
             ensureTable(typeId);
-            table(typeId).entries.try_emplace(nameId).first->second.push_back(descId);
+            table(typeId).entries.try_emplace(nameId).first->second.candidates.push_back(descId);
         }
     }
 
@@ -120,7 +120,7 @@ public:
             // distinct NameId; all DescriptorIds of the group are pushed in bulk.
             for (auto it = pend.begin(); it != pend.end(); ) {
                 const NameId cur = it->first;
-                auto& vec = tbl.entries.try_emplace(cur).first->second;
+                auto& vec = tbl.entries.try_emplace(cur).first->second.candidates;
                 do { vec.push_back(it->second); } while (++it != pend.end() && it->first == cur);
             }
             pend.clear();
@@ -132,14 +132,13 @@ public:
         ambiguous_.clear();
         ambiguous_.resize(typeCount);   // default-constructs null unique_ptrs
         singleUnnamed_.assign(typeCount, kInvalidDescriptorId);
-        headMap_.clear();
-        headMap_.resize(typeCount);     // default-constructs null unique_ptrs
 
         for (std::size_t i = 0; i < typeCount; ++i) {
             auto* t = typeIndex_[i];
             if (!t) continue;
             // flat_map iterates keys in ascending NameId order.
-            for (auto&& [nameId, vec] : t->entries) {
+            for (auto&& [nameId, entry] : t->entries) {
+                auto &vec = entry.candidates;
                 std::sort(vec.begin(), vec.end(),
                     [&](DescriptorId a, DescriptorId b) {
                         return priorityOf(a) > priorityOf(b);
@@ -156,12 +155,8 @@ public:
                 // Precompute mono-candidate unnamed fast-path.
                 if (nameId == kUnnamed && vec.size() == 1 && !ambig)
                     singleUnnamed_[i] = vec[0];
-                // Co-localize head + ambiguity for the named resolve path (C3).
-                // Keys arrive in ascending order → flat_map try_emplace is O(1) amortized.
-                if (!headMap_[i])
-                    headMap_[i] = std::make_unique<
-                        std::flat_map<NameId, std::pair<DescriptorId, bool>>>();
-                headMap_[i]->try_emplace(nameId, vec[0], ambig);
+                entry.head = vec.empty() ? kInvalidDescriptorId : vec[0];
+                entry.ambiguous = ambig;
             }
         }
         finalized_ = true;
@@ -188,7 +183,7 @@ public:
         const auto idx = static_cast<std::size_t>(typeId);
         if (idx >= typeIndex_.size() || !typeIndex_[idx]) return nullptr;
         const auto it = typeIndex_[idx]->entries.find(nameId);
-        return it != typeIndex_[idx]->entries.end() ? &it->second : nullptr;
+        return it != typeIndex_[idx]->entries.end() ? &it->second.candidates : nullptr;
     }
 
     /**
@@ -240,7 +235,7 @@ public:
      *
      * Replaces the `candidatesFor() + isAmbiguousFor()` pair on the named resolve path.
      * Returns `{kInvalidDescriptorId, false}` when no candidates exist for the pair.
-     * Precomputed in `sortAllCandidates`; result is identical to reading
+     * Stored in the `NameEntry`; result is identical to reading
      * `(*candidatesFor(typeId, nameId))[0]` and `isAmbiguousFor(typeId, nameId)`.
      *
      * Lock-free after `start()`.
@@ -248,12 +243,12 @@ public:
     [[nodiscard]] std::pair<DescriptorId, bool>
     headFor(TypeId typeId, NameId nameId) const noexcept {
         const auto idx = static_cast<std::size_t>(typeId);
-        if (idx >= headMap_.size() || !headMap_[idx])
+        if (idx >= typeIndex_.size() || !typeIndex_[idx])
             return {kInvalidDescriptorId, false};
-        const auto it = headMap_[idx]->find(nameId);
-        if (it == headMap_[idx]->end())
+        const auto it = typeIndex_[idx]->entries.find(nameId);
+        if (it == typeIndex_[idx]->entries.end())
             return {kInvalidDescriptorId, false};
-        return it->second;
+        return {it->second.head, it->second.ambiguous};
     }
 
 private:
@@ -291,10 +286,6 @@ private:
     /// Per-TypeId: DescriptorId of the single unnamed candidate, or kInvalidDescriptorId.
     /// Enables fast-path in resolve<T>() for the common mono-candidate unnamed case.
     std::vector<DescriptorId> singleUnnamed_;
-    /// Per-TypeId: NameId → {head DescriptorId, ambiguity flag}.
-    /// Co-localized precomputation from sortAllCandidates; single flat_map lookup
-    /// replaces candidatesFor() + isAmbiguousFor() on the named resolve path.
-    std::vector<std::unique_ptr<std::flat_map<NameId, std::pair<DescriptorId, bool>>>> headMap_;
 };
 
 } // namespace ctr::detail

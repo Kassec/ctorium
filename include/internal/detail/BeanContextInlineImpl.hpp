@@ -289,14 +289,10 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         // Root not started: intern the type now (TypeInterning not frozen).
         typeId = reg.typeInterning_.internByName(kTypeName, &detail::TypeInfoGetter<T>::get);
     } else {
-        // Root started: TypeInterning is frozen — type must already be known.
+        // Root started: unknown types are adopted through TypeInterning overflow.
         typeId = reg.lookupTypeId(std::type_index(typeid(T)));
-        if (typeId == detail::kInvalidTypeId) {
-            throw ConfigurationError(
-                std::string("ScopedContext::bindSession: type '") + kTypeName
-                + "' is not known to this context after root start(); "
-                "discover<>() or bindSession() before root start() to register it.");
-        }
+        if (typeId == detail::kInvalidTypeId)
+            typeId = reg.typeInterning_.internByName(kTypeName, &detail::TypeInfoGetter<T>::get);
     }
 
     // Reuse an existing RuntimeBinding session descriptor for (typeId, nameId)

@@ -17,10 +17,9 @@ namespace ctr::detail {
      * observes either the previous default or the new default."
      *
      * ### Storage model
-     * One `std::atomic<NameId>` per TypeId, indexed by TypeId value.  The array is
-     * allocated once during `start()` (after all TypeIds are known) and never reallocated
-     * afterwards.  Atomic operations on individual slots are therefore always safe:
-     * the array storage does not move once created.
+     * One `std::atomic<NameId>` per TypeId known at `start()`, indexed by TypeId
+     * value. The array is allocated once during `start()` and never reallocated
+     * afterwards. Post-start overflow TypeIds have no slot and therefore no default.
      *
      * `std::unique_ptr<std::atomic<NameId>[]>` is used instead of
      * `std::vector<std::atomic<NameId>>` because std::atomic is neither copyable nor
@@ -40,12 +39,12 @@ namespace ctr::detail {
     class DefaultsTable {
     public:
         /**
-         * @brief Allocates one atomic slot per interned TypeId, initialized to `kUnnamed`.
+         * @brief Allocates one atomic slot per startup TypeId, initialized to `kUnnamed`.
          *
-         * Must be called during `start()` after all TypeIds have been assigned, before
-         * any `setDefault()` or `getDefault()` call.
+         * Must be called during `start()` after startup TypeIds have been assigned,
+         * before any `setDefault()` call.
          *
-         * @param typeCount Total number of interned TypeIds at end of `start()`.
+         * @param typeCount Total number of startup TypeIds at end of `start()`.
          */
         void resize(std::size_t typeCount) {
             defaults_ = std::make_unique<std::atomic<NameId>[]>(typeCount);

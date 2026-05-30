@@ -196,10 +196,10 @@ TEST(BindSingleton, PreStartLifecycleFiresAfterStartWithDeferredListeners) {
     ctx.stop();
 }
 
-// bs-post-start-* : bindSingleton after start() rejects unknown types with
-// ConfigurationError; type must be pre-registered (discover or bindSingleton) before start().
+// Post-start binding cases: bindSingleton adopts a runtime-bound singleton type
+// after the root context is already started.
 
-TEST(DISABLED_BindSingleton, PostStartBindResolvable) {
+TEST(BindSingleton, PostStartBindResolvable) {
     auto& ctx = ctr::BeanContext::resolveContext("bs-post-start-resolve");
     ctx.start();
     auto widget = std::make_unique<bind_singleton_fixture::Widget>(77);
@@ -210,7 +210,7 @@ TEST(DISABLED_BindSingleton, PostStartBindResolvable) {
     ctx.stop();
 }
 
-TEST(DISABLED_BindSingleton, PostStartBindFiresLifecycleImmediately) {
+TEST(BindSingleton, PostStartBindFiresLifecycleImmediately) {
     auto& ctx = ctr::BeanContext::resolveContext("bs-post-start-lifecycle");
     int count = 0;
     ctx.on<bind_singleton_fixture::Widget>(ctr::onCreated,
@@ -222,7 +222,7 @@ TEST(DISABLED_BindSingleton, PostStartBindFiresLifecycleImmediately) {
     ctx.stop();
 }
 
-TEST(DISABLED_BindSingleton, PostStartBindWithNameResolvableByName) {
+TEST(BindSingleton, PostStartBindWithNameResolvableByName) {
     auto& ctx = ctr::BeanContext::resolveContext("bs-post-start-named");
     ctx.start();
     ctx.bindSingleton<bind_singleton_fixture::Widget>(

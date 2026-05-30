@@ -156,12 +156,10 @@ TEST(BindSession, NamedKeyBinding) {
     ctx.stop();
 }
 
-// bss-post-start / bss-lifecycle : bindSession after root start() rejects unknown
-// types with ConfigurationError. The type must be pre-registered before root start.
-// bss-restart : the running-scope listener deadlock is fixed; the disabled
-// post-start cases still depend on adopting unknown types after root start().
+// Post-start binding cases: bindSession adopts a runtime-bound session type
+// after both root and scope are already started.
 
-TEST(DISABLED_BindSession, PostScopeStartBindAvailableImmediately) {
+TEST(BindSession, PostScopeStartBindAvailableImmediately) {
     auto& ctx   = ctr::BeanContext::resolveContext("bss-post-start");
     auto& scope = ctx.resolveScope("s");
     ctx.start();
@@ -173,7 +171,7 @@ TEST(DISABLED_BindSession, PostScopeStartBindAvailableImmediately) {
     ctx.stop();
 }
 
-TEST(DISABLED_BindSession, PostScopeStartBindFiresLifecycleImmediately) {
+TEST(BindSession, PostScopeStartBindFiresLifecycleImmediately) {
     auto& ctx   = ctr::BeanContext::resolveContext("bss-lifecycle");
     auto& scope = ctx.resolveScope("s");
     int count = 0;

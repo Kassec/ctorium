@@ -1,6 +1,24 @@
 #pragma once
 
 namespace ctr::detail {
+
+consteval std::string_view compatibleConstructorConflictMessage(std::string_view typeName) {
+    constexpr std::string_view kPrefix = "Ctorium: type ";
+    constexpr std::string_view kSuffix =
+        " declares multiple compatible constructors for injection.";
+
+    std::vector<char> buffer;
+    buffer.reserve(kPrefix.size() + typeName.size() + kSuffix.size());
+    for (char c : kPrefix) buffer.push_back(c);
+    for (char c : typeName) buffer.push_back(c);
+    for (char c : kSuffix) buffer.push_back(c);
+
+    return std::string_view{
+        std::define_static_string(std::string_view{buffer.data(), buffer.size()}),
+        buffer.size()
+    };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // §6.1  makeDescriptorForAnnotatedType
 // ─────────────────────────────────────────────────────────────────────────────
@@ -20,6 +38,8 @@ consteval ContributedDescriptor makeDescriptorForAnnotatedType() {
     constexpr auto members = scanMembers<entity.entity>();
     // qualifiedNameOf computed once and reused for identity + type names (D1).
     constexpr const char* typeName = qualifiedNameOf(entity.entity);
+    static_assert(!members.compatibleConstructorConflict,
+        compatibleConstructorConflictMessage(typeName));
 
     constexpr bool hasParams = (members.ctor != std::meta::info{})
         && (std::meta::parameters_of(members.ctor).size() > 0);
@@ -88,6 +108,8 @@ consteval ContributedDescriptor makeDescriptorForFactory() {
     // Member scan to find compatible constructor (D4).
     constexpr auto members   = scanMembers<entity.entity>();
     constexpr const char* typeName = qualifiedNameOf(entity.entity); // D1: compute once
+    static_assert(!members.compatibleConstructorConflict,
+        compatibleConstructorConflictMessage(typeName));
     constexpr Lifetime lifetime = Lifetime::Singleton;
     constexpr bool hasParams = (members.ctor != std::meta::info{})
         && (std::meta::parameters_of(members.ctor).size() > 0);

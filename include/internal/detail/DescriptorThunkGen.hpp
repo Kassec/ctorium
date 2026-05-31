@@ -398,6 +398,7 @@ struct MemberScan {
     std::meta::info ctor{};          ///< Compatible constructor; info{} if absent.
     std::meta::info postConstruct{}; ///< postConstruct hook; info{} if absent.
     std::meta::info preDestroy{};    ///< preDestroy hook; info{} if absent.
+    bool compatibleConstructorConflict = false; ///< Multiple compatible constructors.
 };
 
 template<std::meta::info Type>
@@ -406,6 +407,7 @@ consteval MemberScan scanMembers() {
         std::define_static_array(
             std::meta::members_of(Type, std::meta::access_context::unchecked()));
     MemberScan r;
+    std::size_t compatibleConstructorCount = 0;
     template for (constexpr auto m : kMembers) {
         if constexpr (std::meta::is_constructor(m)) {
             static constexpr auto kParams =
@@ -417,7 +419,11 @@ consteval MemberScan scanMembers() {
                 }
                 return true;
             }();
-            if constexpr (compatible) { r.ctor = m; }
+            if constexpr (compatible) {
+                ++compatibleConstructorCount;
+                if (compatibleConstructorCount >= 2) r.compatibleConstructorConflict = true;
+                r.ctor = m;
+            }
         } else if constexpr (!std::meta::is_type(m)
                           && !std::meta::is_special_member_function(m)) {
             constexpr bool isPostConstruct = []{

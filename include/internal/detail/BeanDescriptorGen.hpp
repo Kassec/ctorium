@@ -58,7 +58,7 @@ consteval Identity fnv1a64Byte(std::uint8_t b, Identity seed) {
 /// Builds the qualified name ("ns::Type") by walking up the scope hierarchy.
 /// Uses only identifier_of + parent_of + is_namespace, all validated by probes.
 /// Returns a const char* with static lifetime via define_static_string.
-/// Counts the exact size first, then emits a transient buffer to define_static_string.
+/// Counts the exact size first, then emits a transient character container to define_static_string.
 /// Returns true when `e` is a template specialization.
 /// GCC 16.1.0 P2996: template_arguments_of throws std::meta::exception for
 /// non-specializations (see docs/gcc-P2996R13.md §3).  try/catch is valid in
@@ -114,8 +114,8 @@ consteval const char* qualifiedNameOf(std::meta::info entity) {
     const std::size_t totalLength =
         segmentLength + (segmentCount > 1 ? (segmentCount - 1) * 2 : 0);
 
-    // Second pass writes each segment directly to its final slot in a transient buffer.
-    char* buffer = new char[totalLength];
+    // Second pass writes each segment directly to its final slot in an automatic buffer.
+    std::vector<char> buffer(totalLength);
     std::size_t writeEnd = totalLength;
 
     const std::string_view entitySegment = std::meta::identifier_of(entity);
@@ -144,9 +144,7 @@ consteval const char* qualifiedNameOf(std::meta::info entity) {
         parent = std::meta::parent_of(parent);
     }
 
-    const char* result = std::define_static_string(std::string_view{buffer, totalLength});
-    delete[] buffer;
-    return result;
+    return std::define_static_string(std::string_view{buffer.data(), totalLength});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@ namespace ctr {
 
     namespace detail {
         class Registry;
+        class PrototypeStore;
     } // namespace detail
 
     /**
@@ -26,7 +27,7 @@ namespace ctr {
      * `tryCast<T>()` can be implemented as cheap reinterpretation without an extra
      * copy.  The concrete type is known via the `Descriptor` looked up through the
      * Registry using `bits_.f1.slot` (Form 1) or the proxy resolution (Form 2).
-     * Prototype Form 1 handles also retain the Registry liveness block.
+     * Prototype Form 1 handles anchor to the surviving PrototypeStore block.
      *
      * ### Tracking semantics
      * Identical to `Bean<T>`: copy retains, move transfers, destroy releases.
@@ -40,52 +41,50 @@ namespace ctr {
         AnyBean(const AnyBean &other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_),
-              registryLiveness_(other.registryLiveness_) {
-            retainIfPrototype();
+              registry_(other.registry_) {
+            if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                retainIfPrototype();
         }
 
         AnyBean(AnyBean &&other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_),
-              registryLiveness_(other.registryLiveness_) {
+              registry_(other.registry_) {
             other.object_ = nullptr;
             other.bits_ = Bits{};
             other.registry_ = nullptr;
-            other.registryLiveness_ = nullptr;
         }
 
         AnyBean &operator=(const AnyBean &other) noexcept {
             if (this != &other) {
-                releaseIfPrototype();
+                if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                    releaseIfPrototype();
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
-                registryLiveness_ = other.registryLiveness_;
-                retainIfPrototype();
+                if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                    retainIfPrototype();
             }
             return *this;
         }
 
         AnyBean &operator=(AnyBean &&other) noexcept {
             if (this != &other) {
-                if (object_ != nullptr)
+                if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
                     releaseIfPrototype();
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
-                registryLiveness_ = other.registryLiveness_;
                 other.object_ = nullptr;
                 other.bits_ = Bits{};
                 other.registry_ = nullptr;
-                other.registryLiveness_ = nullptr;
             }
             return *this;
         }
 
         ~AnyBean() noexcept {
-            releaseIfPrototype();
+            if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                releaseIfPrototype();
         }
 
         // -------------------------------------------------------------------------
@@ -161,6 +160,7 @@ namespace ctr {
 
         void retainIfPrototype() noexcept; // defined in BeanInlineImpl.hpp
         void releaseIfPrototype() noexcept; // defined in BeanInlineImpl.hpp
+        [[nodiscard]] detail::Registry* registry() const noexcept;
 
         void *object_ = nullptr;
 
@@ -178,8 +178,7 @@ namespace ctr {
             std::uint64_t u64 = 0;
         } bits_{};
 
-        detail::Registry *registry_ = nullptr;
-        detail::RegistryLiveness* registryLiveness_ = nullptr;
+        void* registry_ = nullptr;
     };
 
 } // namespace ctr

@@ -17,8 +17,7 @@ namespace ctr {
 
     namespace detail {
         class Registry;
-        struct RegistryLiveness;
-        inline void retainRegistryLiveness(RegistryLiveness* liveness) noexcept;
+        class PrototypeStore;
     } // namespace detail
 
     /**
@@ -30,8 +29,9 @@ namespace ctr {
      * ### Form 1 — Direct  (`object_ != nullptr`)
      * Used for singleton and prototype beans whose resolved instance is stable.
      * `operator->` returns `object_` directly; no registry interaction.
-     * Fields: `object_` (non-null), `f1_.slot` (`SlotId`), `registry_`,
-     * and `registryLiveness_` for prototype handles only.
+     * Fields: `object_` (non-null), `f1_.slot` (`SlotId`), and `registry_`.
+     * Singleton anchors are `Registry*`; prototype anchors are the surviving
+     * `PrototypeStore` block.
      *
      * Prototype beans use the `SlotId` for reference counting (retain/release
      * on copy/destroy).  Singleton beans set `f1_.slot = kInvalidSlotId`; their
@@ -42,10 +42,10 @@ namespace ctr {
      * `operator->` resolves the current session object on every call; the result may
      * change across scope cycles.  If the target scope is stopped, `operator->` and
      * `value()` return `nullptr` — no exception (specs-api §7.1).
-     * Fields: `f2_.scopeNameId`, `f2_.descId`, `registry_`.
+     * Fields: `f2_.scopeNameId`, `f2_.descId`, `registry_` as `Registry*`.
      *
-     * Both forms share the same 32-byte layout on 64-bit:
-     * `void*(8) + union{uint32_t,uint32_t}(8) + Registry*(8) + liveness*(8)`.
+     * Both forms share the same 24-byte layout on 64-bit:
+     * `void*(8) + union{uint32_t,uint32_t}(8) + anchor(8)`.
      *
      * ### Empty / moved-from state
      * Both `object_` and `registry_` are null; the union fields are zero.
@@ -67,67 +67,50 @@ namespace ctr {
         Bean(const Bean &other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_),
-              registryLiveness_(other.registryLiveness_) {
-            retainIfPrototype();
+              registry_(other.registry_) {
+            if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                retainIfPrototype();
         }
 
         Bean(Bean &&other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_),
-              registryLiveness_(other.registryLiveness_) {
+              registry_(other.registry_) {
             other.object_ = nullptr;
             other.bits_ = Bits{};
             other.registry_ = nullptr;
-            other.registryLiveness_ = nullptr;
         }
 
         Bean &operator=(const Bean &other) noexcept {
             if (this != &other) {
-                releaseIfPrototype();
+                if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                    releaseIfPrototype();
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
-                registryLiveness_ = other.registryLiveness_;
-                retainIfPrototype();
+                if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                    retainIfPrototype();
             }
             return *this;
         }
 
         Bean &operator=(Bean &&other) noexcept {
             if (this != &other) {
-                // Intentional local guard; see docs/gcc.md §10.  GCC 16.1 does
-                // not reach the desired partial-inlining shape in this larger
-                // member, so replay only the helper's first fast-exit for the
-                // moved-from target case.
-                //
-                // WARNING: do not remove this guard, and do not replicate it in
-                // ~Bean.  The destructor relies on a bare helper call so GCC can
-                // partial-inline the helper's own fast-exit.
-                if (object_ != nullptr)
+                if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
                     releaseIfPrototype();
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
-                registryLiveness_ = other.registryLiveness_;
                 other.object_ = nullptr;
                 other.bits_ = Bits{};
                 other.registry_ = nullptr;
-                other.registryLiveness_ = nullptr;
             }
             return *this;
         }
 
         ~Bean() noexcept {
-            // Intentional bare helper call; see docs/gcc.md §10.  GCC 16.1
-            // partial-inlines releaseIfPrototype() here: the fast-exit folds into
-            // the caller, while the prototype atomic tail stays in .text.unlikely.
-            //
-            // WARNING: do not add a call-site guard here.  Hoisting the helper's
-            // discriminator into ~Bean destroys the destructor partial-inlining
-            // shape and can leave a heavier hot loop.
-            releaseIfPrototype();
+            if (static_cast<std::uint32_t>(bits_.u64) != detail::kInvalidSlotId && object_ != nullptr)
+                releaseIfPrototype();
         }
 
         // -------------------------------------------------------------------------
@@ -286,25 +269,12 @@ namespace ctr {
          *                 a valid `SlotId` for prototypes (refcount already = 1).
          * @param descId   Descriptor index for this bean (used by cast/context queries).
          * @param reg      Registry that owns this bean.
-         * @param liveness Registry liveness block, retained only for prototype handles.
          */
         static Bean makeDirect(
             T *instance, detail::SlotId slot,
             detail::DescriptorId descId,
-            detail::Registry *reg,
-            detail::RegistryLiveness* liveness = nullptr
-            ) noexcept {
-            Bean b;
-            b.object_ = instance;
-            b.bits_.f1.slot = slot;
-            b.bits_.f1.descId = descId;
-            b.registry_ = reg;
-            if (slot != detail::kInvalidSlotId) {
-                b.registryLiveness_ = liveness;
-                detail::retainRegistryLiveness(b.registryLiveness_);
-            }
-            return b;
-        }
+            detail::Registry *reg
+            ) noexcept;
 
         /**
          * @brief Constructs a Form 2 (proxy) handle for session beans.
@@ -375,23 +345,18 @@ namespace ctr {
          * @brief Prototype refcount helpers (copy/move/destroy tracking).
          *
          * Defined in BeanInlineImpl.hpp (need the full `Registry` definition).
-         * See docs/gcc.md §10 for the GCC 16.1 partial-inlining contract.
-         *
-         * These helpers are intentionally out-of-line and unattributed.  GCC
-         * partial-inlines their empty/singleton fast-exit into hot callers and
-         * leaves the prototype atomic tail out of line in .text.unlikely.
-         *
-         * WARNING: do not mark these helpers always_inline.  Force-inlining pulls
-         * the prototype atomic tail into hot-path callers and defeats the intended
-         * partial-inlining split.
+         * Callers must guard with
+         * `bits_.f1.slot != kInvalidSlotId && object_ != nullptr`; the helper
+         * body assumes a prototype handle and keeps only prototype tracking work.
          */
         void retainIfPrototype() noexcept;
         void releaseIfPrototype() noexcept;
+        [[nodiscard]] detail::Registry* registry() const noexcept;
         T *proxyResolve_() const noexcept; // Form 2 proxy — defined in BeanInlineImpl.hpp
         T *threadLocalResolve_() const noexcept; // Form 3 TL — defined in BeanInlineImpl.hpp
 
         // -------------------------------------------------------------------------
-        // Layout  (32 bytes on 64-bit, one extra liveness pointer)
+        // Layout  (24 bytes on 64-bit, overloaded anchor)
         // -------------------------------------------------------------------------
 
         /** Non-null: Form 1 (direct).  Null: Form 2 (proxy) or empty. */
@@ -420,8 +385,7 @@ namespace ctr {
             std::uint64_t u64 = 0; // default-initializes both forms to zero
         } bits_{};
 
-        detail::Registry *registry_ = nullptr;
-        detail::RegistryLiveness* registryLiveness_ = nullptr;
+        void* registry_ = nullptr;
     };
 
 } // namespace ctr

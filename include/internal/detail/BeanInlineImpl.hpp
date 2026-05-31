@@ -48,126 +48,73 @@ namespace ctr::detail {
 
 namespace ctr {
 
+    template <class T>
+    Bean<T> Bean<T>::makeDirect(
+        T *instance, detail::SlotId slot,
+        detail::DescriptorId descId,
+        detail::Registry *reg
+        ) noexcept {
+        Bean b;
+        b.object_ = instance;
+        b.bits_.f1.slot = slot;
+        b.bits_.f1.descId = descId;
+        b.registry_ = slot != detail::kInvalidSlotId
+            ? static_cast<void*>(reg->prototypeStoreBlock())
+            : static_cast<void*>(reg);
+        return b;
+    }
+
     // ─────────────────────────────────────────────────────────────────────────────
     // Bean<T> prototype refcount helpers
     //
     // Singletons carry kInvalidSlotId — no refcount management needed.
-    // Prototype refcount operations are deferred to the prototype spec.
+    // Prototype tracking call-site guard contract: these helpers are inlined,
+    // and the empty/singleton fast-exit is hoisted into each caller as an
+    // explicit prototype-form guard.
     // ─────────────────────────────────────────────────────────────────────────────
 
-    // GCC 16.1 partial-inlining contract: see docs/gcc.md §10.  Keep these
-    // helpers out-of-line and unattributed so the empty/singleton fast-exit folds
-    // into hot callers while the prototype atomic tail stays in .text.unlikely.
-    //
-    // WARNING: do not add always_inline to force the whole helper into callers.
-    // If an inline attribute is ever required, put it on this definition, not on
-    // only the in-class template declaration; GCC 16.1 does not honor declaration-
-    // only attributes for this template-member case.
     template <class T>
-    void Bean<T>::retainIfPrototype() noexcept {
-        if (object_ == nullptr)
-            return; // Form 2 or empty
-        if (bits_.f1.slot == detail::kInvalidSlotId)
-            return; // singleton
-        detail::RegistryLiveness* liveness = registryLiveness_;
-        if (liveness == nullptr)
-            return;
-        detail::retainRegistryLiveness(liveness);
-        if (!detail::registryLivenessAlive(liveness)) {
-            detail::releaseRegistryLiveness(liveness);
-            registryLiveness_ = nullptr;
-            return; // registry destroyed
-        }
-        if (!registry_->startedRelaxed()) {
-            detail::releaseRegistryLiveness(liveness);
-            registryLiveness_ = nullptr;
-            return; // context stopped
-        }
-        registry_->prototypeStore().retain(bits_.f1.slot);
+    [[gnu::always_inline]] inline void Bean<T>::retainIfPrototype() noexcept {
+        auto* store = static_cast<detail::PrototypeStore*>(registry_);
+        store->retain(bits_.f1.slot);
     }
 
     template <class T>
-    void Bean<T>::releaseIfPrototype() noexcept {
-        if (object_ == nullptr)
-            return; // Form 2 or empty
-        if (bits_.f1.slot == detail::kInvalidSlotId)
-            return; // singleton
-        detail::RegistryLiveness* liveness = registryLiveness_;
-        registryLiveness_ = nullptr;
-        if (liveness == nullptr)
+    inline void Bean<T>::releaseIfPrototype() noexcept {
+        auto* store = static_cast<detail::PrototypeStore*>(registry_);
+        if (!store->releaseAcquire(bits_.f1.slot))
             return;
-        if (!detail::registryLivenessAlive(liveness)) {
-            detail::releaseRegistryLiveness(liveness);
-            return; // registry destroyed
-        }
-        if (!registry_->startedRelaxed()) {
-            detail::releaseRegistryLiveness(liveness);
-            return; // context stopped; stop() already ran
-        }
-        if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot)) {
-            detail::releaseRegistryLiveness(liveness);
+        [[unlikely]] {
+            if (!store->alive.load(std::memory_order_acquire)) {
+                store->reclaimSlot(bits_.f1.slot);
+                return;
+            }
+            store->registry->releasePrototypeLast(bits_.f1.slot, store);
             return;
         }
-        // Single metas_[slot] access instead of separate pointerAt + descriptorIdAt.
-        const auto [mem, descId] =
-            registry_->prototypeStore().slotMetaAt(bits_.f1.slot);
-        registry_->executeDestructionLifecycle(descId, mem);
-        registry_->prototypeStore().reclaimSlot(bits_.f1.slot);
-        detail::releaseRegistryLiveness(liveness);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
     // AnyBean prototype refcount helpers
     // ─────────────────────────────────────────────────────────────────────────────
 
-    inline void ctr::AnyBean::retainIfPrototype() noexcept {
-        if (object_ == nullptr)
-            return; // Form 2 or empty
-        if (bits_.f1.slot == detail::kInvalidSlotId)
-            return; // singleton
-        detail::RegistryLiveness* liveness = registryLiveness_;
-        if (liveness == nullptr)
-            return;
-        detail::retainRegistryLiveness(liveness);
-        if (!detail::registryLivenessAlive(liveness)) {
-            detail::releaseRegistryLiveness(liveness);
-            registryLiveness_ = nullptr;
-            return; // registry destroyed
-        }
-        if (!registry_->startedRelaxed()) {
-            detail::releaseRegistryLiveness(liveness);
-            registryLiveness_ = nullptr;
-            return; // context stopped
-        }
-        registry_->prototypeStore().retain(bits_.f1.slot);
+    [[gnu::always_inline]] inline void ctr::AnyBean::retainIfPrototype() noexcept {
+        auto* store = static_cast<detail::PrototypeStore*>(registry_);
+        store->retain(bits_.f1.slot);
     }
 
     inline void ctr::AnyBean::releaseIfPrototype() noexcept {
-        if (object_ == nullptr)
-            return; // Form 2 or empty
-        if (bits_.f1.slot == detail::kInvalidSlotId)
-            return; // singleton
-        detail::RegistryLiveness* liveness = registryLiveness_;
-        registryLiveness_ = nullptr;
-        if (liveness == nullptr)
+        auto* store = static_cast<detail::PrototypeStore*>(registry_);
+        if (!store->releaseAcquire(bits_.f1.slot))
             return;
-        if (!detail::registryLivenessAlive(liveness)) {
-            detail::releaseRegistryLiveness(liveness);
-            return; // registry destroyed
-        }
-        if (!registry_->startedRelaxed()) {
-            detail::releaseRegistryLiveness(liveness);
-            return; // context stopped
-        }
-        if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot)) {
-            detail::releaseRegistryLiveness(liveness);
+        [[unlikely]] {
+            if (!store->alive.load(std::memory_order_acquire)) {
+                store->reclaimSlot(bits_.f1.slot);
+                return;
+            }
+            store->registry->releasePrototypeLast(bits_.f1.slot, store);
             return;
         }
-        const auto [mem, descId] =
-            registry_->prototypeStore().slotMetaAt(bits_.f1.slot);
-        registry_->executeDestructionLifecycle(descId, mem);
-        registry_->prototypeStore().reclaimSlot(bits_.f1.slot);
-        detail::releaseRegistryLiveness(liveness);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -318,7 +265,7 @@ namespace ctr {
                 static_cast<T *>(anyBean.object_),
                 detail::kInvalidSlotId,
                 anyBean.bits_.f1.descId,
-                anyBean.registry_
+                anyBean.registry()
                 );
             cb(static_cast<const ctr::Bean<T> &>(view));
         };
@@ -394,16 +341,24 @@ namespace ctr {
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <class T>
+    detail::Registry* Bean<T>::registry() const noexcept {
+        if (bits_.f1.slot != detail::kInvalidSlotId && object_ != nullptr)
+            return static_cast<detail::PrototypeStore*>(registry_)->registry;
+        return static_cast<detail::Registry*>(registry_);
+    }
+
+    template <class T>
     BeanContext &Bean<T>::context() const noexcept {
+        detail::Registry* reg = registry();
         if (object_ != nullptr) {
             // Form 1: singleton/prototype — owned by root.
-            return *registry_->rootContext();
+            return *reg->rootContext();
         }
         // Form 2: session handle — return the owning ScopedContext.
-        ctr::ScopedContext *scope = registry_->findScope(bits_.f2.scopeNameId);
+        ctr::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
         if (scope != nullptr)
             return *scope;
-        return *registry_->rootContext(); // fallback (scope no longer registered)
+        return *reg->rootContext(); // fallback (scope no longer registered)
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -418,21 +373,21 @@ namespace ctr {
 
     template <class T>
     T *Bean<T>::proxyResolve_() const noexcept {
-        ctr::ScopedContext *scope = registry_->findScope(bits_.f2.scopeNameId);
+        auto* reg = static_cast<detail::Registry*>(registry_);
+        ctr::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
         if (scope == nullptr || !scope->scopeStarted_)
             return nullptr;
 
         const detail::DescriptorId descId = bits_.f2.descId;
-        const detail::Descriptor &desc = registry_->descriptorTable().at(descId);
+        const detail::Descriptor &desc = reg->descriptorTable().at(descId);
         const detail::DescriptorId primaryId =
             desc.primaryDescriptor != detail::kInvalidDescriptorId
                 ? desc.primaryDescriptor
                 : descId;
         const detail::Descriptor &primaryDesc =
-            primaryId == descId ? desc : registry_->descriptorTable().at(primaryId);
+            primaryId == descId ? desc : reg->descriptorTable().at(primaryId);
         const detail::SessionSlot slot = primaryDesc.sessionSlot;
 
-        // Fast path: already materialized.
         void *instance = scope->sessionStore_.find(slot);
         if (instance != nullptr) {
             if (desc.adjustToExposed != nullptr)
@@ -440,12 +395,11 @@ namespace ctr {
             return static_cast<T *>(instance);
         }
 
-        // Slow path: materialize (same two-phase pattern as singleton).
-        detail::ResolutionContext ctx{*registry_, scope};
+        detail::ResolutionContext ctx{*reg, scope};
         try {
-            instance = registry_->materializeSessionInstance(descId, scope, ctx);
+            instance = reg->materializeSessionInstance(descId, scope, ctx);
         } catch (...) {
-            return nullptr; // proxy path must not throw (specs-api §7.1)
+            return nullptr;
         }
         if (desc.adjustToExposed != nullptr)
             instance = desc.adjustToExposed(instance);
@@ -455,15 +409,16 @@ namespace ctr {
     template <class T>
     template <class U>
     bool Bean<T>::exact() const noexcept {
-        if (registry_ == nullptr)
+        detail::Registry* reg = registry();
+        if (reg == nullptr)
             return false;
-        const detail::TypeId tid = registry_->typeIdFor<U>();
+        const detail::TypeId tid = reg->typeIdFor<U>();
         if (tid == detail::kInvalidTypeId)
             return false;
         if (object_ != nullptr) {
-            return registry_->descriptorTable().at(bits_.f1.descId).concreteType == tid;
+            return reg->descriptorTable().at(bits_.f1.descId).concreteType == tid;
         }
-        return registry_->descriptorTable().at(bits_.f2.descId).concreteType == tid;
+        return reg->descriptorTable().at(bits_.f2.descId).concreteType == tid;
     }
 
     // Helper: search TypeIndex for a descriptor of type `uid` with the given primary.
@@ -490,26 +445,27 @@ namespace ctr {
     template <class T>
     template <class U>
     bool Bean<T>::compatible() const noexcept {
-        if (registry_ == nullptr)
+        detail::Registry* reg = registry();
+        if (reg == nullptr)
             return false;
-        const detail::TypeId uid = registry_->typeIdFor<U>();
+        const detail::TypeId uid = reg->typeIdFor<U>();
         if (uid == detail::kInvalidTypeId)
             return false;
         if (object_ != nullptr) {
             const detail::Descriptor &d =
-                registry_->descriptorTable().at(bits_.f1.descId);
+                reg->descriptorTable().at(bits_.f1.descId);
             if (d.exposedType == uid)
                 return true;
             if (d.concreteType == uid)
                 return true;
             // Check if U is another exposed base of the same primary.
             if (d.primaryDescriptor != detail::kInvalidDescriptorId) {
-                return findAliasByPrimary(registry_, uid, d.name, d.primaryDescriptor)
+                return findAliasByPrimary(reg, uid, d.name, d.primaryDescriptor)
                     != detail::kInvalidDescriptorId;
             }
             return false;
         }
-        return registry_->descriptorTable().at(bits_.f2.descId).exposedType == uid;
+        return reg->descriptorTable().at(bits_.f2.descId).exposedType == uid;
     }
 
     template <class T>
@@ -529,9 +485,10 @@ namespace ctr {
             return result;
         }
 
+        detail::Registry* reg = registry();
         const detail::Descriptor &selfDesc =
-            registry_->descriptorTable().at(bits_.f1.descId);
-        const detail::TypeId uid = registry_->typeIdFor<U>();
+            reg->descriptorTable().at(bits_.f1.descId);
+        const detail::TypeId uid = reg->typeIdFor<U>();
         const detail::DescriptorId selfPrimary = selfDesc.primaryDescriptor;
 
         // Case 1: U is the exact same exposed type — no adjustment needed.
@@ -540,8 +497,8 @@ namespace ctr {
             result.object_ = static_cast<U *>(object_);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
-            result.registryLiveness_ = registryLiveness_;
-            result.retainIfPrototype();
+            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+                result.retainIfPrototype();
             return result;
         }
 
@@ -566,20 +523,20 @@ namespace ctr {
             result.bits_.f1.slot = bits_.f1.slot;
             result.bits_.f1.descId = selfPrimary;
             result.registry_ = registry_;
-            result.registryLiveness_ = registryLiveness_;
-            result.retainIfPrototype();
+            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+                result.retainIfPrototype();
             return result;
         }
 
         // Case 3: U is another exposed base — find its alias descriptor.
         const detail::DescriptorId targetId =
-            findAliasByPrimary(registry_, uid, selfDesc.name, selfPrimary);
+            findAliasByPrimary(reg, uid, selfDesc.name, selfPrimary);
         if (targetId == detail::kInvalidDescriptorId) {
             throw ctr::ResolutionError(
                 "Bean::cast: the bean is not compatible with the requested type."
                 );
         }
-        const detail::Descriptor &targetDesc = registry_->descriptorTable().at(targetId);
+        const detail::Descriptor &targetDesc = reg->descriptorTable().at(targetId);
         void *targetPtr = concretePtr;
         if (targetDesc.adjustToExposed != nullptr)
             targetPtr = targetDesc.adjustToExposed(concretePtr);
@@ -589,8 +546,8 @@ namespace ctr {
         result.bits_.f1.slot = bits_.f1.slot;
         result.bits_.f1.descId = targetId;
         result.registry_ = registry_;
-        result.registryLiveness_ = registryLiveness_;
-        result.retainIfPrototype();
+        if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+            result.retainIfPrototype();
         return result;
     }
 
@@ -610,32 +567,40 @@ namespace ctr {
     // AnyBean — context, exact, compatible, cast, tryCast
     // ─────────────────────────────────────────────────────────────────────────────
 
+    inline detail::Registry* AnyBean::registry() const noexcept {
+        if (bits_.f1.slot != detail::kInvalidSlotId && object_ != nullptr)
+            return static_cast<detail::PrototypeStore*>(registry_)->registry;
+        return static_cast<detail::Registry*>(registry_);
+    }
+
     inline BeanContext &AnyBean::context() const noexcept {
-        return *registry_->rootContext();
+        return *registry()->rootContext();
     }
 
     template <class U>
     bool AnyBean::exact() const noexcept {
-        if (registry_ == nullptr)
+        detail::Registry* reg = registry();
+        if (reg == nullptr)
             return false;
-        const detail::TypeId tid = registry_->typeIdFor<U>();
+        const detail::TypeId tid = reg->typeIdFor<U>();
         if (tid == detail::kInvalidTypeId)
             return false;
         const detail::DescriptorId descId =
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
-        return registry_->descriptorTable().at(descId).concreteType == tid;
+        return reg->descriptorTable().at(descId).concreteType == tid;
     }
 
     template <class U>
     bool AnyBean::compatible() const noexcept {
-        if (registry_ == nullptr)
+        detail::Registry* reg = registry();
+        if (reg == nullptr)
             return false;
-        const detail::TypeId uid = registry_->typeIdFor<U>();
+        const detail::TypeId uid = reg->typeIdFor<U>();
         if (uid == detail::kInvalidTypeId)
             return false;
         const detail::DescriptorId descId =
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
-        const detail::Descriptor &d = registry_->descriptorTable().at(descId);
+        const detail::Descriptor &d = reg->descriptorTable().at(descId);
         if (object_ == nullptr)
             return d.exposedType == uid;
         if (d.exposedType == uid)
@@ -643,7 +608,7 @@ namespace ctr {
         if (d.concreteType == uid)
             return true;
         if (d.primaryDescriptor != detail::kInvalidDescriptorId) {
-            return findAliasByPrimary(registry_, uid, d.name, d.primaryDescriptor)
+            return findAliasByPrimary(reg, uid, d.name, d.primaryDescriptor)
                 != detail::kInvalidDescriptorId;
         }
         return false;
@@ -663,9 +628,10 @@ namespace ctr {
             result.registry_ = registry_;
             return result;
         }
+        detail::Registry* reg = registry();
         const detail::Descriptor &selfDesc =
-            registry_->descriptorTable().at(bits_.f1.descId);
-        const detail::TypeId uid = registry_->typeIdFor<U>();
+            reg->descriptorTable().at(bits_.f1.descId);
+        const detail::TypeId uid = reg->typeIdFor<U>();
         const detail::DescriptorId selfPrimary = selfDesc.primaryDescriptor;
 
         if (selfDesc.exposedType == uid) {
@@ -673,8 +639,8 @@ namespace ctr {
             result.object_ = static_cast<U *>(object_);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
-            result.registryLiveness_ = registryLiveness_;
-            result.retainIfPrototype();
+            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+                result.retainIfPrototype();
             return result;
         }
 
@@ -694,19 +660,19 @@ namespace ctr {
             result.bits_.f1.slot = bits_.f1.slot;
             result.bits_.f1.descId = selfPrimary;
             result.registry_ = registry_;
-            result.registryLiveness_ = registryLiveness_;
-            result.retainIfPrototype();
+            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+                result.retainIfPrototype();
             return result;
         }
 
         const detail::DescriptorId targetId =
-            findAliasByPrimary(registry_, uid, selfDesc.name, selfPrimary);
+            findAliasByPrimary(reg, uid, selfDesc.name, selfPrimary);
         if (targetId == detail::kInvalidDescriptorId) {
             throw ctr::ResolutionError(
                 "AnyBean::cast: the bean is not compatible with the requested type."
                 );
         }
-        const detail::Descriptor &targetDesc = registry_->descriptorTable().at(targetId);
+        const detail::Descriptor &targetDesc = reg->descriptorTable().at(targetId);
         void *targetPtr = concretePtr;
         if (targetDesc.adjustToExposed != nullptr)
             targetPtr = targetDesc.adjustToExposed(concretePtr);
@@ -716,8 +682,8 @@ namespace ctr {
         result.bits_.f1.slot = bits_.f1.slot;
         result.bits_.f1.descId = targetId;
         result.registry_ = registry_;
-        result.registryLiveness_ = registryLiveness_;
-        result.retainIfPrototype();
+        if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+            result.retainIfPrototype();
         return result;
     }
 
@@ -743,25 +709,24 @@ namespace ctr {
 
     template <typename T>
     T *Bean<T>::threadLocalResolve_() const noexcept {
+        auto* reg = static_cast<detail::Registry*>(registry_);
         const detail::DescriptorId descId = bits_.f2.descId;
-        const detail::Descriptor &desc = registry_->descriptorTable().at(descId);
+        const detail::Descriptor &desc = reg->descriptorTable().at(descId);
         const detail::DescriptorId primaryId =
             desc.primaryDescriptor != detail::kInvalidDescriptorId
                 ? desc.primaryDescriptor
                 : descId;
 
-        // Fast path: already materialized on this thread.
-        void *instance = detail::tlData().findInstance(registry_->registryId(), primaryId);
+        void *instance = detail::tlData().findInstance(reg->registryId(), primaryId);
         if (instance != nullptr) {
             if (desc.adjustToExposed != nullptr)
                 instance = desc.adjustToExposed(instance);
             return static_cast<T *>(instance);
         }
 
-        // Slow path: materialize.
-        detail::ResolutionContext ctx{*registry_, nullptr};
+        detail::ResolutionContext ctx{*reg, nullptr};
         try {
-            instance = registry_->materializeThreadLocalInstance(descId, ctx);
+            instance = reg->materializeThreadLocalInstance(descId, ctx);
         } catch (...) {
             return nullptr;
         }
@@ -776,15 +741,15 @@ namespace ctr {
 
     template <class T>
     BeanMetadata Bean<T>::metadata() const noexcept {
-        if (object_ != nullptr && registry_ != nullptr) {
-            // Form 1: direct handle — descriptor is stored in bits_.f1.descId.
-            const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f1.descId);
+        detail::Registry* reg = registry();
+        if (object_ != nullptr && reg != nullptr) {
+            const detail::Descriptor &d = reg->descriptorTable().at(bits_.f1.descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
                                 d.nameStr ? d.nameStr : "", d.factoryMethodName,
                                 d.lifetime, d.origin, d.reflectiveData};
         }
-        if (registry_ != nullptr) {
-            const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f2.descId);
+        if (reg != nullptr) {
+            const detail::Descriptor &d = reg->descriptorTable().at(bits_.f2.descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
                                 d.nameStr ? d.nameStr : "", d.factoryMethodName,
                                 d.lifetime, d.origin, d.reflectiveData};
@@ -794,10 +759,11 @@ namespace ctr {
     }
 
     inline BeanMetadata AnyBean::metadata() const noexcept {
-        if (registry_ != nullptr) {
+        detail::Registry* reg = registry();
+        if (reg != nullptr) {
             const detail::DescriptorId descId =
                 object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
-            const detail::Descriptor &d = registry_->descriptorTable().at(descId);
+            const detail::Descriptor &d = reg->descriptorTable().at(descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
                                 d.nameStr ? d.nameStr : "", d.factoryMethodName,
                                 d.lifetime, d.origin, d.reflectiveData};
@@ -840,6 +806,20 @@ namespace ctr::detail {
         } else if (d.size != 0) {
             ::operator delete(mem, d.size, std::align_val_t{d.align});
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
+    // Registry::releasePrototypeLast
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    [[gnu::cold, gnu::noinline]] inline void Registry::releasePrototypeLast(
+        SlotId slot,
+        PrototypeStore* store
+        ) noexcept {
+        const auto [mem, descId] = store->takeSlotMetaForDestruction(slot);
+        if (mem != nullptr)
+            executeDestructionLifecycle(descId, mem);
+        store->reclaimSlot(slot);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1206,10 +1186,10 @@ namespace ctr::detail {
                     SlotId slotId;
                     if (primaryDesc.allocAndConstruct != nullptr) {
                         mem = primaryDesc.allocAndConstruct(static_cast<void *>(&ctx));
-                        slotId = prototypes_.allocate(primaryId, mem);
+                        slotId = prototypeStore().allocate(primaryId, mem);
                     } else {
                         mem = ::operator new(primaryDesc.size, std::align_val_t{primaryDesc.align});
-                        slotId = prototypes_.allocate(primaryId, mem);
+                        slotId = prototypeStore().allocate(primaryId, mem);
                         try {
                             primaryDesc.construct(mem, static_cast<void *>(&ctx));
                         } catch (...) {
@@ -1218,11 +1198,11 @@ namespace ctr::detail {
                                 primaryDesc.size,
                                 std::align_val_t{primaryDesc.align}
                                 );
-                            prototypes_.reclaim(slotId);
+                            prototypeStore().reclaim(slotId);
                             throw;
                         }
                     }
-                    prototypes_.activate(slotId);
+                    prototypeStore().activate(slotId);
 
                     void *exposedPtr = mem;
                     if (desc.adjustToExposed != nullptr)
@@ -1237,8 +1217,7 @@ namespace ctr::detail {
                         anyBean.object_ = exposedPtr;
                         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
                         anyBean.bits_.f1.descId = descId;
-                        anyBean.registry_ = this;
-                        anyBean.registryLiveness_ = registryLiveness();
+                        anyBean.registry_ = prototypeStoreBlock();
                         anyBean.retainIfPrototype();
 
                         if (dispatchInitialized) {
@@ -1394,20 +1373,20 @@ namespace ctr::detail {
 
             if (desc.allocAndConstruct != nullptr) {
                 mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
-                slotId = prototypes_.allocate(descId, mem);
+                slotId = prototypeStore().allocate(descId, mem);
             } else {
                 mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                slotId = prototypes_.allocate(descId, mem);
+                slotId = prototypeStore().allocate(descId, mem);
                 try {
                     desc.construct(mem, static_cast<void *>(&ctx));
                 } catch (...) {
                     ::operator delete(mem, desc.size, std::align_val_t{desc.align});
-                    prototypes_.reclaim(slotId);
+                    prototypeStore().reclaim(slotId);
                     throw;
                 }
             }
 
-            prototypes_.activate(slotId);
+            prototypeStore().activate(slotId);
 
             const bool dispatchInitialized =
                 listeners_.hasListeners(ListenerStore::phaseInitialized());
@@ -1418,8 +1397,7 @@ namespace ctr::detail {
                 anyBean.object_ = mem;
                 anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
                 anyBean.bits_.f1.descId = descId;
-                anyBean.registry_ = this;
-                anyBean.registryLiveness_ = registryLiveness();
+                anyBean.registry_ = prototypeStoreBlock();
                 anyBean.retainIfPrototype(); // refcount: 1 → 2 (dispatch reference)
 
                 if (dispatchInitialized) {
@@ -1492,8 +1470,7 @@ namespace ctr::detail {
                 static_cast<T *>(handle.instance()),
                 handle.slot(),
                 handle.descId(),
-                this,
-                handle.liveness(registryLiveness())
+                this
                 );
         case MaterializedHandleForm::Proxy:
             return ctr::Bean<T>::makeProxy(
@@ -1670,15 +1647,15 @@ namespace ctr::detail {
         singletons_.releaseAll();
 
         // Prototypes: reverse slot index, matching the previous stop() sweep.
-        const std::size_t count = prototypes_.slotCount();
+        PrototypeStore& prototypes = prototypeStore();
+        const std::size_t count = prototypes.slotCount();
         for (std::size_t s = count; s > 0; --s) {
-            void *mem = prototypes_.memoryAt(static_cast<SlotId>(s - 1));
+            const auto [mem, descId] =
+                prototypes.takeSlotMetaForDestruction(static_cast<SlotId>(s - 1));
             if (mem != nullptr) {
-                executeDestructionLifecycle(
-                    prototypes_.descriptorIdAt(static_cast<SlotId>(s - 1)), mem);
+                executeDestructionLifecycle(descId, mem);
             }
         }
-        prototypes_.releaseAll();
 
         return true;
     }
@@ -1980,7 +1957,6 @@ namespace ctr::detail {
     // ─────────────────────────────────────────────────────────────────────────────
 
     inline Registry::~Registry() noexcept {
-        markRegistryLivenessDead(registryLiveness_);
         (void)stopRegistryOwnedBeans();
 
         // Destroy pending runtime singletons that were never started into the lifecycle.
@@ -1994,8 +1970,8 @@ namespace ctr::detail {
                 }
             }
         }
-        releaseRegistryLiveness(registryLiveness_);
-        registryLiveness_ = nullptr;
+        PrototypeStore* store = prototypes_.release();
+        store->markRegistryDeadAndReleaseHold();
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

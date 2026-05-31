@@ -16,6 +16,7 @@
 
 namespace ctr::detail {
 
+class Registry;
 struct ResolutionContext;
 
 /**
@@ -40,10 +41,33 @@ struct ResolutionContext;
  * `retain()` and `releaseAcquire()` are lock-free: atomic operations only.
  * `allocate()`, `reclaim()`, and `reclaimSlot()` are lock-free on the freelist hot path;
  * they acquire `growMutex_` only on the chunk-allocation growth path.
- * `releaseAll()` runs under exclusive root ownership; no concurrent access.
+ * Teardown marks slot memory as destroyed but leaves chunks allocated while
+ * prototype handles still exist.
  */
 class PrototypeStore {
 public:
+    explicit PrototypeStore(Registry* owner) noexcept
+        : registry(owner) {}
+
+    PrototypeStore(const PrototypeStore&) = delete;
+    PrototypeStore& operator=(const PrototypeStore&) = delete;
+
+    std::atomic<bool> alive{true};
+    Registry* registry = nullptr;
+    std::atomic<std::uint32_t> liveSlotCount{0};
+
+    /**
+     * @brief Marks the owning registry gone and releases the registry hold.
+     *
+     * The store deletes itself when no live prototype slot remains. Handles that
+     * outlive the registry can still decrement their slot refcount and reclaim
+     * the slot without dereferencing the dead registry.
+     */
+    void markRegistryDeadAndReleaseHold() noexcept {
+        alive.store(false, std::memory_order_release);
+        tryDeleteIfUnused();
+    }
+
     /**
      * @brief Phase 1 of two-phase prototype materialization.
      *
@@ -97,6 +121,7 @@ public:
     /** @brief Sets the refcount to 1 (slot becomes live). */
     void activate(SlotId id) noexcept {
         refcountAt(id).store(1, std::memory_order_relaxed);
+        liveSlotCount.fetch_add(1, std::memory_order_relaxed);
     }
 
     /**
@@ -199,19 +224,26 @@ public:
             (static_cast<std::uint64_t>(generation) << 32)
                 | static_cast<std::uint64_t>(id),
             std::memory_order_release, std::memory_order_relaxed));
+        releaseLiveSlot();
     }
 
     /**
-     * @brief Clears all slot metadata without calling destructors.
+     * @brief Marks a slot's object as destroyed and returns its previous metadata.
      *
-     * Called by `Registry::stop()` under exclusive root ownership.
+     * The slot remains live and is not pushed to the freelist until the last
+     * prototype handle releases it. This lets teardown destroy the object without
+     * freeing the storage while handles still exist.
      */
-    void releaseAll() noexcept {
-        ownedChunks_.clear();
-        for (auto& ap : chunks_) ap.store(nullptr, std::memory_order_relaxed);
-        slotCount_ = 0;
-        freelistHead_.store(
-            static_cast<std::uint64_t>(kInvalidSlotId), std::memory_order_relaxed);
+    [[nodiscard]] SlotMetaSnapshot takeSlotMetaForDestruction(SlotId id) noexcept {
+        if (static_cast<std::size_t>(id) >= slotCount_)
+            return {nullptr, 0};
+        Chunk* chunk = chunks_[id / kChunkSize].load(std::memory_order_acquire);
+        if (chunk == nullptr)
+            return {nullptr, 0};
+        SlotMeta& meta = chunk->metas[id % kChunkSize];
+        SlotMetaSnapshot snapshot{meta.memory, meta.descId};
+        meta.memory = nullptr;
+        return snapshot;
     }
 
     /** @brief Total number of allocated slots (live + free). */
@@ -245,7 +277,7 @@ private:
     // Lock-free readers load with acquire; grower stores with release.
     std::array<std::atomic<Chunk*>, kMaxChunks> chunks_{};
 
-    // Ownership of live chunks; only accessed under growMutex_ or in releaseAll().
+    // Ownership of chunks; accessed under growMutex_ or by the store destructor.
     std::vector<std::unique_ptr<Chunk>> ownedChunks_;
 
     // -------------------------------------------------------------------------
@@ -290,6 +322,25 @@ private:
     /// chunks_[idx] release-store).  Never acquired by retain(), releaseAcquire(),
     /// or activate().
     std::mutex growMutex_;
+
+    std::atomic<bool> deleteClaimed_{false};
+
+    void releaseLiveSlot() noexcept {
+        const std::uint32_t previous =
+            liveSlotCount.fetch_sub(1, std::memory_order_acq_rel);
+        assert(previous > 0);
+        if (previous == 1)
+            tryDeleteIfUnused();
+    }
+
+    void tryDeleteIfUnused() noexcept {
+        if (liveSlotCount.load(std::memory_order_acquire) != 0)
+            return;
+        if (alive.load(std::memory_order_acquire))
+            return;
+        if (!deleteClaimed_.exchange(true, std::memory_order_acq_rel))
+            delete this;
+    }
 };
 
 } // namespace ctr::detail

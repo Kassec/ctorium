@@ -45,42 +45,6 @@ namespace ctr { class ScopedContext; }
 
 namespace ctr::detail {
 
-/** @brief Refcounted liveness control block shared by Registry and prototype handles. */
-struct RegistryLiveness {
-    std::atomic<std::uint32_t> refCount{1};
-    std::atomic<bool> alive{true};
-};
-
-[[nodiscard]] inline RegistryLiveness* createRegistryLiveness() {
-    return new RegistryLiveness{};
-}
-
-inline void retainRegistryLiveness(RegistryLiveness* liveness) noexcept {
-    if (liveness == nullptr)
-        return;
-    liveness->refCount.fetch_add(1, std::memory_order_relaxed);
-}
-
-inline void releaseRegistryLiveness(RegistryLiveness* liveness) noexcept {
-    if (liveness == nullptr)
-        return;
-    if (liveness->refCount.fetch_sub(1, std::memory_order_release) == 1) {
-        std::atomic_thread_fence(std::memory_order_acquire);
-        delete liveness;
-    }
-}
-
-inline void markRegistryLivenessDead(RegistryLiveness* liveness) noexcept {
-    if (liveness == nullptr)
-        return;
-    liveness->alive.store(false, std::memory_order_release);
-}
-
-[[nodiscard]] inline bool registryLivenessAlive(
-        const RegistryLiveness* liveness) noexcept {
-    return liveness != nullptr
-        && liveness->alive.load(std::memory_order_acquire);
-}
 
 inline constexpr std::uint32_t kNoMaterializationThreadToken = 0;
 
@@ -177,16 +141,6 @@ struct MaterializedBeanHandle {
         return static_cast<NameId>(value);
     }
 
-    [[nodiscard]] RegistryLiveness* liveness(
-            RegistryLiveness* registryLiveness) const noexcept {
-        const SlotId currentSlot = slot();
-        return currentSlot == kInvalidSlotId
-            || currentSlot == kMaterializedProxySlot
-            || currentSlot == kMaterializedThreadLocalSlot
-                ? nullptr
-                : registryLiveness;
-    }
-
 private:
     [[nodiscard]] static constexpr std::uint64_t pack(
             SlotId slot,
@@ -240,6 +194,8 @@ private:
  */
 class Registry : public std::enable_shared_from_this<Registry> {
 public:
+    Registry() : prototypes_(std::make_unique<PrototypeStore>(this)) {}
+
     // -------------------------------------------------------------------------
     // Component accessors (used by ScopedContext and specialised engine code)
     // -------------------------------------------------------------------------
@@ -250,7 +206,8 @@ public:
     [[nodiscard]] TypeIndex&       typeIndex()        noexcept { return typeIndex_; }
     [[nodiscard]] DefaultsTable&   defaultsTable()    noexcept { return defaults_; }
     [[nodiscard]] SingletonStore&  singletonStore()   noexcept { return singletons_; }
-    [[nodiscard]] PrototypeStore&  prototypeStore()   noexcept { return prototypes_; }
+    [[nodiscard]] PrototypeStore&  prototypeStore()   noexcept { return *prototypes_; }
+    [[nodiscard]] PrototypeStore*  prototypeStoreBlock() noexcept { return prototypes_.get(); }
     [[nodiscard]] ListenerStore&   listenerStore()    noexcept { return listeners_; }
 
     // -------------------------------------------------------------------------
@@ -974,6 +931,8 @@ private:
      */
     bool stopRegistryOwnedBeans() noexcept;
 
+    [[gnu::cold]] void releasePrototypeLast(SlotId slot, PrototypeStore* store) noexcept;
+
     /**
      * @brief Materializes a single bean descriptor and returns type-erased handle data.
      *
@@ -1096,13 +1055,6 @@ private:
         return started_.load(std::memory_order_relaxed);
     }
 
-    /** @brief Returns the control block retained by prototype Form 1 handles. */
-    [[nodiscard]] RegistryLiveness* registryLiveness() const noexcept {
-        return registryLiveness_;
-    }
-
-    RegistryLiveness* registryLiveness_ = createRegistryLiveness();
-
     /// Unique per-instance ID, used by the per-type static cache in typeIdFor<T>().
     /// Never zero (nextRegistryId_ starts at 1).
     const std::uint32_t registryId_ =
@@ -1157,7 +1109,7 @@ private:
     TypeIndex       typeIndex_;
     DefaultsTable   defaults_;
     SingletonStore  singletons_;
-    PrototypeStore  prototypes_;
+    std::unique_ptr<PrototypeStore> prototypes_;
     ListenerStore   listeners_;
 
     // -------------------------------------------------------------------------

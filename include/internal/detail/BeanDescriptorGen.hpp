@@ -906,6 +906,16 @@ consteval ContributedDescriptor makeDescriptorForFactory() {
         constructFn = &constructThunkDefault<T>;
     }
 
+    void (*postConstructFn)(void*, void*) = nullptr;
+    if constexpr (members.postConstruct != std::meta::info{}) {
+        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    }
+
+    void (*preDestroyFn)(void*, void*) = nullptr;
+    if constexpr (members.preDestroy != std::meta::info{}) {
+        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    }
+
     return ContributedDescriptor{
         .identity          = computeIdentityForType(typeName, "", lifetime),
         .exposedTypeName   = typeName,
@@ -918,8 +928,8 @@ consteval ContributedDescriptor makeDescriptorForFactory() {
         .origin            = Origin::AnnotatedType,
         .construct         = constructFn,
         .destroy           = &destroyThunk<T>,
-        .postConstruct     = nullptr,
-        .preDestroy        = nullptr,
+        .postConstruct     = postConstructFn,
+        .preDestroy        = preDestroyFn,
         .size              = sizeof(T),
         .align             = alignof(T),
         .factoryMethodIdentity = kNoFactoryMethod,

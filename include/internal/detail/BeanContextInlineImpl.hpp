@@ -99,6 +99,19 @@ inline void BeanContext::flushDeferredListeners_() {
 }
 
 inline void BeanContext::stop() {
+    std::vector<ScopedContext*> scopes;
+    {
+        std::shared_lock<std::shared_mutex> lock(scopesMutex_);
+        scopes.reserve(scopes_.size());
+        for (auto& [key, scope] : scopes_) {
+            (void)key;
+            scopes.push_back(scope.get());
+        }
+    }
+    for (ScopedContext* scope : scopes) {
+        scope->stop();
+    }
+
     core().stop();
     // Remove from the global table; the unique_ptr deletion may destroy *this.
     // No access to *this is permitted after this line.

@@ -73,10 +73,16 @@ namespace ctr {
         if (liveness == nullptr)
             return;
         detail::retainRegistryLiveness(liveness);
-        if (!detail::registryLivenessAlive(liveness))
+        if (!detail::registryLivenessAlive(liveness)) {
+            detail::releaseRegistryLiveness(liveness);
+            registryLiveness_ = nullptr;
             return; // registry destroyed
-        if (!registry_->startedRelaxed())
+        }
+        if (!registry_->startedRelaxed()) {
+            detail::releaseRegistryLiveness(liveness);
+            registryLiveness_ = nullptr;
             return; // context stopped
+        }
         registry_->prototypeStore().retain(bits_.f1.slot);
     }
 
@@ -123,10 +129,16 @@ namespace ctr {
         if (liveness == nullptr)
             return;
         detail::retainRegistryLiveness(liveness);
-        if (!detail::registryLivenessAlive(liveness))
+        if (!detail::registryLivenessAlive(liveness)) {
+            detail::releaseRegistryLiveness(liveness);
+            registryLiveness_ = nullptr;
             return; // registry destroyed
-        if (!registry_->startedRelaxed())
+        }
+        if (!registry_->startedRelaxed()) {
+            detail::releaseRegistryLiveness(liveness);
+            registryLiveness_ = nullptr;
             return; // context stopped
+        }
         registry_->prototypeStore().retain(bits_.f1.slot);
     }
 

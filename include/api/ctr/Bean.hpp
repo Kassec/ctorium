@@ -17,6 +17,8 @@ namespace ctr {
 
     namespace detail {
         class Registry;
+        struct RegistryLiveness;
+        inline void retainRegistryLiveness(RegistryLiveness* liveness) noexcept;
     } // namespace detail
 
     /**
@@ -28,7 +30,8 @@ namespace ctr {
      * ### Form 1 — Direct  (`object_ != nullptr`)
      * Used for singleton and prototype beans whose resolved instance is stable.
      * `operator->` returns `object_` directly; no registry interaction.
-     * Fields: `object_` (non-null), `f1_.slot` (`SlotId`), `registry_`.
+     * Fields: `object_` (non-null), `f1_.slot` (`SlotId`), `registry_`,
+     * and `registryLiveness_` for prototype handles only.
      *
      * Prototype beans use the `SlotId` for reference counting (retain/release
      * on copy/destroy).  Singleton beans set `f1_.slot = kInvalidSlotId`; their
@@ -41,8 +44,8 @@ namespace ctr {
      * `value()` return `nullptr` — no exception (specs-api §7.1).
      * Fields: `f2_.scopeNameId`, `f2_.descId`, `registry_`.
      *
-     * Both forms share the same 24-byte layout on 64-bit:
-     * `void*(8) + union{uint32_t,uint32_t}(8) + Registry*(8)`.
+     * Both forms share the same 32-byte layout on 64-bit:
+     * `void*(8) + union{uint32_t,uint32_t}(8) + Registry*(8) + liveness*(8)`.
      *
      * ### Empty / moved-from state
      * Both `object_` and `registry_` are null; the union fields are zero.
@@ -64,17 +67,20 @@ namespace ctr {
         Bean(const Bean &other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_) {
+              registry_(other.registry_),
+              registryLiveness_(other.registryLiveness_) {
             retainIfPrototype();
         }
 
         Bean(Bean &&other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_) {
+              registry_(other.registry_),
+              registryLiveness_(other.registryLiveness_) {
             other.object_ = nullptr;
             other.bits_ = Bits{};
             other.registry_ = nullptr;
+            other.registryLiveness_ = nullptr;
         }
 
         Bean &operator=(const Bean &other) noexcept {
@@ -83,6 +89,7 @@ namespace ctr {
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
+                registryLiveness_ = other.registryLiveness_;
                 retainIfPrototype();
             }
             return *this;
@@ -103,9 +110,11 @@ namespace ctr {
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
+                registryLiveness_ = other.registryLiveness_;
                 other.object_ = nullptr;
                 other.bits_ = Bits{};
                 other.registry_ = nullptr;
+                other.registryLiveness_ = nullptr;
             }
             return *this;
         }
@@ -277,17 +286,23 @@ namespace ctr {
          *                 a valid `SlotId` for prototypes (refcount already = 1).
          * @param descId   Descriptor index for this bean (used by cast/context queries).
          * @param reg      Registry that owns this bean.
+         * @param liveness Registry liveness block, retained only for prototype handles.
          */
         static Bean makeDirect(
             T *instance, detail::SlotId slot,
             detail::DescriptorId descId,
-            detail::Registry *reg
+            detail::Registry *reg,
+            detail::RegistryLiveness* liveness = nullptr
             ) noexcept {
             Bean b;
             b.object_ = instance;
             b.bits_.f1.slot = slot;
             b.bits_.f1.descId = descId;
             b.registry_ = reg;
+            if (slot != detail::kInvalidSlotId) {
+                b.registryLiveness_ = liveness;
+                detail::retainRegistryLiveness(b.registryLiveness_);
+            }
             return b;
         }
 
@@ -376,7 +391,7 @@ namespace ctr {
         T *threadLocalResolve_() const noexcept; // Form 3 TL — defined in BeanInlineImpl.hpp
 
         // -------------------------------------------------------------------------
-        // Layout  (24 bytes on 64-bit — specs-internal §2.2/2.3)
+        // Layout  (32 bytes on 64-bit, one extra liveness pointer)
         // -------------------------------------------------------------------------
 
         /** Non-null: Form 1 (direct).  Null: Form 2 (proxy) or empty. */
@@ -406,6 +421,7 @@ namespace ctr {
         } bits_{};
 
         detail::Registry *registry_ = nullptr;
+        detail::RegistryLiveness* registryLiveness_ = nullptr;
     };
 
 } // namespace ctr

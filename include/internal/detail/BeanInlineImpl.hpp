@@ -69,6 +69,12 @@ namespace ctr {
             return; // Form 2 or empty
         if (bits_.f1.slot == detail::kInvalidSlotId)
             return; // singleton
+        detail::RegistryLiveness* liveness = registryLiveness_;
+        if (liveness == nullptr)
+            return;
+        detail::retainRegistryLiveness(liveness);
+        if (!detail::registryLivenessAlive(liveness))
+            return; // registry destroyed
         if (!registry_->startedRelaxed())
             return; // context stopped
         registry_->prototypeStore().retain(bits_.f1.slot);
@@ -80,15 +86,28 @@ namespace ctr {
             return; // Form 2 or empty
         if (bits_.f1.slot == detail::kInvalidSlotId)
             return; // singleton
-        if (!registry_->startedRelaxed())
-            return; // context stopped; stop() already ran
-        if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot))
+        detail::RegistryLiveness* liveness = registryLiveness_;
+        registryLiveness_ = nullptr;
+        if (liveness == nullptr)
             return;
+        if (!detail::registryLivenessAlive(liveness)) {
+            detail::releaseRegistryLiveness(liveness);
+            return; // registry destroyed
+        }
+        if (!registry_->startedRelaxed()) {
+            detail::releaseRegistryLiveness(liveness);
+            return; // context stopped; stop() already ran
+        }
+        if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot)) {
+            detail::releaseRegistryLiveness(liveness);
+            return;
+        }
         // Single metas_[slot] access instead of separate pointerAt + descriptorIdAt.
         const auto [mem, descId] =
             registry_->prototypeStore().slotMetaAt(bits_.f1.slot);
         registry_->executeDestructionLifecycle(descId, mem);
         registry_->prototypeStore().reclaimSlot(bits_.f1.slot);
+        detail::releaseRegistryLiveness(liveness);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -100,6 +119,12 @@ namespace ctr {
             return; // Form 2 or empty
         if (bits_.f1.slot == detail::kInvalidSlotId)
             return; // singleton
+        detail::RegistryLiveness* liveness = registryLiveness_;
+        if (liveness == nullptr)
+            return;
+        detail::retainRegistryLiveness(liveness);
+        if (!detail::registryLivenessAlive(liveness))
+            return; // registry destroyed
         if (!registry_->startedRelaxed())
             return; // context stopped
         registry_->prototypeStore().retain(bits_.f1.slot);
@@ -110,14 +135,27 @@ namespace ctr {
             return; // Form 2 or empty
         if (bits_.f1.slot == detail::kInvalidSlotId)
             return; // singleton
-        if (!registry_->startedRelaxed())
-            return; // context stopped
-        if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot))
+        detail::RegistryLiveness* liveness = registryLiveness_;
+        registryLiveness_ = nullptr;
+        if (liveness == nullptr)
             return;
+        if (!detail::registryLivenessAlive(liveness)) {
+            detail::releaseRegistryLiveness(liveness);
+            return; // registry destroyed
+        }
+        if (!registry_->startedRelaxed()) {
+            detail::releaseRegistryLiveness(liveness);
+            return; // context stopped
+        }
+        if (!registry_->prototypeStore().releaseAcquire(bits_.f1.slot)) {
+            detail::releaseRegistryLiveness(liveness);
+            return;
+        }
         const auto [mem, descId] =
             registry_->prototypeStore().slotMetaAt(bits_.f1.slot);
         registry_->executeDestructionLifecycle(descId, mem);
         registry_->prototypeStore().reclaimSlot(bits_.f1.slot);
+        detail::releaseRegistryLiveness(liveness);
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -457,6 +495,7 @@ namespace ctr {
             result.object_ = static_cast<U *>(object_);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
+            result.registryLiveness_ = registryLiveness_;
             result.retainIfPrototype();
             return result;
         }
@@ -482,6 +521,7 @@ namespace ctr {
             result.bits_.f1.slot = bits_.f1.slot;
             result.bits_.f1.descId = selfPrimary;
             result.registry_ = registry_;
+            result.registryLiveness_ = registryLiveness_;
             result.retainIfPrototype();
             return result;
         }
@@ -504,6 +544,7 @@ namespace ctr {
         result.bits_.f1.slot = bits_.f1.slot;
         result.bits_.f1.descId = targetId;
         result.registry_ = registry_;
+        result.registryLiveness_ = registryLiveness_;
         result.retainIfPrototype();
         return result;
     }
@@ -587,6 +628,7 @@ namespace ctr {
             result.object_ = static_cast<U *>(object_);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
+            result.registryLiveness_ = registryLiveness_;
             result.retainIfPrototype();
             return result;
         }
@@ -607,6 +649,7 @@ namespace ctr {
             result.bits_.f1.slot = bits_.f1.slot;
             result.bits_.f1.descId = selfPrimary;
             result.registry_ = registry_;
+            result.registryLiveness_ = registryLiveness_;
             result.retainIfPrototype();
             return result;
         }
@@ -628,6 +671,7 @@ namespace ctr {
         result.bits_.f1.slot = bits_.f1.slot;
         result.bits_.f1.descId = targetId;
         result.registry_ = registry_;
+        result.registryLiveness_ = registryLiveness_;
         result.retainIfPrototype();
         return result;
     }
@@ -976,6 +1020,7 @@ namespace ctr::detail {
                         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
                         anyBean.bits_.f1.descId = descId;
                         anyBean.registry_ = this;
+                        anyBean.registryLiveness_ = registryLiveness();
                         anyBean.retainIfPrototype();
 
                         if (dispatchInitialized) {
@@ -1002,7 +1047,8 @@ namespace ctr::detail {
                         static_cast<T *>(exposedPtr),
                         slotId,
                         descId,
-                        this
+                        this,
+                        registryLiveness()
                         );
                 }
 
@@ -1193,6 +1239,7 @@ namespace ctr::detail {
                 anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
                 anyBean.bits_.f1.descId = descId;
                 anyBean.registry_ = this;
+                anyBean.registryLiveness_ = registryLiveness();
                 anyBean.retainIfPrototype(); // refcount: 1 → 2 (dispatch reference)
 
                 if (dispatchInitialized) {
@@ -1220,7 +1267,8 @@ namespace ctr::detail {
                 static_cast<T *>(mem),
                 slotId,
                 descId,
-                this
+                this,
+                registryLiveness()
                 );
         }
 
@@ -1730,6 +1778,7 @@ namespace ctr::detail {
     // ─────────────────────────────────────────────────────────────────────────────
 
     inline Registry::~Registry() noexcept {
+        markRegistryLivenessDead(registryLiveness_);
         (void)stopRegistryOwnedBeans();
 
         // Destroy pending runtime singletons that were never started into the lifecycle.
@@ -1743,6 +1792,8 @@ namespace ctr::detail {
                 }
             }
         }
+        releaseRegistryLiveness(registryLiveness_);
+        registryLiveness_ = nullptr;
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

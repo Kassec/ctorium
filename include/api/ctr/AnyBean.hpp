@@ -26,6 +26,7 @@ namespace ctr {
      * `tryCast<T>()` can be implemented as cheap reinterpretation without an extra
      * copy.  The concrete type is known via the `Descriptor` looked up through the
      * Registry using `bits_.f1.slot` (Form 1) or the proxy resolution (Form 2).
+     * Prototype Form 1 handles also retain the Registry liveness block.
      *
      * ### Tracking semantics
      * Identical to `Bean<T>`: copy retains, move transfers, destroy releases.
@@ -39,17 +40,20 @@ namespace ctr {
         AnyBean(const AnyBean &other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_) {
+              registry_(other.registry_),
+              registryLiveness_(other.registryLiveness_) {
             retainIfPrototype();
         }
 
         AnyBean(AnyBean &&other) noexcept
             : object_(other.object_),
               bits_(other.bits_),
-              registry_(other.registry_) {
+              registry_(other.registry_),
+              registryLiveness_(other.registryLiveness_) {
             other.object_ = nullptr;
             other.bits_ = Bits{};
             other.registry_ = nullptr;
+            other.registryLiveness_ = nullptr;
         }
 
         AnyBean &operator=(const AnyBean &other) noexcept {
@@ -58,6 +62,7 @@ namespace ctr {
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
+                registryLiveness_ = other.registryLiveness_;
                 retainIfPrototype();
             }
             return *this;
@@ -69,9 +74,11 @@ namespace ctr {
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;
+                registryLiveness_ = other.registryLiveness_;
                 other.object_ = nullptr;
                 other.bits_ = Bits{};
                 other.registry_ = nullptr;
+                other.registryLiveness_ = nullptr;
             }
             return *this;
         }
@@ -171,6 +178,7 @@ namespace ctr {
         } bits_{};
 
         detail::Registry *registry_ = nullptr;
+        detail::RegistryLiveness* registryLiveness_ = nullptr;
     };
 
 } // namespace ctr

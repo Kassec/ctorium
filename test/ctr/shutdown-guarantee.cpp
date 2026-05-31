@@ -125,3 +125,35 @@ TEST(ShutdownGuarantee, PrototypeHandleCanBeDestroyedAfterExplicitStop) {
         testing::ExitedWithCode(0),
         "");
 }
+
+TEST(ShutdownGuarantee, PrototypeHandlesCanBeDestroyedAfterContextDestruction) {
+    shutdown_prototype_fixture::preDestroyCallCount.store(0, std::memory_order_relaxed);
+
+    ctr::Bean<shutdown_prototype_fixture::Proto> proto;
+    ctr::AnyBean anyProto;
+
+    {
+        Probe context("shutdown-guarantee-prototype-handles-after-context");
+        context.discover<^^shutdown_prototype_fixture>();
+        context.on(ctr::onCreated, [&](const ctr::AnyBean& observed) {
+            if (observed.compatible<shutdown_prototype_fixture::Proto>())
+                anyProto = observed;
+        });
+        context.start();
+
+        proto = context.resolve<shutdown_prototype_fixture::Proto>();
+        ASSERT_NE(proto.operator->(), nullptr);
+        ASSERT_TRUE(anyProto.compatible<shutdown_prototype_fixture::Proto>());
+    }
+
+    EXPECT_EQ(
+        shutdown_prototype_fixture::preDestroyCallCount.load(std::memory_order_relaxed),
+        1);
+
+    proto = {};
+    anyProto = {};
+
+    EXPECT_EQ(
+        shutdown_prototype_fixture::preDestroyCallCount.load(std::memory_order_relaxed),
+        1);
+}

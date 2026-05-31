@@ -5,6 +5,7 @@
 #include <cassert>
 #include <condition_variable>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -43,6 +44,43 @@ namespace ctr { class ScopedContext; }
 #include "TypeInterning.hpp"
 
 namespace ctr::detail {
+
+/** @brief Refcounted liveness control block shared by Registry and prototype handles. */
+struct RegistryLiveness {
+    std::atomic<std::uint32_t> refCount{1};
+    std::atomic<bool> alive{true};
+};
+
+[[nodiscard]] inline RegistryLiveness* createRegistryLiveness() {
+    return new RegistryLiveness{};
+}
+
+inline void retainRegistryLiveness(RegistryLiveness* liveness) noexcept {
+    if (liveness == nullptr)
+        return;
+    liveness->refCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+inline void releaseRegistryLiveness(RegistryLiveness* liveness) noexcept {
+    if (liveness == nullptr)
+        return;
+    if (liveness->refCount.fetch_sub(1, std::memory_order_release) == 1) {
+        std::atomic_thread_fence(std::memory_order_acquire);
+        delete liveness;
+    }
+}
+
+inline void markRegistryLivenessDead(RegistryLiveness* liveness) noexcept {
+    if (liveness == nullptr)
+        return;
+    liveness->alive.store(false, std::memory_order_release);
+}
+
+[[nodiscard]] inline bool registryLivenessAlive(
+        const RegistryLiveness* liveness) noexcept {
+    return liveness != nullptr
+        && liveness->alive.load(std::memory_order_acquire);
+}
 
 /**
  * @brief Core shared state for a root context: all components owned and coordinated here.
@@ -852,6 +890,13 @@ private:
     [[nodiscard]] bool startedRelaxed() const noexcept {
         return started_.load(std::memory_order_relaxed);
     }
+
+    /** @brief Returns the control block retained by prototype Form 1 handles. */
+    [[nodiscard]] RegistryLiveness* registryLiveness() const noexcept {
+        return registryLiveness_;
+    }
+
+    RegistryLiveness* registryLiveness_ = createRegistryLiveness();
 
     /// Unique per-instance ID, used by the per-type static cache in typeIdFor<T>().
     /// Never zero (nextRegistryId_ starts at 1).

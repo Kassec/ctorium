@@ -227,12 +227,27 @@ namespace ctr {
                 "BeanContext::defaultNamed: type T is not registered in this context."
                 );
         }
+        ctr::ScopedContext* scope = asScope_;
         if (name.empty()) {
-            reg.setDefault(typeId, detail::kUnnamed);
+            if (scope != nullptr) {
+                if (scope->scopedDefaults_.size() != 0) {
+                    scope->scopedDefaults_.setDefault(typeId, detail::kUnnamed);
+                }
+            } else {
+                reg.setDefault(typeId, detail::kUnnamed);
+            }
             return *this;
         }
         const detail::NameId nameId = reg.internNameSafe(name);
-        reg.setDefault(typeId, nameId);
+        if (scope != nullptr) {
+            if (scope->scopedDefaults_.size() == 0) {
+                scope->scopedDefaults_.resize(reg.defaultsTable().size());
+            }
+            scope->scopedDefaults_.setDefault(typeId, nameId);
+            scope->hasAnyScopedDefault_.store(true, std::memory_order_relaxed);
+        } else {
+            reg.setDefault(typeId, nameId);
+        }
         return *this;
     }
 
@@ -254,7 +269,14 @@ namespace ctr {
         const detail::TypeId typeId = reg.typeIdFor<T>();
         if (typeId == detail::kInvalidTypeId)
             return *this; // T not registered — no-op
-        reg.setDefault(typeId, detail::kUnnamed);
+        ctr::ScopedContext* scope = asScope_;
+        if (scope != nullptr) {
+            if (scope->scopedDefaults_.size() != 0) {
+                scope->scopedDefaults_.setDefault(typeId, detail::kUnnamed);
+            }
+        } else {
+            reg.setDefault(typeId, detail::kUnnamed);
+        }
         return *this;
     }
 
@@ -909,8 +931,16 @@ namespace ctr::detail {
         // Fast-path: mono-candidate unnamed, no effective default for this type.
         // Skips the NameTable → flat_map → vector chain and the ambiguity check.
         DescriptorId descId;
-        const NameId effectiveNameId =
-            (nameId == kUnnamed && hasAnyDefault) ? defaults_.getDefault(typeId) : nameId;
+        NameId effectiveNameId = nameId;
+        if (nameId == kUnnamed) {
+            if (ctx.scope != nullptr
+                    && ctx.scope->hasAnyScopedDefault_.load(std::memory_order_relaxed)) {
+                effectiveNameId = ctx.scope->scopedDefaults_.getDefault(typeId);
+            }
+            if (effectiveNameId == kUnnamed && hasAnyDefault) {
+                effectiveNameId = defaults_.getDefault(typeId);
+            }
+        }
         if (effectiveNameId == kUnnamed) [[likely]] {
             descId = typeIndex_.singleUnnamedCandidate(typeId);
             if (descId != kInvalidDescriptorId) [[likely]] {

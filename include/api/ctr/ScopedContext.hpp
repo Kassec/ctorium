@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -11,6 +12,7 @@
 
 #ifndef CTORIUM_DYNAMIC_LINK
 #include "../../internal/NameId.hpp"
+#include "../../internal/detail/DefaultsTable.hpp"
 #include "../../internal/detail/SessionStore.hpp"
 #endif
 
@@ -133,6 +135,10 @@ private:
     detail::NameId   scopeNameId_ = detail::kInvalidNameId;
     detail::SessionStore sessionStore_;
     bool             scopeStarted_ = false;
+    /// Scope-local default named qualifiers; consulted before root defaults.
+    detail::DefaultsTable scopedDefaults_;
+    /// Fast-path flag: false until this scope configures at least one local default.
+    std::atomic<bool> hasAnyScopedDefault_{false};
 
     /// Non-owning userData pointer; null when no userData is attached.
     void*            userData_     = nullptr;

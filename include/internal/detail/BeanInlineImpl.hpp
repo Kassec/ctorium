@@ -780,12 +780,14 @@ namespace ctr {
             // Form 1: direct handle — descriptor is stored in bits_.f1.descId.
             const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f1.descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
+                                d.nameStr ? d.nameStr : "", d.factoryMethodName,
+                                d.lifetime, d.origin, d.reflectiveData};
         }
         if (registry_ != nullptr) {
             const detail::Descriptor &d = registry_->descriptorTable().at(bits_.f2.descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
+                                d.nameStr ? d.nameStr : "", d.factoryMethodName,
+                                d.lifetime, d.origin, d.reflectiveData};
         }
         return BeanMetadata{nullptr, nullptr, "", detail::Lifetime::Singleton,
                             detail::Origin::AnnotatedType, nullptr};
@@ -797,7 +799,8 @@ namespace ctr {
                 object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
             const detail::Descriptor &d = registry_->descriptorTable().at(descId);
             return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                d.nameStr ? d.nameStr : "", d.lifetime, d.origin, d.reflectiveData};
+                                d.nameStr ? d.nameStr : "", d.factoryMethodName,
+                                d.lifetime, d.origin, d.reflectiveData};
         }
         return BeanMetadata{nullptr, nullptr, "", detail::Lifetime::Singleton,
                             detail::Origin::AnnotatedType, nullptr};

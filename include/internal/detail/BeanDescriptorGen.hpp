@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <new>
 #include <span>
 #include <string>
 #include <string_view>
@@ -684,15 +685,22 @@ consteval MemberScan scanMembers() {
 // §6.3 helpers — factory product thunks
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Unwraps unique_ptr<T> → T; returns returnType unchanged otherwise.
+// Detects unique_ptr specializations, including the defaulted deleter argument.
+consteval bool isUniquePtrType(std::meta::info returnType) {
+    const auto d = std::meta::dealias(returnType);
+    try {
+        const auto args = std::meta::template_arguments_of(d);
+        return !args.empty() && std::meta::template_of(d) == ^^std::unique_ptr;
+    } catch (...) {
+        return false;
+    }
+}
+
+// Unwraps unique_ptr<T> to T; returns returnType unchanged otherwise.
 consteval std::meta::info unwrapUniquePtr(std::meta::info returnType) {
     const auto d = std::meta::dealias(returnType);
-    const auto args = std::meta::template_arguments_of(d);
-    if (args.size() == 1) {
-        const auto tmpl = std::meta::template_of(d);
-        if (tmpl == ^^std::unique_ptr) {
-            return args[0];
-        }
+    if (isUniquePtrType(d)) {
+        return std::meta::template_arguments_of(d)[0];
     }
     return returnType;
 }
@@ -732,12 +740,66 @@ void* allocAndConstructFactoryProductThunk(void* vctx) {
 
 // Deallocation thunk for unique_ptr<T> factory products.
 // Called by executeDestructionLifecycle after destroy (i.e. ~T() already ran).
-// Routes through T::operator delete if T defines one (e.g. custom allocators).
+// Routes through T::operator delete when T defines one; otherwise uses global delete.
 // Deviation from spec literal (`delete static_cast<T*>(p)`): that would double-destroy
-// since destroy already called ~T(). T::operator delete(p) performs only deallocation.
+// since destroy already called ~T(). This thunk performs only deallocation.
 template<typename T>
 void deallocFactoryProductThunk(void* p) noexcept {
-    T::operator delete(p);
+    if constexpr (requires { T::operator delete(p); }) {
+        T::operator delete(p);
+    } else {
+        ::operator delete(p);
+    }
+}
+
+template<std::meta::info ParamType>
+consteval bool isRetainedBeanParameter() {
+    constexpr auto d = std::meta::dealias(ParamType);
+    if constexpr (!std::meta::is_type(d) || !std::meta::is_class_type(d)) {
+        return false;
+    } else {
+        try {
+            const auto args = std::meta::template_arguments_of(d);
+            if (args.size() != 1) return false;
+            return std::meta::template_of(d) == ^^ctr::Bean;
+        } catch (...) {
+            return false;
+        }
+    }
+}
+
+template<std::meta::info ParamType>
+consteval std::meta::info retainedParameterType() {
+    if constexpr (isRetainedBeanParameter<ParamType>()) {
+        return std::meta::template_arguments_of(std::meta::dealias(ParamType))[0];
+    } else {
+        return ParamType;
+    }
+}
+
+template<std::meta::info Method>
+consteval std::vector<ctr::BeanParameterRecord> makeMethodParameterRecords() {
+    static constexpr auto kParams =
+        std::define_static_array(std::meta::parameters_of(Method));
+    std::vector<ctr::BeanParameterRecord> result;
+    result.reserve(kParams.size());
+    template for (constexpr auto p : kParams) {
+        constexpr auto paramType = std::meta::dealias(std::meta::type_of(p));
+        constexpr auto injectedType = retainedParameterType<paramType>();
+        using U = [:injectedType:];
+        result.push_back({&TypeInfoGetter<U>::get});
+    }
+    return result;
+}
+
+template<std::meta::info Member>
+consteval bool hasRetainedParameterList() {
+    try {
+        (void) std::meta::parameters_of(Member).size();
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -786,12 +848,19 @@ consteval const ctr::BeanReflectiveData* makeReflectiveData() {
                     }
                     // parameters_of throws for non-function members (e.g. data fields).
                     std::size_t pcount = 0;
-                    try { pcount = std::meta::parameters_of(m).size(); } catch (...) {}
+                    const ctr::BeanParameterRecord* params = nullptr;
+                    if constexpr (hasRetainedParameterList<m>()) {
+                        constexpr auto kParams =
+                            std::define_static_array(makeMethodParameterRecords<m>());
+                        pcount = kParams.size();
+                        params = kParams.data();
+                    }
                     arr[idx++] = {
                         std::define_static_string(std::meta::identifier_of(m)),
                         isPC,
                         isPD,
-                        pcount
+                        pcount,
+                        params
                     };
                 }
             }
@@ -960,6 +1029,8 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
     // qualifiedNameOf computed once per entity (D1).
     constexpr const char* productName = qualifiedNameOf(productType);
     constexpr const char* factoryName = qualifiedNameOf(entity.declaringFactory);
+    constexpr const char* factoryMethodName =
+        std::define_static_string(std::meta::identifier_of(entity.entity));
 
     constexpr auto factoryIdentity = computeIdentityForType(factoryName, "", Lifetime::Singleton);
 
@@ -974,8 +1045,7 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
     }
 
     // Detect whether the return type is unique_ptr<T>.
-    constexpr bool isUniquePtrReturn = std::meta::is_same_type(
-        std::meta::dealias(rawReturn), std::meta::dealias(^^std::unique_ptr<T>));
+    constexpr bool isUniquePtrReturn = isUniquePtrType(rawReturn);
 
     void* (*allocAndConstructFn)(void*)        = nullptr;
     void  (*deallocFn)(void*) noexcept         = nullptr;
@@ -1002,6 +1072,7 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
         .size              = sizeof(T),
         .align             = alignof(T),
         .factoryMethodIdentity = factoryIdentity,
+        .factoryMethodName = factoryMethodName,
         .allocAndConstruct = allocAndConstructFn,
         .dealloc           = deallocFn,
     };

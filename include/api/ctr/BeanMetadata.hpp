@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -7,12 +8,25 @@
 
 #include "../../internal/Lifetime.hpp"
 #include "../../internal/Origin.hpp"
+#include "Markers.hpp"
 
 namespace ctr {
 
-// Forward declarations.
-struct postConstruct;
-struct preDestroy;
+/**
+ * @brief Runtime record for a retained method parameter.
+ *
+ * Stored in a `constexpr static` array produced by `makeReflectiveData`
+ * when `DiscoverOptions::retainAllMetadata = true`.
+ */
+struct BeanParameterRecord {
+    /** Function pointer returning `typeid(InjectedType)` at runtime. */
+    const std::type_info& (*injectedTypeInfo)();
+
+    /** Type_info of the injected parameter type. */
+    [[nodiscard]] const std::type_info& injectedType() const noexcept {
+        return injectedTypeInfo ? injectedTypeInfo() : typeid(void);
+    }
+};
 
 /**
  * @brief Runtime record for a single retained bean method.
@@ -30,6 +44,8 @@ struct BeanMethodRecord {
     bool         isPreDestroy;
     /** Number of parameters. */
     std::size_t  paramCount;
+    /** Static-lifetime parameter records; null when `paramCount == 0`. */
+    const BeanParameterRecord* params = nullptr;
 };
 
 /**
@@ -76,6 +92,26 @@ public:
             const BeanMethodRecord& rec;
             [[nodiscard]] const char*  name()           const noexcept { return rec.name; }
             [[nodiscard]] std::size_t  parameterCount() const noexcept { return rec.paramCount; }
+
+            /**
+             * @brief Returns annotation `Annotation` when this method carries it.
+             */
+            template<class Annotation>
+            [[nodiscard]] std::optional<Annotation> annotation() const noexcept {
+                if constexpr (std::is_same_v<Annotation, ctr::postConstruct>) {
+                    if (rec.isPostConstruct) return Annotation{};
+                } else if constexpr (std::is_same_v<Annotation, ctr::preDestroy>) {
+                    if (rec.isPreDestroy) return Annotation{};
+                }
+                return std::nullopt;
+            }
+
+            /**
+             * @brief Returns retained parameter records for this method.
+             */
+            [[nodiscard]] std::span<const BeanParameterRecord> parameters() const noexcept {
+                return {rec.params, rec.paramCount};
+            }
         };
 
         struct Iterator {
@@ -124,6 +160,26 @@ public:
                 if constexpr (std::is_same_v<A, ctr::preDestroy>)    return rec.isPreDestroy;
                 return false;
             }
+
+            /**
+             * @brief Returns annotation `Annotation` when this method carries it.
+             */
+            template<class Annotation>
+            [[nodiscard]] std::optional<Annotation> annotation() const noexcept {
+                if constexpr (std::is_same_v<Annotation, ctr::postConstruct>) {
+                    if (rec.isPostConstruct) return Annotation{};
+                } else if constexpr (std::is_same_v<Annotation, ctr::preDestroy>) {
+                    if (rec.isPreDestroy) return Annotation{};
+                }
+                return std::nullopt;
+            }
+
+            /**
+             * @brief Returns retained parameter records for this method.
+             */
+            [[nodiscard]] std::span<const BeanParameterRecord> parameters() const noexcept {
+                return {rec.params, rec.paramCount};
+            }
         };
 
         struct Iterator {
@@ -160,6 +216,7 @@ public:
      * @param observedTypeGetter  `typeid` of the exposed type.
      * @param exactTypeGetter     `typeid` of the concrete type.
      * @param nameStr             Bean name string (static lifetime, may be empty string).
+     * @param factoryMethodName   Unqualified factory producer method name, or empty string.
      * @param lt                  Scope lifetime.
      * @param orig                Descriptor origin.
      * @param reflective          Retained reflective data, or `nullptr`.
@@ -167,15 +224,30 @@ public:
     BeanMetadata(const std::type_info& (*observedTypeGetter)(),
                  const std::type_info& (*exactTypeGetter)(),
                  const char*            nameStr,
+                 const char*            factoryMethodName,
                  detail::Lifetime       lt,
                  detail::Origin         orig,
                  const BeanReflectiveData* reflective) noexcept
         : observedTypeGetter_(observedTypeGetter)
         , exactTypeGetter_   (exactTypeGetter)
         , nameStr_           (nameStr)
+        , factoryMethodName_ (factoryMethodName)
         , lifetime_          (lt)
         , origin_            (orig)
         , reflective_        (reflective)
+    {}
+
+    /**
+     * @brief Constructs a metadata view without a factory producer method name.
+     */
+    BeanMetadata(const std::type_info& (*observedTypeGetter)(),
+                 const std::type_info& (*exactTypeGetter)(),
+                 const char*            nameStr,
+                 detail::Lifetime       lt,
+                 detail::Origin         orig,
+                 const BeanReflectiveData* reflective) noexcept
+        : BeanMetadata(observedTypeGetter, exactTypeGetter, nameStr, "",
+                       lt, orig, reflective)
     {}
 
     // ── Noyau ─────────────────────────────────────────────────────────────
@@ -195,6 +267,11 @@ public:
     /** Named qualifier, or empty string_view for unnamed beans. */
     [[nodiscard]] std::string_view name() const noexcept {
         return nameStr_ ? std::string_view{nameStr_} : std::string_view{};
+    }
+
+    /** Unqualified factory producer method name, or empty string_view otherwise. */
+    [[nodiscard]] std::string_view factoryMethod() const noexcept {
+        return factoryMethodName_ ? std::string_view{factoryMethodName_} : std::string_view{};
     }
 
     /** Scope lifetime governing instance sharing and destruction. */
@@ -220,6 +297,7 @@ private:
     const std::type_info& (*observedTypeGetter_)();
     const std::type_info& (*exactTypeGetter_)();
     const char*            nameStr_;
+    const char*            factoryMethodName_;
     detail::Lifetime       lifetime_;
     detail::Origin         origin_;
     const BeanReflectiveData* reflective_;

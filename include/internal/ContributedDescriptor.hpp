@@ -191,6 +191,14 @@ struct ContributedDescriptor {
      */
     Identity     factoryMethodIdentity;
 
+    /**
+     * @brief Unqualified producer method name for factory products.
+     *
+     * Static-lifetime string set only for `Origin::FactoryProduct`; null for
+     * annotated types, factory descriptors, runtime bindings, and aliases.
+     */
+    const char* factoryMethodName = nullptr;
+
     // --- Auto-allocating thunks (unique_ptr<T> factory products, Prototype lifetime) ---
 
     /**

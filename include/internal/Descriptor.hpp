@@ -48,6 +48,8 @@ struct Descriptor {
     std::size_t  align;
     /** DescriptorId of the source factory method, or kInvalidDescriptorId when not factory-produced. */
     DescriptorId factoryMethodDescriptor;
+    /** Unqualified producer method name for `BeanMetadata::factoryMethod()`. */
+    const char*  factoryMethodName = nullptr;
     /**
      * @brief DescriptorId of the primary (concrete-typed) descriptor.
      *

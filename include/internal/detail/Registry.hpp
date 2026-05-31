@@ -360,6 +360,7 @@ public:
                     d.allocAndConstruct = cd.allocAndConstruct;
                     d.dealloc           = cd.dealloc;
                     d.factoryMethodDescriptor = kInvalidDescriptorId; // resolved in Phase 2
+                    d.factoryMethodName       = cd.factoryMethodName;
                     d.adjustToExposed  = cd.adjustToExposed;
                     d.adjustToConcrete = cd.adjustToConcrete;
                     // primaryDescriptor: set to self for primaries; resolved in Phase 2 for aliases.
@@ -429,6 +430,7 @@ public:
             d.allocAndConstruct      = nullptr;
             d.dealloc                = pb.dealloc;
             d.factoryMethodDescriptor = kInvalidDescriptorId;
+            d.factoryMethodName       = nullptr;
             d.observedTypeGetter     = pb.typeInfoGetter;
             d.exactTypeGetter        = pb.typeInfoGetter;
             d.nameStr                = pb.typeName;

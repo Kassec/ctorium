@@ -1,3 +1,6 @@
+#include <meta>
+#include <string_view>
+
 #include <gtest/gtest.h>
 #include <ctr/Ctorium.hpp>
 
@@ -460,5 +463,117 @@ TEST(BeanMetadata, BoundSingleton_NoyauAvailable) {
     EXPECT_EQ(bean.metadata().exactType(), typeid(bound_fixture::BoundSvc));
     EXPECT_EQ(bean.metadata().origin(), ctr::detail::Origin::RuntimeBinding);
     EXPECT_TRUE(bean.metadata().methods().empty()); // no reflective data for runtime bindings
+    ctx.stop();
+}
+
+namespace metadata_name_fixture {
+
+struct [[=ctr::singleton{}]] UnnamedService {};
+
+struct [[=ctr::singleton{}]]
+       [[=ctr::named{.name = std::define_static_string("named")}]]
+       NamedService {};
+
+} // namespace metadata_name_fixture
+
+TEST(BeanMetadata, NameReportsNamedKeyAndEmptyForUnnamedBean) {
+    auto& ctx = ctr::BeanContext::resolveContext("meta-name");
+    ctx.discover<^^metadata_name_fixture>().start();
+
+    auto unnamed = ctx.resolve<metadata_name_fixture::UnnamedService>();
+    auto named = ctx.resolve<metadata_name_fixture::NamedService>(
+        ctr::named{.name = std::define_static_string("named")});
+
+    EXPECT_TRUE(unnamed.metadata().name().empty());
+    EXPECT_EQ(named.metadata().name(), std::string_view{"named"});
+
+    ctx.stop();
+}
+
+namespace metadata_method_retention_fixture {
+
+struct [[=ctr::singleton{}]] Dep {};
+
+struct [[=ctr::singleton{}]] Service {
+    [[=ctr::postConstruct{}]]
+    void init(ctr::Bean<Dep>) {}
+};
+
+} // namespace metadata_method_retention_fixture
+
+TEST(BeanMetadata, RetainedAnnotatedMethodsExposeNameAnnotationAndParameterCount) {
+    auto& ctx = ctr::BeanContext::resolveContext("meta-method-retained-details");
+    ctx.discover<^^metadata_method_retention_fixture>({.retainAllMetadata = true}).start();
+
+    auto service = ctx.resolve<metadata_method_retention_fixture::Service>();
+    auto postConstructMethods =
+        service.metadata().methods().annotatedWith<ctr::postConstruct>();
+
+    ASSERT_FALSE(postConstructMethods.empty());
+    auto method = *postConstructMethods.begin();
+    EXPECT_EQ(std::string_view{method.name()}, "init");
+    EXPECT_EQ(method.parameterCount(), 1u);
+
+    ctx.stop();
+}
+
+TEST(BeanMetadata, MethodAnnotationObjectAndParameterMetadataAreNotInPublicApi) {
+    auto& ctx = ctr::BeanContext::resolveContext("meta-method-annotation-parameters");
+    ctx.discover<^^metadata_method_retention_fixture>({.retainAllMetadata = true}).start();
+
+    auto service = ctx.resolve<metadata_method_retention_fixture::Service>();
+    auto methods = service.metadata().methods();
+    ASSERT_FALSE(methods.empty());
+
+    auto method = *methods.begin();
+    auto annotation = method.annotation<ctr::postConstruct>();
+    ASSERT_TRUE(annotation.has_value());
+    EXPECT_FALSE(method.annotation<ctr::preDestroy>().has_value());
+
+    auto parameters = method.parameters();
+    ASSERT_EQ(parameters.size(), 1u);
+    EXPECT_EQ(parameters.size(), method.parameterCount());
+    EXPECT_EQ(parameters[0].injectedType(), typeid(metadata_method_retention_fixture::Dep));
+
+    auto postConstructMethods =
+        service.metadata().methods().annotatedWith<ctr::postConstruct>();
+    ASSERT_FALSE(postConstructMethods.empty());
+    auto postConstructMethod = *postConstructMethods.begin();
+    EXPECT_TRUE(postConstructMethod.annotation<ctr::postConstruct>().has_value());
+    EXPECT_EQ(postConstructMethod.parameters().size(), 1u);
+    EXPECT_EQ(postConstructMethod.parameters().size(), postConstructMethod.parameterCount());
+
+    ctx.stop();
+}
+
+namespace anybean_equality_fixture {
+
+struct [[=ctr::singleton{}]] First {};
+struct [[=ctr::singleton{}]] Second {};
+
+} // namespace anybean_equality_fixture
+
+TEST(AnyBeanCast, EqualityComparesLogicalBeanIdentity) {
+    auto& ctx = ctr::BeanContext::resolveContext("ab-equality");
+    ctx.discover<^^anybean_equality_fixture>().start();
+
+    ctr::AnyBean first;
+    ctr::AnyBean second;
+    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& bean) {
+        if (bean.compatible<anybean_equality_fixture::First>()) {
+            first = bean;
+        } else if (bean.compatible<anybean_equality_fixture::Second>()) {
+            second = bean;
+        }
+    });
+
+    (void)ctx.resolve<anybean_equality_fixture::First>();
+    (void)ctx.resolve<anybean_equality_fixture::Second>();
+
+    ctr::AnyBean sameFirst = first;
+
+    EXPECT_EQ(first, sameFirst);
+    EXPECT_NE(first, second);
+
     ctx.stop();
 }

@@ -119,7 +119,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] no generated source files to commit or include
     - [x] toolchain check tool
     - [x] header-only library
-    - [ ] dynamic link library
+    - [ ] ~~dynamic link library~~
 
 - [x] Easy attribute-based bean declaration model
     - [x] `singleton`
@@ -141,7 +141,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [ ] setter injection through `ctr::Bean<T>`
     - [x] named injection points
     - [x] automatic constructor selection
-    - [ ] deterministic error on ambiguous constructor candidates
+    - [x] deterministic error on ambiguous constructor candidates
 
 - [x] Tracked lightweight bean handles
     - [x] typed handles with `ctr::Bean<T>`

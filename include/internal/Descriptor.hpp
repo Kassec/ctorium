@@ -38,20 +38,6 @@ struct Descriptor {
     NameId       name;
     /** Priority used to arbitrate among candidates sharing the same exposedType and name. */
     std::int32_t priority;
-    /** Scope lifetime governing instance sharing and destruction. */
-    Lifetime     lifetime;
-    /** Dense per-session descriptor slot; kInvalidSessionSlot for non-session descriptors. */
-    SessionSlot  sessionSlot = kInvalidSessionSlot;
-    /** How this descriptor was contributed to the registry. */
-    Origin       origin;
-    /** Placement constructor thunk: (void* mem, void* registry). Must not be null. */
-    void       (*construct)(void*, void*);
-    /** In-place destructor thunk: (void* instance). Must not be null. */
-    void       (*destroy)(void*) noexcept;
-    /** Post-construction callback thunk: (void* instance, void* registry). Nullable. */
-    void       (*postConstruct)(void*, void*);
-    /** Pre-destruction callback thunk: (void* instance, void* registry). Nullable. */
-    void       (*preDestroy)(void*, void*);
     /**
      * sizeof the concrete type, in bytes.
      * When `size == 0`, the memory is externally owned;
@@ -62,6 +48,24 @@ struct Descriptor {
     std::size_t  align;
     /** DescriptorId of the source factory method, or kInvalidDescriptorId when not factory-produced. */
     DescriptorId factoryMethodDescriptor;
+    /**
+     * @brief DescriptorId of the primary (concrete-typed) descriptor.
+     *
+     * For a primary descriptor: equals `this` descriptor's own DescriptorId.
+     * For an alias (exposed-base) descriptor: equals the concrete type's DescriptorId.
+     * `kInvalidDescriptorId` before `start()` initialises it.
+     *
+     * Used by `materializeOne` to redirect alias resolution to the primary,
+     * by `compatible<U>()` to walk the alias graph, and by
+     * `materializeEagerSingletons()` to skip alias descriptors.
+     */
+    DescriptorId primaryDescriptor = kInvalidDescriptorId;
+    /** Dense per-session descriptor slot; kInvalidSessionSlot for non-session descriptors. */
+    SessionSlot  sessionSlot = kInvalidSessionSlot;
+    /** Scope lifetime governing instance sharing and destruction. */
+    Lifetime     lifetime;
+    /** How this descriptor was contributed to the registry. */
+    Origin       origin;
 
     /**
      * @brief Whether materialization is deferred until first resolution.
@@ -71,6 +75,15 @@ struct Descriptor {
      * `false` → `materializeEagerSingletons()` constructs this instance at `start()`.
      */
     bool lazy = true;
+
+    /** Placement constructor thunk: (void* mem, void* registry). Must not be null. */
+    void       (*construct)(void*, void*);
+    /** In-place destructor thunk: (void* instance). Must not be null. */
+    void       (*destroy)(void*) noexcept;
+    /** Post-construction callback thunk: (void* instance, void* registry). Nullable. */
+    void       (*postConstruct)(void*, void*);
+    /** Pre-destruction callback thunk: (void* instance, void* registry). Nullable. */
+    void       (*preDestroy)(void*, void*);
 
     /**
      * @brief Combined allocate-and-construct thunk for `unique_ptr<T>` factory products.
@@ -119,19 +132,6 @@ struct Descriptor {
     const ctr::BeanReflectiveData* reflectiveData = nullptr;
 
     // ── Polymorphic-exposure fields (SPEC-polymorphic-exposure) ──────────────
-
-    /**
-     * @brief DescriptorId of the primary (concrete-typed) descriptor.
-     *
-     * For a primary descriptor: equals `this` descriptor's own DescriptorId.
-     * For an alias (exposed-base) descriptor: equals the concrete type's DescriptorId.
-     * `kInvalidDescriptorId` before `start()` initialises it.
-     *
-     * Used by `materializeOne` to redirect alias resolution to the primary,
-     * by `compatible<U>()` to walk the alias graph, and by
-     * `materializeEagerSingletons()` to skip alias descriptors.
-     */
-    DescriptorId primaryDescriptor = kInvalidDescriptorId;
 
     /**
      * @brief Upcast thunk: `(void* concrete) → void* base`.

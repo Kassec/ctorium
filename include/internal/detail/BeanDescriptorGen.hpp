@@ -6,7 +6,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
-#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -59,7 +58,7 @@ consteval Identity fnv1a64Byte(std::uint8_t b, Identity seed) {
 /// Builds the qualified name ("ns::Type") by walking up the scope hierarchy.
 /// Uses only identifier_of + parent_of + is_namespace, all validated by probes.
 /// Returns a const char* with static lifetime via define_static_string.
-/// Counts the exact size first, then emits characters directly to define_static_string.
+/// Counts the exact size first, then emits a transient buffer to define_static_string.
 /// Returns true when `e` is a template specialization.
 /// GCC 16.1.0 P2996: template_arguments_of throws std::meta::exception for
 /// non-specializations (see docs/gcc-P2996R13.md §3).  try/catch is valid in
@@ -115,42 +114,39 @@ consteval const char* qualifiedNameOf(std::meta::info entity) {
     const std::size_t totalLength =
         segmentLength + (segmentCount > 1 ? (segmentCount - 1) * 2 : 0);
 
-    // Replay the same parent walk and map each output index to the character
-    // that a reverse write would place in the final outermost-to-innermost name.
-    auto charAt = [entity, totalLength, parentInScope, parentSegment](std::size_t index) consteval {
-        std::size_t writeEnd = totalLength;
+    // Second pass writes each segment directly to its final slot in a transient buffer.
+    char* buffer = new char[totalLength];
+    std::size_t writeEnd = totalLength;
 
-        const std::string_view entitySegment = std::meta::identifier_of(entity);
-        writeEnd -= entitySegment.size();
-        if (index >= writeEnd) return entitySegment[index - writeEnd];
+    const std::string_view entitySegment = std::meta::identifier_of(entity);
+    writeEnd -= entitySegment.size();
+    for (std::size_t i = 0; i < entitySegment.size(); ++i) {
+        buffer[writeEnd + i] = entitySegment[i];
+    }
+
+    parent = std::meta::parent_of(entity);
+    while (parentInScope(parent)) {
+        bool stopAfterSegment = false;
+        const std::string_view segment = parentSegment(parent, stopAfterSegment);
+        if (segment.empty()) break;
+
         if (writeEnd > 0) {
             writeEnd -= 2;
-            if (index >= writeEnd) return ':';
+            buffer[writeEnd] = ':';
+            buffer[writeEnd + 1] = ':';
+        }
+        writeEnd -= segment.size();
+        for (std::size_t i = 0; i < segment.size(); ++i) {
+            buffer[writeEnd + i] = segment[i];
         }
 
-        auto parent = std::meta::parent_of(entity);
-        while (parentInScope(parent)) {
-            bool stopAfterSegment = false;
-            const std::string_view segment = parentSegment(parent, stopAfterSegment);
-            if (segment.empty()) break;
+        if (stopAfterSegment) break;
+        parent = std::meta::parent_of(parent);
+    }
 
-            writeEnd -= segment.size();
-            if (index >= writeEnd) return segment[index - writeEnd];
-            if (writeEnd > 0) {
-                writeEnd -= 2;
-                if (index >= writeEnd) return ':';
-            }
-
-            if (stopAfterSegment) break;
-            parent = std::meta::parent_of(parent);
-        }
-
-        return '\0';
-    };
-
-    auto chars = std::views::iota(std::size_t{0}, totalLength)
-        | std::views::transform(charAt);
-    return std::define_static_string(chars);
+    const char* result = std::define_static_string(std::string_view{buffer, totalLength});
+    delete[] buffer;
+    return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,7 @@ namespace bench_resolve_singleton {
 
     struct [[
 
+
     =
     ctr::singleton {
     }
@@ -26,9 +27,84 @@ namespace bench_resolve_singleton {
 
 } // namespace bench_resolve_singleton
 
+#define CTR_BENCH_MONO_TYPES(X) \
+    X(M0)                       \
+    X(M1)                       \
+    X(M2)                       \
+    X(M3)                       \
+    X(M4)                       \
+    X(M5)                       \
+    X(M6)                       \
+    X(M7)                       \
+    X(M8)                       \
+    X(M9)                       \
+    X(M10)                      \
+    X(M11)                      \
+    X(M12)                      \
+    X(M13)                      \
+    X(M14)                      \
+    X(M15)                      \
+    X(M16)                      \
+    X(M17)                      \
+    X(M18)                      \
+    X(M19)                      \
+    X(M20)                      \
+    X(M21)                      \
+    X(M22)                      \
+    X(M23)                      \
+    X(M24)                      \
+    X(M25)                      \
+    X(M26)                      \
+    X(M27)                      \
+    X(M28)                      \
+    X(M29)                      \
+    X(M30)                      \
+    X(M31)                      \
+    X(M32)                      \
+    X(M33)                      \
+    X(M34)                      \
+    X(M35)                      \
+    X(M36)                      \
+    X(M37)                      \
+    X(M38)                      \
+    X(M39)                      \
+    X(M40)                      \
+    X(M41)                      \
+    X(M42)                      \
+    X(M43)                      \
+    X(M44)                      \
+    X(M45)                      \
+    X(M46)                      \
+    X(M47)                      \
+    X(M48)                      \
+    X(M49)                      \
+    X(M50)                      \
+    X(M51)                      \
+    X(M52)                      \
+    X(M53)                      \
+    X(M54)                      \
+    X(M55)                      \
+    X(M56)                      \
+    X(M57)                      \
+    X(M58)                      \
+    X(M59)                      \
+    X(M60)                      \
+    X(M61)                      \
+    X(M62)                      \
+    X(M63)
+
+namespace bench_resolve_mono {
+
+#define CTR_BENCH_DECLARE_MONO_TYPE(Type) struct [[=ctr::singleton{}]] Type {};
+    CTR_BENCH_MONO_TYPES(CTR_BENCH_DECLARE_MONO_TYPE)
+#undef CTR_BENCH_DECLARE_MONO_TYPE
+
+} // namespace bench_resolve_mono
+
 namespace bench_resolve_prototype {
 
     struct [[
+
 
     =
     ctr::prototype {
@@ -49,6 +125,7 @@ namespace bench_resolve_proto1dep {
 
     struct [[
 
+
     =
     ctr::singleton {
     }
@@ -58,6 +135,7 @@ namespace bench_resolve_proto1dep {
     Dep {
     };
     struct [[
+
 
     =
     ctr::prototype {
@@ -85,6 +163,7 @@ namespace bench_resolve_proto8deps {
 
     struct [[
 
+
     =
     ctr::singleton {
     }
@@ -94,6 +173,7 @@ namespace bench_resolve_proto8deps {
     Dep0 {
     };
     struct [[
+
 
     =
     ctr::singleton {
@@ -105,6 +185,7 @@ namespace bench_resolve_proto8deps {
     };
     struct [[
 
+
     =
     ctr::singleton {
     }
@@ -114,6 +195,7 @@ namespace bench_resolve_proto8deps {
     Dep2 {
     };
     struct [[
+
 
     =
     ctr::singleton {
@@ -125,6 +207,7 @@ namespace bench_resolve_proto8deps {
     };
     struct [[
 
+
     =
     ctr::singleton {
     }
@@ -134,6 +217,7 @@ namespace bench_resolve_proto8deps {
     Dep4 {
     };
     struct [[
+
 
     =
     ctr::singleton {
@@ -145,6 +229,7 @@ namespace bench_resolve_proto8deps {
     };
     struct [[
 
+
     =
     ctr::singleton {
     }
@@ -154,6 +239,7 @@ namespace bench_resolve_proto8deps {
     Dep6 {
     };
     struct [[
+
 
     =
     ctr::singleton {
@@ -165,6 +251,7 @@ namespace bench_resolve_proto8deps {
     };
 
     struct [[
+
 
     =
     ctr::prototype {
@@ -208,6 +295,7 @@ namespace bench_resolve_session {
 
     struct [[
 
+
     =
     ctr::session {
     }
@@ -226,6 +314,7 @@ namespace bench_resolve_session {
 namespace bench_resolve_tl {
 
     struct [[
+
 
     =
     ctr::threadLocal {
@@ -289,6 +378,37 @@ static void BM_Resolve_Singleton(benchmark::State &state) {
 }
 
 BENCHMARK(BM_Resolve_Singleton);
+
+#define CTR_BENCH_RESOLVE_MONO(Type)                                      \
+    {                                                                     \
+        auto bean = ctx.resolve<bench_resolve_mono::Type>();              \
+        benchmark::DoNotOptimize(bean);                                   \
+    }
+
+static void BM_Resolve_Mono_Interleaved64(benchmark::State &state) {
+    auto &ctx = ctr::BeanContext::resolveContext("bm-res-mono-i64");
+    ctx.discover<^^bench_resolve_mono>().start();
+    CTR_BENCH_MONO_TYPES(CTR_BENCH_RESOLVE_MONO)
+
+    for (auto _ : state) {
+        CTR_BENCH_MONO_TYPES(CTR_BENCH_RESOLVE_MONO)
+    }
+    const double totalOps = static_cast<double>(state.iterations()) * 64.0;
+    state.counters["ns/op"] = benchmark::Counter(
+        totalOps / 1e9,
+        benchmark::Counter::kIsRate | benchmark::Counter::kInvert
+        );
+    state.counters["op/s"] = benchmark::Counter(
+        totalOps,
+        benchmark::Counter::kIsRate
+        );
+    ctx.stop();
+}
+
+BENCHMARK(BM_Resolve_Mono_Interleaved64);
+
+#undef CTR_BENCH_RESOLVE_MONO
+#undef CTR_BENCH_MONO_TYPES
 
 // ─── BM_Resolve_Prototype ─────────────────────────────────────────────────────
 // Creation cost of a trivial prototype (no dependencies), dealloc excluded.

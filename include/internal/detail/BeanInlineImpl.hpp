@@ -1650,6 +1650,11 @@ namespace ctr::detail {
         return true;
     }
 
+    inline void Registry::rollbackFailedStart() noexcept {
+        startLifecyclePending_.clear();
+        (void)stopRegistryOwnedBeans();
+    }
+
     // Registry::stopScope
     //
     // Destroys all session instances owned by `scope` in reverse construction order,

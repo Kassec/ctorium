@@ -299,6 +299,24 @@ public:
         std::unique_lock<std::mutex> lock(writeLock_);
         if (started_.load(std::memory_order_relaxed)) return;
 
+        if (beanContextDescId_ != kInvalidDescriptorId) {
+            root_ = ctx;
+            singletons_.resize(descriptors_.size());
+            singletons_.store(beanContextDescId_, static_cast<void*>(ctx));
+            started_.store(true, std::memory_order_release);
+            const TypeId beanCtxTypeId = descriptors_.at(beanContextDescId_).exposedType;
+            lock.unlock();
+
+            ctr::AnyBean beanCtxBean;
+            beanCtxBean.object_         = static_cast<void*>(ctx);
+            beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
+            beanCtxBean.bits_.f1.descId = beanContextDescId_;
+            beanCtxBean.registry_       = this;
+            listeners_.dispatch(ListenerStore::phaseInitialized(), beanCtxTypeId, &beanCtxBean);
+            listeners_.dispatch(ListenerStore::phaseCreated(),     beanCtxTypeId, &beanCtxBean);
+            return;
+        }
+
         // --- Phase 1: merge contributions ---
         // Local identity → DescriptorId map, used only during start().
         std::unordered_map<Identity, DescriptorId> identityMap;
@@ -550,7 +568,6 @@ public:
         // Release store: ensures all structures populated during start() are visible
         // to threads that subsequently read started_ with memory_order_acquire.
         started_.store(true, std::memory_order_release);
-        pending_.clear(); // Release contribution spans (no longer needed).
 
         // A5: release writeLock_ before dispatching BeanContext lifecycle events so
         // that listener callbacks can call resolve() or other registry operations
@@ -917,6 +934,26 @@ public:
      * the registry's internal write lock (`started_` is already published before this call).
      */
     void materializeEagerSingletons();
+    // Defined in BeanInlineImpl.hpp.
+
+    /**
+     * @brief Releases pre-start contributions after the full public start succeeds.
+     *
+     * Called only after eager singleton materialization has completed, so a failed
+     * eager start can keep the discovery spans available for a retry.
+     */
+    void completeStart() noexcept {
+        pending_.clear();
+    }
+
+    /**
+     * @brief Rolls back a failed public start after `started_` may have been published.
+     *
+     * Destroys registry-owned singleton/prototype instances already materialized by
+     * the failed start and marks the registry stopped. Discovery contributions are
+     * left intact so the prepared descriptor state can be started again.
+     */
+    void rollbackFailedStart() noexcept;
     // Defined in BeanInlineImpl.hpp.
 
     /** @brief Destroys registry-owned beans and pending runtime singleton bindings. */

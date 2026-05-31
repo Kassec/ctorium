@@ -68,14 +68,20 @@ inline BeanContext& BeanContext::resolveContext(std::string_view key) {
 // -------------------------------------------------------------------------
 
 inline BeanContext& BeanContext::start() {
-    core().start(this);
-    flushDeferredListeners_();
-    // Dispatch lifecycle for pre-start bound singletons after deferred listeners
-    // are flushed so that listeners registered before start() observe the events.
-    core().dispatchBoundSingletonLifecycle();
-    // Materialize eager singletons (lazy == false) after started_ is published and
-    // outside the registry's internal write lock (start() already released it).
-    core().materializeEagerSingletons();
+    try {
+        core().start(this);
+        flushDeferredListeners_();
+        // Dispatch lifecycle for pre-start bound singletons after deferred listeners
+        // are flushed so that listeners registered before start() observe the events.
+        core().dispatchBoundSingletonLifecycle();
+        // Materialize eager singletons (lazy == false) after started_ is published and
+        // outside the registry's internal write lock (start() already released it).
+        core().materializeEagerSingletons();
+        core().completeStart();
+    } catch (...) {
+        core().rollbackFailedStart();
+        throw;
+    }
     return *this;
 }
 

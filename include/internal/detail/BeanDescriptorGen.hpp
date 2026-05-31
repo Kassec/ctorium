@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <meta>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
@@ -58,7 +59,7 @@ consteval Identity fnv1a64Byte(std::uint8_t b, Identity seed) {
 /// Builds the qualified name ("ns::Type") by walking up the scope hierarchy.
 /// Uses only identifier_of + parent_of + is_namespace, all validated by probes.
 /// Returns a const char* with static lifetime via define_static_string.
-/// O(D) character work (D = namespace depth) — collects segments then builds forward.
+/// Counts the exact size first, then emits characters directly to define_static_string.
 /// Returns true when `e` is a template specialization.
 /// GCC 16.1.0 P2996: template_arguments_of throws std::meta::exception for
 /// non-specializations (see docs/gcc-P2996R13.md §3).  try/catch is valid in
@@ -79,41 +80,77 @@ consteval const char* qualifiedNameOf(std::meta::info entity) {
         return std::define_static_string(std::meta::display_string_of(entity));
     }
 
-    // Non-template: collect segments in reverse order (innermost first).
-    std::vector<std::string_view> parts;
-    parts.push_back(std::meta::identifier_of(entity));
+    auto parentInScope = [](std::meta::info parent) consteval {
+        return std::meta::is_namespace(parent)
+               || (std::meta::is_type(parent) && std::meta::is_class_type(parent));
+    };
+
+    auto parentSegment = [](std::meta::info parent, bool& stopAfterSegment) consteval -> std::string_view {
+        stopAfterSegment = false;
+        if (!std::meta::has_identifier(parent)) return {};
+        if (std::meta::is_type(parent) && std::meta::is_class_type(parent)
+                && isTemplateSpecialization(parent)) {
+            stopAfterSegment = true;
+            return std::meta::display_string_of(parent);
+        }
+        return std::meta::identifier_of(parent);
+    };
+
+    // Non-template: first pass counts only segment length and segment count.
+    std::size_t segmentLength = std::meta::identifier_of(entity).size();
+    std::size_t segmentCount = 1;
 
     // B1: walk up parent chain covering both namespaces AND enclosing classes.
     auto parent = std::meta::parent_of(entity);
-    while (std::meta::is_namespace(parent)
-           || (std::meta::is_type(parent) && std::meta::is_class_type(parent))) {
-        if (!std::meta::has_identifier(parent)) break; // anonymous/global or unnamed class
-        std::string_view seg;
-        if (std::meta::is_type(parent) && std::meta::is_class_type(parent)
-                && isTemplateSpecialization(parent)) {
-            // Template class parent: display_string_of is fully qualified.
-            // Append it as the final outer prefix and stop the loop.
-            seg = std::meta::display_string_of(parent);
-            if (seg.empty()) break;
-            parts.push_back(seg);
-            break; // outer name is already fully qualified
-        }
-        seg = std::meta::identifier_of(parent);
-        if (seg.empty()) break; // global namespace
-        parts.push_back(seg);
+    while (parentInScope(parent)) {
+        bool stopAfterSegment = false;
+        const std::string_view segment = parentSegment(parent, stopAfterSegment);
+        if (segment.empty()) break;
+        segmentLength += segment.size();
+        ++segmentCount;
+        if (stopAfterSegment) break; // outer name is already fully qualified
         parent = std::meta::parent_of(parent);
     }
-    // Pre-compute total length and build outermost → innermost in one pass.
-    std::size_t total = 0;
-    for (std::string_view sv : parts) total += sv.size();
-    if (parts.size() > 1) total += (parts.size() - 1) * 2; // "::" separators
-    std::string result;
-    result.reserve(total);
-    for (std::size_t i = parts.size(); i > 0; --i) {
-        if (i != parts.size()) result += "::";
-        result += parts[i - 1];
-    }
-    return std::define_static_string(std::string_view(result));
+
+    const std::size_t totalLength =
+        segmentLength + (segmentCount > 1 ? (segmentCount - 1) * 2 : 0);
+
+    // Replay the same parent walk and map each output index to the character
+    // that a reverse write would place in the final outermost-to-innermost name.
+    auto charAt = [entity, totalLength, parentInScope, parentSegment](std::size_t index) consteval {
+        std::size_t writeEnd = totalLength;
+
+        const std::string_view entitySegment = std::meta::identifier_of(entity);
+        writeEnd -= entitySegment.size();
+        if (index >= writeEnd) return entitySegment[index - writeEnd];
+        if (writeEnd > 0) {
+            writeEnd -= 2;
+            if (index >= writeEnd) return ':';
+        }
+
+        auto parent = std::meta::parent_of(entity);
+        while (parentInScope(parent)) {
+            bool stopAfterSegment = false;
+            const std::string_view segment = parentSegment(parent, stopAfterSegment);
+            if (segment.empty()) break;
+
+            writeEnd -= segment.size();
+            if (index >= writeEnd) return segment[index - writeEnd];
+            if (writeEnd > 0) {
+                writeEnd -= 2;
+                if (index >= writeEnd) return ':';
+            }
+
+            if (stopAfterSegment) break;
+            parent = std::meta::parent_of(parent);
+        }
+
+        return '\0';
+    };
+
+    auto chars = std::views::iota(std::size_t{0}, totalLength)
+        | std::views::transform(charAt);
+    return std::define_static_string(chars);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

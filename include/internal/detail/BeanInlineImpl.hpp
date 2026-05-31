@@ -378,8 +378,8 @@ namespace ctr {
     // Algorithm:
     //   1. Look up scope by f2.scopeNameId.
     //   2. Scope absent or stopped → nullptr (no exception, specs-api §7.1).
-    //   3. Find or materialize f2.descId's session slot in scope's SessionStore.
-    //   4. Return object pointer.
+    //   3. Find or materialize the primary descriptor's session slot.
+    //   4. Return the pointer adjusted to f2.descId's exposed type.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <class T>
@@ -389,13 +389,22 @@ namespace ctr {
             return nullptr;
 
         const detail::DescriptorId descId = bits_.f2.descId;
-        const detail::SessionSlot slot =
-            registry_->descriptorTable().at(descId).sessionSlot;
+        const detail::Descriptor &desc = registry_->descriptorTable().at(descId);
+        const detail::DescriptorId primaryId =
+            desc.primaryDescriptor != detail::kInvalidDescriptorId
+                ? desc.primaryDescriptor
+                : descId;
+        const detail::Descriptor &primaryDesc =
+            primaryId == descId ? desc : registry_->descriptorTable().at(primaryId);
+        const detail::SessionSlot slot = primaryDesc.sessionSlot;
 
         // Fast path: already materialized.
         void *instance = scope->sessionStore_.find(slot);
-        if (instance != nullptr)
+        if (instance != nullptr) {
+            if (desc.adjustToExposed != nullptr)
+                instance = desc.adjustToExposed(instance);
             return static_cast<T *>(instance);
+        }
 
         // Slow path: materialize (same two-phase pattern as singleton).
         detail::ResolutionContext ctx{*registry_, scope};
@@ -404,6 +413,8 @@ namespace ctr {
         } catch (...) {
             return nullptr; // proxy path must not throw (specs-api §7.1)
         }
+        if (desc.adjustToExposed != nullptr)
+            instance = desc.adjustToExposed(instance);
         return static_cast<T *>(instance);
     }
 
@@ -692,18 +703,26 @@ namespace ctr {
     //
     // Called by operator-> when scopeNameId == kThreadLocalSentinel.
     // Never caches the pointer — resolves against the calling thread's TL store
-    // on every invocation using f2.descId. If not yet materialized on this
-    // thread, materializes.
+    // on every invocation using the primary descriptor. If not yet materialized
+    // on this thread, materializes and adjusts to f2.descId's exposed type.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <typename T>
     T *Bean<T>::threadLocalResolve_() const noexcept {
         const detail::DescriptorId descId = bits_.f2.descId;
+        const detail::Descriptor &desc = registry_->descriptorTable().at(descId);
+        const detail::DescriptorId primaryId =
+            desc.primaryDescriptor != detail::kInvalidDescriptorId
+                ? desc.primaryDescriptor
+                : descId;
 
         // Fast path: already materialized on this thread.
-        void *instance = detail::tlData().findInstance(registry_->registryId(), descId);
-        if (instance != nullptr)
+        void *instance = detail::tlData().findInstance(registry_->registryId(), primaryId);
+        if (instance != nullptr) {
+            if (desc.adjustToExposed != nullptr)
+                instance = desc.adjustToExposed(instance);
             return static_cast<T *>(instance);
+        }
 
         // Slow path: materialize.
         detail::ResolutionContext ctx{*registry_, nullptr};
@@ -712,6 +731,8 @@ namespace ctr {
         } catch (...) {
             return nullptr;
         }
+        if (desc.adjustToExposed != nullptr)
+            instance = desc.adjustToExposed(instance);
         return static_cast<T *>(instance);
     }
 
@@ -1069,6 +1090,8 @@ namespace ctr::detail {
             }
         }
 
+        DescriptorId materializationDescId = descId;
+
         // Single Descriptor& reference reused in the alias block and the switch.
         const Descriptor &desc = descriptors_.at(descId);
 
@@ -1169,8 +1192,7 @@ namespace ctr::detail {
                         );
                 }
 
-                // Session/ThreadLocal aliases: redirect to primary for store keying.
-                // The exposed pointer is computed after materialization.
+                materializationDescId = primaryId;
             }
         }
         // ── End alias redirect ───────────────────────────────────────────────────
@@ -1375,14 +1397,14 @@ namespace ctr::detail {
                     "Registry::resolve: the scope is stopped; start the scope before resolving."
                     );
             }
-            (void)materializeSessionInstance(descId, ctx.scope, ctx);
+            (void)materializeSessionInstance(materializationDescId, ctx.scope, ctx);
             return ctr::Bean<T>::makeProxy(ctx.scope->scopeNameId_, descId, this);
         }
 
         case Lifetime::ThreadLocal: {
             // Scope is transparent for threadLocal (specs-api §8): always resolve
             // as if from root — ctx.scope is ignored.
-            (void)materializeThreadLocalInstance(descId, ctx);
+            (void)materializeThreadLocalInstance(materializationDescId, ctx);
             return ctr::Bean<T>::makeThreadLocal(descId, this);
         }
         }
@@ -1396,8 +1418,8 @@ namespace ctr::detail {
     //
     // Two-phase lazy materialization of a session bean into scope's SessionStore.
     // Uses the same writeLock_ / cv_ as the singleton path; uses separate
-    // sessionMaterializing_ entries keyed by (descId, scope) so that the same
-    // descId in different scopes materializes independently.
+    // materializing_ entries keyed by (primary descId, scope) so that the same
+    // primary descriptor in different scopes materializes independently.
     // Dispatches onInitialized → postConstruct → onCreated on first materialization.
     // Returns the live pointer; throws ResolutionError on dependency cycle.
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1407,7 +1429,14 @@ namespace ctr::detail {
         ctr::ScopedContext *scope,
         ResolutionContext &ctx
         ) {
-        const Descriptor &desc = descriptors_.at(descId);
+        const Descriptor &requestedDesc = descriptors_.at(descId);
+        const DescriptorId primaryDescId =
+            requestedDesc.primaryDescriptor != descId
+            && requestedDesc.primaryDescriptor != kInvalidDescriptorId
+                ? requestedDesc.primaryDescriptor
+                : descId;
+        const Descriptor &desc =
+            primaryDescId == descId ? requestedDesc : descriptors_.at(primaryDescId);
         const SessionSlot slot = desc.sessionSlot;
 
         // Fast path: already materialized (lock-free acquire).
@@ -1426,9 +1455,9 @@ namespace ctr::detail {
                 );
         }
 
-        // Phase 1: claim (descId, scope) or wait for a peer on the same scope.
+        // Phase 1: claim (primary descId, scope) or wait for a peer on the same scope.
         didMaterialize = claimMaterializationOrWait(
-            descId,
+            primaryDescId,
             scope,
             [&] { return scope->sessionStore_.find(slot); },
             "Registry::resolve: dependency cycle detected during "
@@ -1463,8 +1492,8 @@ namespace ctr::detail {
                     auto it = std::find_if(
                         materializing_.begin(),
                         materializing_.end(),
-                        [descId, scope](const MaterializingEntry& p) {
-                            return p.key.descId == descId && p.key.scope == scope;
+                        [primaryDescId, scope](const MaterializingEntry& p) {
+                            return p.key.descId == primaryDescId && p.key.scope == scope;
                         }
                         );
                     if (it != materializing_.end()) {
@@ -1480,12 +1509,12 @@ namespace ctr::detail {
             // Phase 3: store under lock, then wake waiters.
             {
                 std::lock_guard reLock(writeLock_);
-                scope->sessionStore_.store(slot, descId, mem);
+                scope->sessionStore_.store(slot, primaryDescId, mem);
                 auto it = std::find_if(
                     materializing_.begin(),
                     materializing_.end(),
-                    [descId, scope](const MaterializingEntry& p) {
-                        return p.key.descId == descId && p.key.scope == scope;
+                    [primaryDescId, scope](const MaterializingEntry& p) {
+                        return p.key.descId == primaryDescId && p.key.scope == scope;
                     }
                     );
                 if (it != materializing_.end()) {
@@ -1501,7 +1530,7 @@ namespace ctr::detail {
             ctr::AnyBean anyBean;
             anyBean.object_ = instance;
             anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-            anyBean.bits_.f1.descId = descId;
+            anyBean.bits_.f1.descId = primaryDescId;
             anyBean.registry_ = this;
 
             listeners_.dispatch(ListenerStore::phaseInitialized(), desc.exposedType, &anyBean);
@@ -1615,7 +1644,7 @@ namespace ctr::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::materializeThreadLocalInstance
     //
-    // Finds or creates the threadLocal instance for (this, descId) on the calling
+    // Finds or creates the threadLocal instance for (this, primary descId) on the calling
     // thread.  No lock needed — the TL store is thread-private.  Registration with
     // the registry (for stop()-time cleanup) is done once per (thread, registry)
     // pair under tlMutex_.
@@ -1625,10 +1654,18 @@ namespace ctr::detail {
         DescriptorId descId,
         ResolutionContext &ctx
         ) {
+        const Descriptor &requestedDesc = descriptors_.at(descId);
+        const DescriptorId primaryDescId =
+            requestedDesc.primaryDescriptor != descId
+            && requestedDesc.primaryDescriptor != kInvalidDescriptorId
+                ? requestedDesc.primaryDescriptor
+                : descId;
+        const Descriptor &desc =
+            primaryDescId == descId ? requestedDesc : descriptors_.at(primaryDescId);
         TLData &tl = tlData();
 
         // Fast path: already materialized on this thread.
-        void *instance = tl.findInstance(registryId(), descId);
+        void *instance = tl.findInstance(registryId(), primaryDescId);
         if (instance != nullptr)
             return instance;
 
@@ -1642,8 +1679,7 @@ namespace ctr::detail {
         }
 
         // Materialize on this thread (thread-private; no DCLP needed).
-        const Descriptor &desc = descriptors_.at(descId);
-        CycleGuard guard(materializationStack(), descId);
+        CycleGuard guard(materializationStack(), primaryDescId);
 
         void *mem = nullptr;
         try {
@@ -1664,13 +1700,13 @@ namespace ctr::detail {
             throw;
         }
 
-        tl.storeInstance(registryId(), descId, mem);
+        tl.storeInstance(registryId(), primaryDescId, mem);
 
         // Lifecycle: C++ construction → onInitialized → postConstruct → onCreated.
         ctr::AnyBean anyBean;
         anyBean.object_ = mem;
         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-        anyBean.bits_.f1.descId = descId;
+        anyBean.bits_.f1.descId = primaryDescId;
         anyBean.registry_ = this;
         listeners_.dispatch(ListenerStore::phaseInitialized(), desc.exposedType, &anyBean);
         if (desc.postConstruct)

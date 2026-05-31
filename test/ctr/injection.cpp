@@ -1,3 +1,7 @@
+#include <atomic>
+#include <chrono>
+#include <string>
+#include <thread>
 #include <gtest/gtest.h>
 #include <meta>
 #include <utility>
@@ -427,4 +431,100 @@ TEST(Injection, UnknownNamedQualifierRaisesResolutionError) {
     ctx.discover<^^injection_unknown_named_fixture>().start();
     EXPECT_THROW(ctx.resolve<injection_unknown_named_fixture::Consumer>(), ctr::ResolutionError);
     ctx.stop();
+}
+
+// ─── Risque 2 : cycle singleton concurrent — deadlock sans détection cross-thread ───
+//
+// Deux singletons lazy en dépendance mutuelle : A injecte B, B injecte A.
+// Depuis deux threads rendez-vous, chacun déclenche la matérialisation d'un côté
+// du cycle. Sans détection cross-thread la cv_ crée un deadlock.
+// Le test attendu vert (après correctif) : au moins un resolve() lève ResolutionError.
+
+namespace injection_concurrent_singleton_cycle_fixture {
+
+struct B;
+
+struct [[=ctr::singleton{}]] A {
+    ctr::Bean<B> b;
+    explicit A(ctr::Bean<B> dep) : b(std::move(dep)) {}
+};
+
+struct [[=ctr::singleton{}]] B {
+    ctr::Bean<A> a;
+    explicit B(ctr::Bean<A> dep) : a(std::move(dep)) {}
+};
+
+} // namespace injection_concurrent_singleton_cycle_fixture
+
+TEST(Injection, ConcurrentSingletonCycleCausesMutualWait) {
+    using namespace std::chrono_literals;
+    constexpr int kAttempts = 30;
+    constexpr auto kWatchdog = std::chrono::seconds{2};
+
+    for (int attempt = 0; attempt < kAttempts; ++attempt) {
+        std::string ctxKey = "inj-conc-cycle-" + std::to_string(attempt);
+        auto& ctx = ctr::BeanContext::resolveContext(ctxKey);
+        ctx.discover<^^injection_concurrent_singleton_cycle_fixture>().start();
+
+        std::atomic<bool> aThrew{false}, bThrew{false};
+        std::atomic<bool> doneA{false}, doneB{false};
+        std::atomic<int> rendezvous{0};
+
+        auto taskA = [&] {
+            rendezvous.fetch_add(1, std::memory_order_release);
+            while (rendezvous.load(std::memory_order_acquire) < 2) {}
+            try {
+                ctx.resolve<injection_concurrent_singleton_cycle_fixture::A>();
+            } catch (const ctr::ResolutionError&) {
+                aThrew.store(true, std::memory_order_release);
+            } catch (...) {}
+            doneA.store(true, std::memory_order_release);
+        };
+
+        auto taskB = [&] {
+            rendezvous.fetch_add(1, std::memory_order_release);
+            while (rendezvous.load(std::memory_order_acquire) < 2) {}
+            try {
+                ctx.resolve<injection_concurrent_singleton_cycle_fixture::B>();
+            } catch (const ctr::ResolutionError&) {
+                bThrew.store(true, std::memory_order_release);
+            } catch (...) {}
+            doneB.store(true, std::memory_order_release);
+        };
+
+        std::thread t1{taskA};
+        std::thread t2{taskB};
+
+        auto deadline = std::chrono::steady_clock::now() + kWatchdog;
+        bool timedOut = false;
+        while (!(doneA.load(std::memory_order_acquire) &&
+                 doneB.load(std::memory_order_acquire))) {
+            if (std::chrono::steady_clock::now() > deadline) {
+                timedOut = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+        }
+
+        if (timedOut) {
+            t1.detach();
+            t2.detach();
+            // Ne pas appeler ctx.stop() : writeLock_ peut être détenu par un thread bloqué.
+            FAIL() << "Deadlock détecté à l'itération " << attempt
+                   << " : cycle singleton concurrent non résolu sous "
+                   << kWatchdog.count() << "s "
+                   << "(détection cross-thread non implémentée).";
+            return;
+        }
+
+        t1.join();
+        t2.join();
+
+        EXPECT_TRUE(aThrew.load() || bThrew.load())
+            << "Itération " << attempt
+            << " : au moins un resolve() devrait lever ctr::ResolutionError "
+               "(cycle cross-thread non détecté).";
+
+        ctx.stop();
+    }
 }

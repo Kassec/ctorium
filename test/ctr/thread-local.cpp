@@ -163,3 +163,40 @@ TEST(ThreadLocal, InstanceDestroyedAtContextClose) {
     // ctr::BeanContext singleton destroyed during stop() (specs-api §5.5).
     EXPECT_EQ(destroyCount, 2);
 }
+
+// ─── Risque 1 : exposition polymorphe d'un bean threadLocal ───────────────────
+//
+// Résoudre le bean threadLocal via son type de base (alias exposé) doit retourner
+// un handle non nul sur l'instance primaire correctement construite sur ce thread.
+// Resteront rouges tant que la redirection alias→primaire ThreadLocal n'est pas
+// implémentée dans materializeOne.
+
+namespace tl_poly_fixture {
+
+struct TLPolyBase {
+    int sentinel = 77;
+};
+
+struct [[=ctr::threadLocal{}]] TLPolyConcrete : public TLPolyBase {};
+
+} // namespace tl_poly_fixture
+
+TEST(ThreadLocal, PolymorphicExposureResolvesBase) {
+    auto& ctx = ctr::BeanContext::resolveContext("tl-poly-expose");
+    ctx.discover<^^tl_poly_fixture>().start();
+
+    auto baseBean = ctx.resolve<tl_poly_fixture::TLPolyBase>();
+    ASSERT_NE(baseBean.operator->(), nullptr);
+    EXPECT_EQ(baseBean->sentinel, 77);
+
+    auto concreteBean = ctx.resolve<tl_poly_fixture::TLPolyConcrete>();
+    ASSERT_NE(concreteBean.operator->(), nullptr);
+
+    // Héritage simple public offset-0 : même instance sur le thread appelant.
+    EXPECT_EQ(
+        static_cast<void*>(baseBean.operator->()),
+        static_cast<void*>(concreteBean.operator->())
+    );
+
+    ctx.stop();
+}

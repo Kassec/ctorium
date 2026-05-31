@@ -371,3 +371,42 @@ TEST(Session, ScopedNamedInjection_TargetsNamedBean) {
     EXPECT_EQ(consumer->svc->id, 99);
     ctx.stop();
 }
+
+// ─── Risque 1 : exposition polymorphe d'un bean session ───────────────────────
+//
+// Résoudre le bean session via son type de base (alias exposé) doit retourner
+// un handle non nul sur l'instance primaire correctement construite.
+// Resteront rouges tant que la redirection alias→primaire Session n'est pas
+// implémentée dans materializeOne.
+
+namespace session_poly_fixture {
+
+struct SessionPolyBase {
+    int sentinel = 42;
+};
+
+struct [[=ctr::session{}]] SessionPolyConcrete : public SessionPolyBase {};
+
+} // namespace session_poly_fixture
+
+TEST(Session, PolymorphicExposureResolvesBase) {
+    auto& ctx = ctr::BeanContext::resolveContext("ss-poly-expose");
+    ctx.discover<^^session_poly_fixture>().start();
+    auto& scope = ctx.resolveScope("poly-scope");
+    scope.start();
+
+    auto baseBean = scope.resolve<session_poly_fixture::SessionPolyBase>();
+    ASSERT_NE(baseBean.operator->(), nullptr);
+    EXPECT_EQ(baseBean->sentinel, 42);
+
+    auto concreteBean = scope.resolve<session_poly_fixture::SessionPolyConcrete>();
+    ASSERT_NE(concreteBean.operator->(), nullptr);
+
+    // Héritage simple public offset-0 : le pointeur brut base == pointeur brut concret.
+    EXPECT_EQ(
+        static_cast<void*>(baseBean.operator->()),
+        static_cast<void*>(concreteBean.operator->())
+    );
+
+    ctx.stop();
+}

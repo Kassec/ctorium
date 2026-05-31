@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <memory>
 #include <meta>
 #include <ctr/Ctorium.hpp>
 
@@ -140,5 +141,99 @@ TEST(Defaults, DefaultNamedRedirectsUnnamedResolveToNamedCandidate) {
     // It resolves to the same singleton instance as the explicit named resolve.
     auto byName = ctx.resolve<defaults_named_fixture::ConsoleSink>(ctr::named{"console"});
     EXPECT_EQ(byDefault.operator->(), byName.operator->());
+    ctx.stop();
+}
+
+TEST(Defaults, ScopedDefaultNamedIsNotCurrentlyScopeLocal) {
+    auto& root = ctr::BeanContext::resolveContext("dn-scope-local-default");
+    root.discover<^^defaults_named_fixture>().start();
+    auto& scope = root.resolveScope("dn-scope-local-owner");
+    auto& sibling = root.resolveScope("dn-scope-local-sibling");
+    scope.start();
+    sibling.start();
+
+    scope.defaultNamed<defaults_named_fixture::ConsoleSink>(
+        std::define_static_string("console"));
+
+    auto scopedDefault = scope.resolve<defaults_named_fixture::ConsoleSink>();
+    EXPECT_NE(scopedDefault.operator->(), nullptr);
+    EXPECT_THROW(root.resolve<defaults_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+    EXPECT_THROW(sibling.resolve<defaults_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+
+    root.stop();
+}
+
+namespace defaults_future_resolution_fixture {
+
+struct Product {
+    int value = 0;
+};
+
+} // namespace defaults_future_resolution_fixture
+
+TEST(Defaults, ChangingDefaultAffectsOnlyFutureResolutions) {
+    auto& ctx = ctr::BeanContext::resolveContext("dn-future-only");
+    ctx.bindSingleton<defaults_future_resolution_fixture::Product>(
+        std::make_unique<defaults_future_resolution_fixture::Product>(
+            defaults_future_resolution_fixture::Product{.value = 1}),
+        ctr::BindOptions{.name = std::define_static_string("a")});
+    ctx.bindSingleton<defaults_future_resolution_fixture::Product>(
+        std::make_unique<defaults_future_resolution_fixture::Product>(
+            defaults_future_resolution_fixture::Product{.value = 2}),
+        ctr::BindOptions{.name = std::define_static_string("b")});
+    ctx.start();
+
+    ctx.defaultNamed<defaults_future_resolution_fixture::Product>(
+        std::define_static_string("a"));
+    auto oldDefault = ctx.resolve<defaults_future_resolution_fixture::Product>();
+
+    ctx.defaultNamed<defaults_future_resolution_fixture::Product>(
+        std::define_static_string("b"));
+    auto newDefault = ctx.resolve<defaults_future_resolution_fixture::Product>();
+
+    ASSERT_NE(oldDefault.operator->(), nullptr);
+    ASSERT_NE(newDefault.operator->(), nullptr);
+    EXPECT_EQ(oldDefault->value, 1);
+    EXPECT_EQ(newDefault->value, 2);
+    EXPECT_NE(oldDefault.operator->(), newDefault.operator->());
+
+    ctx.stop();
+}
+
+namespace defaults_snapshot_fixture {
+
+struct Product {
+    int value = 0;
+};
+
+} // namespace defaults_snapshot_fixture
+
+TEST(Defaults, DefaultNamedSequentialSnapshotObservesOldOrNewValueOnly) {
+    auto& ctx = ctr::BeanContext::resolveContext("dn-snapshot-sequential");
+    ctx.bindSingleton<defaults_snapshot_fixture::Product>(
+        std::make_unique<defaults_snapshot_fixture::Product>(
+            defaults_snapshot_fixture::Product{.value = 10}),
+        ctr::BindOptions{.name = std::define_static_string("old")});
+    ctx.bindSingleton<defaults_snapshot_fixture::Product>(
+        std::make_unique<defaults_snapshot_fixture::Product>(
+            defaults_snapshot_fixture::Product{.value = 20}),
+        ctr::BindOptions{.name = std::define_static_string("new")});
+    ctx.start();
+
+    ctx.defaultNamed<defaults_snapshot_fixture::Product>(
+        std::define_static_string("old"));
+    auto before = ctx.resolve<defaults_snapshot_fixture::Product>();
+
+    ctx.defaultNamed<defaults_snapshot_fixture::Product>(
+        std::define_static_string("new"));
+    auto after = ctx.resolve<defaults_snapshot_fixture::Product>();
+
+    ASSERT_NE(before.operator->(), nullptr);
+    ASSERT_NE(after.operator->(), nullptr);
+    EXPECT_TRUE(before->value == 10 || before->value == 20);
+    EXPECT_TRUE(after->value == 10 || after->value == 20);
+    EXPECT_EQ(before->value, 10);
+    EXPECT_EQ(after->value, 20);
+
     ctx.stop();
 }

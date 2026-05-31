@@ -70,7 +70,8 @@ namespace ctr {
 
         AnyBean &operator=(AnyBean &&other) noexcept {
             if (this != &other) {
-                releaseIfPrototype();
+                if (object_ != nullptr)
+                    releaseIfPrototype();
                 object_ = other.object_;
                 bits_ = other.bits_;
                 registry_ = other.registry_;

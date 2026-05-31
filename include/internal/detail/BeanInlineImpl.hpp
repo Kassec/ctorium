@@ -847,8 +847,8 @@ namespace ctr::detail {
     //     Store constructed object, pop materializationStack(),
     //     erase descId from materializing_.
     //
-    // Concurrent threads that encounter a descId in materializing_ spin with
-    // std::this_thread::yield() until the materializing thread completes.
+    // Concurrent threads that encounter a descId in materializing_ wait on cv_;
+    // while waiting, a per-thread edge records the key they are blocked on.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <typename T>
@@ -922,6 +922,123 @@ namespace ctr::detail {
 
     materialize:
         return materializeOne<T>(descId, ctx);
+    }
+
+    inline std::uint32_t Registry::materializationThreadToken() noexcept {
+        thread_local const std::uint32_t token =
+            nextMaterializationThreadToken_.fetch_add(1, std::memory_order_relaxed) + 1;
+        return token;
+    }
+
+    inline void Registry::ensureMaterializationWaitSlot(std::uint32_t threadToken) {
+        std::unique_lock slotsLock(waitSlotsMutex_);
+        if (threadToken < waitingByThread_.size())
+            return;
+
+        std::vector<MaterializationWait> grown(static_cast<std::size_t>(threadToken) + 1);
+        {
+            std::lock_guard lock(writeLock_);
+            if (threadToken < waitingByThread_.size())
+                return;
+            std::copy(waitingByThread_.begin(), waitingByThread_.end(), grown.begin());
+            waitingByThread_.swap(grown);
+        }
+    }
+
+    inline bool Registry::materializationWaitCycleDetected(
+        std::uint32_t currentThreadToken,
+        std::uint32_t ownerThreadToken) const noexcept {
+        std::uint32_t token = ownerThreadToken;
+        const std::size_t limit = materializing_.size();
+        for (std::size_t step = 0; step < limit; ++step) {
+            if (token == currentThreadToken)
+                return true;
+            if (token == kNoMaterializationThreadToken
+                    || token >= waitingByThread_.size()) {
+                return false;
+            }
+            const MaterializationWait& wait = waitingByThread_[token];
+            if (!wait.active)
+                return false;
+
+            const auto ownerIt = std::find_if(
+                materializing_.begin(),
+                materializing_.end(),
+                [&wait](const MaterializingEntry& entry) {
+                    return entry.key == wait.key;
+                }
+                );
+            if (ownerIt == materializing_.end())
+                return false;
+            token = ownerIt->threadToken;
+        }
+        return false;
+    }
+
+    template <typename FindExisting>
+    bool Registry::claimMaterializationOrWait(
+        DescriptorId descId,
+        ctr::ScopedContext* scope,
+        FindExisting&& findExisting,
+        const char* intraThreadCycleMessage,
+        const char* crossThreadCycleMessage) {
+        const std::uint32_t currentThreadToken = materializationThreadToken();
+        ensureMaterializationWaitSlot(currentThreadToken);
+
+        const MaterializationKey key{descId, scope};
+        std::unique_lock lock(writeLock_);
+        std::vector<DescriptorId>& stack = materializationStack();
+        auto hasIntraThreadCycle = [&] {
+            for (DescriptorId existing : stack) {
+                if (existing == descId) {
+                    return true;
+                }
+            }
+            return false;
+        };
+
+        if (hasIntraThreadCycle()) {
+            lock.unlock();
+            throw ctr::ResolutionError(intraThreadCycleMessage);
+        }
+        while (true) {
+            if (findExisting() != nullptr)
+                return false;
+
+            const auto ownerIt = std::find_if(
+                materializing_.begin(),
+                materializing_.end(),
+                [&key](const MaterializingEntry& entry) {
+                    return entry.key == key;
+                }
+                );
+            if (ownerIt == materializing_.end()) {
+                if (hasIntraThreadCycle()) {
+                    lock.unlock();
+                    throw ctr::ResolutionError(intraThreadCycleMessage);
+                }
+                stack.push_back(descId);
+                materializing_.push_back({key, currentThreadToken});
+                return true;
+            }
+
+            const std::uint32_t ownerThreadToken = ownerIt->threadToken;
+            if (ownerThreadToken == currentThreadToken) {
+                lock.unlock();
+                throw ctr::ResolutionError(intraThreadCycleMessage);
+            }
+            if (!stack.empty()
+                    && materializationWaitCycleDetected(
+                        currentThreadToken,
+                        ownerThreadToken)) {
+                lock.unlock();
+                throw ctr::ResolutionError(crossThreadCycleMessage);
+            }
+
+            waitingByThread_[currentThreadToken] = MaterializationWait{key, true};
+            cv_.wait(lock);
+            waitingByThread_[currentThreadToken].active = false;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1067,43 +1184,17 @@ namespace ctr::detail {
                 bool didMaterialize = false;
 
                 // ── Phase 1: claim descId or wait for a peer to complete ───
-                {
-                    std::unique_lock lock(writeLock_);
-                    for (DescriptorId existing : materializationStack()) {
-                        if (existing == descId) {
-                            throw ctr::ResolutionError(
-                                "Registry::resolve: dependency cycle "
-                                "detected during singleton materialization."
-                                );
-                        }
-                    }
-                    cv_.wait(
-                        lock,
-                        [&] {
-                            return singletons_.find(descId) != nullptr
-                                || std::find_if(
-                                    materializing_.begin(),
-                                    materializing_.end(),
-                                    [descId](const auto &p) {
-                                        return p.first == descId && p.second == nullptr;
-                                    }
-                                    ) == materializing_.end();
-                        }
-                        );
+                didMaterialize = claimMaterializationOrWait(
+                    descId,
+                    nullptr,
+                    [&] { return singletons_.find(descId); },
+                    "Registry::resolve: dependency cycle "
+                    "detected during singleton materialization.",
+                    "Registry::resolve: cross-thread dependency cycle "
+                    "detected during singleton materialization."
+                    );
+                if (!didMaterialize) {
                     instance = singletons_.find(descId);
-                    if (instance == nullptr) {
-                        for (DescriptorId existing : materializationStack()) {
-                            if (existing == descId) {
-                                throw ctr::ResolutionError(
-                                    "Registry::resolve: dependency cycle "
-                                    "detected during singleton materialization."
-                                    );
-                            }
-                        }
-                        materializationStack().push_back(descId);
-                        materializing_.push_back({descId, nullptr});
-                        didMaterialize = true;
-                    }
                 }
 
                 // ── Phase 2: construct outside the lock ───────────────────
@@ -1137,8 +1228,8 @@ namespace ctr::detail {
                             auto it = std::find_if(
                                 materializing_.begin(),
                                 materializing_.end(),
-                                [descId](const auto &p) {
-                                    return p.first == descId && p.second == nullptr;
+                                [descId](const MaterializingEntry& p) {
+                                    return p.key.descId == descId && p.key.scope == nullptr;
                                 }
                                 );
                             if (it != materializing_.end()) {
@@ -1158,8 +1249,8 @@ namespace ctr::detail {
                         auto it = std::find_if(
                             materializing_.begin(),
                             materializing_.end(),
-                            [descId](const auto &p) {
-                                return p.first == descId && p.second == nullptr;
+                            [descId](const MaterializingEntry& p) {
+                                return p.key.descId == descId && p.key.scope == nullptr;
                             }
                             );
                         if (it != materializing_.end()) {
@@ -1326,52 +1417,27 @@ namespace ctr::detail {
 
         bool didMaterialize = false;
 
-        // Phase 1: claim (descId, scope) or wait for a peer on the same scope.
-        {
-            std::unique_lock lock(writeLock_);
-            for (DescriptorId existing : materializationStack()) {
-                if (existing == descId) {
-                    throw ctr::ResolutionError(
-                        "Registry::resolve: dependency cycle detected during "
-                        "session bean materialization."
-                        );
-                }
-            }
-            cv_.wait(
-                lock,
-                [&] {
-                    return scope->sessionStore_.find(slot) != nullptr
-                        || std::find_if(
-                            materializing_.begin(),
-                            materializing_.end(),
-                            [descId, scope](const auto &p) {
-                                return p.first == descId && p.second == scope;
-                            }
-                            ) == materializing_.end();
-                }
+        // RuntimeBinding session beans must be pre-stored in sessionStore_ at
+        // scope start(). A nil slot means the binding was not renewed for this cycle.
+        if (desc.origin == Origin::RuntimeBinding) {
+            throw ctr::ContextStateError(
+                "Registry::materializeSessionInstance: bound session bean has no "
+                "instance for this scope cycle; call bindSession<T>() before start()."
                 );
+        }
+
+        // Phase 1: claim (descId, scope) or wait for a peer on the same scope.
+        didMaterialize = claimMaterializationOrWait(
+            descId,
+            scope,
+            [&] { return scope->sessionStore_.find(slot); },
+            "Registry::resolve: dependency cycle detected during "
+            "session bean materialization.",
+            "Registry::resolve: cross-thread dependency cycle detected during "
+            "session bean materialization."
+            );
+        if (!didMaterialize) {
             instance = scope->sessionStore_.find(slot);
-            if (instance == nullptr) {
-                // RuntimeBinding session beans must be pre-stored in sessionStore_ at
-                // scope start(). A nil slot means the binding was not renewed for this cycle.
-                if (desc.origin == Origin::RuntimeBinding) {
-                    throw ctr::ContextStateError(
-                        "Registry::materializeSessionInstance: bound session bean has no "
-                        "instance for this scope cycle; call bindSession<T>() before start()."
-                        );
-                }
-                for (DescriptorId existing : materializationStack()) {
-                    if (existing == descId) {
-                        throw ctr::ResolutionError(
-                            "Registry::resolve: dependency cycle detected during "
-                            "session bean materialization."
-                            );
-                    }
-                }
-                materializationStack().push_back(descId);
-                materializing_.push_back({descId, scope});
-                didMaterialize = true;
-            }
         }
 
         // Phase 2: construct outside the lock.
@@ -1397,8 +1463,8 @@ namespace ctr::detail {
                     auto it = std::find_if(
                         materializing_.begin(),
                         materializing_.end(),
-                        [descId, scope](const auto &p) {
-                            return p.first == descId && p.second == scope;
+                        [descId, scope](const MaterializingEntry& p) {
+                            return p.key.descId == descId && p.key.scope == scope;
                         }
                         );
                     if (it != materializing_.end()) {
@@ -1418,8 +1484,8 @@ namespace ctr::detail {
                 auto it = std::find_if(
                     materializing_.begin(),
                     materializing_.end(),
-                    [descId, scope](const auto &p) {
-                        return p.first == descId && p.second == scope;
+                    [descId, scope](const MaterializingEntry& p) {
+                        return p.key.descId == descId && p.key.scope == scope;
                     }
                     );
                 if (it != materializing_.end()) {
@@ -1703,8 +1769,9 @@ namespace ctr::detail {
                     }
                 }
                 // Check concurrent materialization of the same type.
-                for (const auto &[did, scope] : materializing_) {
-                    if (scope == nullptr && descriptors_.at(did).exposedType == typeId) {
+                for (const MaterializingEntry& entry : materializing_) {
+                    if (entry.key.scope == nullptr
+                            && descriptors_.at(entry.key.descId).exposedType == typeId) {
                         throw ctr::ConfigurationError(
                             std::string("Registry::bindSingleton: type '") + kTypeName
                             + "' is currently being materialized; binding conflicts with "
@@ -1813,41 +1880,16 @@ namespace ctr::detail {
         bool didMaterialize = false;
 
         // Phase 1: claim descId or wait for a concurrent materializer.
-        {
-            std::unique_lock lock(writeLock_);
-            for (DescriptorId existing : materializationStack()) {
-                if (existing == descId) {
-                    throw ctr::ResolutionError(
-                        "Registry: dependency cycle detected during eager singleton materialization."
-                        );
-                }
-            }
-            cv_.wait(
-                lock,
-                [&] {
-                    return singletons_.find(descId) != nullptr
-                        || std::find_if(
-                            materializing_.begin(),
-                            materializing_.end(),
-                            [descId](const auto &p) {
-                                return p.first == descId && p.second == nullptr;
-                            }
-                            ) == materializing_.end();
-                }
-                );
+        didMaterialize = claimMaterializationOrWait(
+            descId,
+            nullptr,
+            [&] { return singletons_.find(descId); },
+            "Registry: dependency cycle detected during eager singleton materialization.",
+            "Registry::resolve: cross-thread dependency cycle detected during "
+            "eager singleton materialization."
+            );
+        if (!didMaterialize) {
             instance = singletons_.find(descId);
-            if (instance == nullptr) {
-                for (DescriptorId existing : materializationStack()) {
-                    if (existing == descId) {
-                        throw ctr::ResolutionError(
-                            "Registry: dependency cycle detected during eager singleton materialization."
-                            );
-                    }
-                }
-                materializationStack().push_back(descId);
-                materializing_.push_back({descId, nullptr});
-                didMaterialize = true;
-            }
         }
 
         // Phase 2: construct outside lock.
@@ -1874,8 +1916,8 @@ namespace ctr::detail {
                     auto it = std::find_if(
                         materializing_.begin(),
                         materializing_.end(),
-                        [descId](const auto &p) {
-                            return p.first == descId && p.second == nullptr;
+                        [descId](const MaterializingEntry& p) {
+                            return p.key.descId == descId && p.key.scope == nullptr;
                         }
                         );
                     if (it != materializing_.end()) {
@@ -1895,8 +1937,8 @@ namespace ctr::detail {
                 auto it = std::find_if(
                     materializing_.begin(),
                     materializing_.end(),
-                    [descId](const auto &p) {
-                        return p.first == descId && p.second == nullptr;
+                    [descId](const MaterializingEntry& p) {
+                        return p.key.descId == descId && p.key.scope == nullptr;
                     }
                     );
                 if (it != materializing_.end()) {

@@ -82,6 +82,32 @@ inline void markRegistryLivenessDead(RegistryLiveness* liveness) noexcept {
         && liveness->alive.load(std::memory_order_acquire);
 }
 
+inline constexpr std::uint32_t kNoMaterializationThreadToken = 0;
+
+/** @brief Key used to serialize singleton and session materialization. */
+struct MaterializationKey {
+    DescriptorId descId = kInvalidDescriptorId;
+    ctr::ScopedContext* scope = nullptr;
+};
+
+[[nodiscard]] inline bool operator==(
+        MaterializationKey lhs,
+        MaterializationKey rhs) noexcept {
+    return lhs.descId == rhs.descId && lhs.scope == rhs.scope;
+}
+
+/** @brief In-flight materialization entry, owned by one thread token. */
+struct MaterializingEntry {
+    MaterializationKey key;
+    std::uint32_t threadToken = kNoMaterializationThreadToken;
+};
+
+/** @brief Outgoing wait edge for one materializing thread token. */
+struct MaterializationWait {
+    MaterializationKey key;
+    bool active = false;
+};
+
 /**
  * @brief Core shared state for a root context: all components owned and coordinated here.
  *
@@ -850,6 +876,52 @@ private:
      * Defined in BeanInlineImpl.hpp.
      */
     void materializeEagerSingleton(DescriptorId descId, ResolutionContext& ctx);
+
+    /**
+     * @brief Claims a singleton/session materialization key or waits for its owner.
+     *
+     * Shared Phase 1 for singleton and session materialization.  The caller must
+     * perform the lock-free leading `find()` before entering this helper and must
+     * construct/store outside this helper when it returns true.
+     *
+     * @tparam FindExisting Callable returning the already materialized instance.
+     * @param descId Descriptor being materialized.
+     * @param scope Owning scope for sessions; nullptr for singletons.
+     * @param findExisting Store lookup used while `writeLock_` is held.
+     * @param intraThreadCycleMessage Message for the existing stack-based cycle.
+     * @param crossThreadCycleMessage Message for the wait-graph cycle.
+     * @return true when the caller claimed the key; false when another thread
+     *         completed materialization while this thread waited.
+     * @throws ctr::ResolutionError on intra-thread or cross-thread dependency cycle.
+     */
+    template <typename FindExisting>
+    [[nodiscard]] bool claimMaterializationOrWait(
+        DescriptorId descId,
+        ctr::ScopedContext* scope,
+        FindExisting&& findExisting,
+        const char* intraThreadCycleMessage,
+        const char* crossThreadCycleMessage);
+
+    /** @brief Returns the lazily assigned non-zero token for the calling thread. */
+    [[nodiscard]] static std::uint32_t materializationThreadToken() noexcept;
+
+    /**
+     * @brief Ensures the wait-edge table has a slot for `threadToken`.
+     *
+     * Any allocation happens before `writeLock_` is acquired.  Publication into
+     * `waitingByThread_` happens under `writeLock_` without allocating.
+     */
+    void ensureMaterializationWaitSlot(std::uint32_t threadToken);
+
+    /**
+     * @brief Traverses the current wait graph after adding current -> owner.
+     *
+     * `writeLock_` must be held.  Traversal is bounded by the number of in-flight
+     * materializations because each thread has at most one outgoing wait edge.
+     */
+    [[nodiscard]] bool materializationWaitCycleDetected(
+        std::uint32_t currentThreadToken,
+        std::uint32_t ownerThreadToken) const noexcept;
     // -------------------------------------------------------------------------
     // Dependency cycle detection  (specs-internal §13)
     // -------------------------------------------------------------------------
@@ -903,6 +975,7 @@ private:
     const std::uint32_t registryId_ =
         nextRegistryId_.fetch_add(1, std::memory_order_relaxed);
     inline static std::atomic<std::uint32_t> nextRegistryId_{1};
+    inline static std::atomic<std::uint32_t> nextMaterializationThreadToken_{0};
 
     template <class> friend class ctr::Bean;
     friend class ctr::AnyBean;
@@ -961,10 +1034,17 @@ private:
     mutable std::mutex writeLock_;
     std::condition_variable cv_; ///< Notified when a singleton or session finishes materializing.
 
-    /// (DescriptorId, ScopedContext*) pairs currently being constructed outside the lock.
+    /// (DescriptorId, ScopedContext*) keys currently being constructed outside the lock.
     /// scope == nullptr for singletons; scope != nullptr for session beans.
     /// Guarded by writeLock_.  Small vector: at most one entry per thread in practice.
-    std::vector<std::pair<DescriptorId, ctr::ScopedContext*>> materializing_;
+    std::vector<MaterializingEntry> materializing_;
+
+    /// Outgoing wait edge per materialization thread token. Index 0 is unused.
+    /// Guarded by writeLock_; resized by ensureMaterializationWaitSlot().
+    std::vector<MaterializationWait> waitingByThread_;
+
+    /// Serializes wait-edge table growth performed before publishing under writeLock_.
+    mutable std::mutex waitSlotsMutex_;
 
     /// Scope name → ScopedContext* lookup table.  Populated by registerScope().
     /// Protected by scopesMutex_ (separate from writeLock_ to avoid blocking hot path).

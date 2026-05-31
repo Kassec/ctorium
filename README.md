@@ -66,15 +66,15 @@ struct [[=ctr::singleton{}]] GameService {
 } // namespace app
 
 int main() {
-    ctr::Bean<ctr::BeanContext> context = ctr::BeanContext::findOrCreate("game");
+    ctr::BeanContext& context = ctr::BeanContext::resolveContext("game");
 
-    context->discover<^^app>();
-    context->start();
+    context.discover<^^app>();
+    context.start();
 
-    ctr::Bean<app::GameService> game = context->resolve<app::GameService>();
+    ctr::Bean<app::GameService> game = context.resolve<app::GameService>();
     game->start();
 
-    context->stop();
+    context.stop();
 }
 ```
 
@@ -124,7 +124,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
 - [x] Easy attribute-based bean declaration model
     - [x] `singleton`
     - [x] `prototype`
-    - [ ] `threadLocal`
+    - [x] `threadLocal`
     - [x] `session`
     - [x] `named`
     - [x] `factory`
@@ -153,8 +153,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] singleton
     - [x] eager and lazy singletons
     - [x] prototype
-    - [ ] thread-local singleton, one instance per context, key and thread (destroyed at thread end or context
-      stop/shutdown)
+    - [x] thread-local singleton, one instance per context, key and thread
     - [x] session
 
 - [x] Runtime bean contexts
@@ -177,12 +176,12 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] automatic dependency graph resolution
     - [x] deterministic error on missing, ambiguous, or cyclic dependencies
 
-- [ ] Runtime instance binding
-    - [ ] adopt external singleton instances with `bindSingleton<T>()`
-    - [ ] adopt external session instances with `bindSession<T>()`
-    - [ ] context-owned bound instances
-    - [ ] named and prioritized runtime bindings
-    - [ ] bound instances participate in resolution, lifecycle, listeners, and shutdown
+- [x] Runtime instance binding
+    - [x] adopt external singleton instances with `bindSingleton<T>()`
+    - [x] adopt external session instances with `bindSession<T>()`
+    - [x] context-owned bound instances
+    - [x] named and prioritized runtime bindings
+    - [x] bound instances participate in resolution, lifecycle, listeners, and shutdown
 
 - [x] Bean lifecycle hooks
     - [x] initialization hooks with `postConstruct`
@@ -207,24 +206,22 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [ ] metadata views for typed and type-erased listeners
     - [ ] factory method metadata for factory-produced beans
 
-- [ ] Factories
+- [x] Factories
     - [x] factories are singleton beans with constructor-injected dependencies
     - [x] producer methods can create `singleton` beans
     - [x] producer methods can create `prototype` beans
-    - [ ] producer methods can create `session` beans
-    - [ ] producer methods can create `threadLocal` beans
+    - [x] producer methods can create `session` beans
+    - [x] producer methods can create `threadLocal` beans
     - [x] produced types do not need to be annotated
     - [x] producer methods can return `T` or `std::unique_ptr<T>`
     - [x] produced beans participate in lifecycle hooks and listener phases
     - [ ] produced beans participate in metadata
-    - [ ] user parameters can be passed with `resolve<T>(args...)`
-    - [ ] default user parameters can be configured with `factoryDefaultArgs<T>(...)`
 
 - [x] Deterministic and clear error model
     - [x] deterministic **Ctorium** errors for configuration, state, and resolution failures
     - [x] user exceptions are propagated unchanged
 
-- [x] Thread-safety
+- [ ] Thread-safety
     - [x] concurrent singleton resolution (double-checked locking)
     - [x] snapshot-based listener dispatch (lock-free reads)
     - [ ] listener registration and removal API

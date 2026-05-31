@@ -108,6 +108,94 @@ struct MaterializationWait {
     bool active = false;
 };
 
+/** @brief Type-erased handle form selected by non-template materialization. */
+enum class MaterializedHandleForm {
+    Direct,
+    Proxy,
+    ThreadLocal
+};
+
+inline constexpr SlotId kMaterializedProxySlot = kInvalidSlotId - 1;
+inline constexpr SlotId kMaterializedThreadLocalSlot = kInvalidSlotId - 2;
+
+/** @brief Type-erased result used by `materializeOne<T>` to build a typed handle. */
+struct MaterializedBeanHandle {
+    std::uintptr_t value = 0;
+    std::uint64_t bits =
+        (static_cast<std::uint64_t>(kInvalidDescriptorId) << 32)
+        | static_cast<std::uint64_t>(kInvalidSlotId);
+
+    [[nodiscard]] static MaterializedBeanHandle direct(
+            void* instance,
+            SlotId slot,
+            DescriptorId descId) noexcept {
+        return {
+            reinterpret_cast<std::uintptr_t>(instance),
+            pack(slot, descId)
+        };
+    }
+
+    [[nodiscard]] static MaterializedBeanHandle proxy(
+            NameId scopeNameId,
+            DescriptorId descId) noexcept {
+        return {
+            static_cast<std::uintptr_t>(scopeNameId),
+            pack(kMaterializedProxySlot, descId)
+        };
+    }
+
+    [[nodiscard]] static MaterializedBeanHandle threadLocal(
+            DescriptorId descId) noexcept {
+        return {
+            0,
+            pack(kMaterializedThreadLocalSlot, descId)
+        };
+    }
+
+    [[nodiscard]] MaterializedHandleForm form() const noexcept {
+        const SlotId currentSlot = slot();
+        if (currentSlot == kMaterializedProxySlot)
+            return MaterializedHandleForm::Proxy;
+        if (currentSlot == kMaterializedThreadLocalSlot)
+            return MaterializedHandleForm::ThreadLocal;
+        return MaterializedHandleForm::Direct;
+    }
+
+    [[nodiscard]] void* instance() const noexcept {
+        return reinterpret_cast<void*>(value);
+    }
+
+    [[nodiscard]] SlotId slot() const noexcept {
+        return static_cast<SlotId>(bits & 0xFFFF'FFFFu);
+    }
+
+    [[nodiscard]] DescriptorId descId() const noexcept {
+        return static_cast<DescriptorId>(bits >> 32);
+    }
+
+    [[nodiscard]] NameId scopeNameId() const noexcept {
+        return static_cast<NameId>(value);
+    }
+
+    [[nodiscard]] RegistryLiveness* liveness(
+            RegistryLiveness* registryLiveness) const noexcept {
+        const SlotId currentSlot = slot();
+        return currentSlot == kInvalidSlotId
+            || currentSlot == kMaterializedProxySlot
+            || currentSlot == kMaterializedThreadLocalSlot
+                ? nullptr
+                : registryLiveness;
+    }
+
+private:
+    [[nodiscard]] static constexpr std::uint64_t pack(
+            SlotId slot,
+            DescriptorId descId) noexcept {
+        return (static_cast<std::uint64_t>(descId) << 32)
+            | static_cast<std::uint64_t>(slot);
+    }
+};
+
 /**
  * @brief Core shared state for a root context: all components owned and coordinated here.
  *
@@ -849,11 +937,27 @@ private:
     bool stopRegistryOwnedBeans() noexcept;
 
     /**
-     * @brief Materializes a single bean descriptor and returns a tracked handle.
+     * @brief Materializes a single bean descriptor and returns type-erased handle data.
      *
-     * Contains the lifetime switch extracted from `resolve<T>`: singleton two-phase
-     * lock, prototype CycleGuard + slot activation, and lifecycle dispatch.
-     * Used by `resolve<T>` for single-candidate materialization.
+     * Contains the lifetime switch shared by `materializeOne<T>` and eager singleton
+     * construction: singleton two-phase lock, prototype CycleGuard + slot activation,
+     * session proxy preparation, thread-local preparation, alias handling, and lifecycle
+     * dispatch.  It does not depend on the requested C++ type.
+     *
+     * @param descId Descriptor to materialize.
+     * @param ctx    Active `ResolutionContext`.
+     * @return Type-erased handle data for the thin typed wrapper.
+     * @throws ctr::ContextStateError if a session bean is resolved without a started scope.
+     * @throws ctr::ResolutionError on dependency cycle.
+     * @throws ctr::ConfigurationError if an internal descriptor lifetime is unhandled.
+     */
+    [[nodiscard]] MaterializedBeanHandle materializeOneImpl(
+        DescriptorId descId,
+        ResolutionContext& ctx);
+    // Defined in BeanInlineImpl.hpp.
+
+    /**
+     * @brief Builds the typed `Bean<T>` handle from `materializeOneImpl()`.
      *
      * @tparam T Requested bean interface type.
      * @param descId  Descriptor to materialize.
@@ -867,15 +971,6 @@ private:
     [[nodiscard]] auto materializeOne(DescriptorId descId, ResolutionContext& ctx)
         -> ctr::Bean<T>;
     // Defined in BeanInlineImpl.hpp.
-
-    /**
-     * @brief Non-template singleton materialization for eager construction.
-     *
-     * Replicates the Singleton case of `materializeOne` without a type parameter;
-     * dispatches lifecycle events via `AnyBean`.  Called by `materializeEagerSingletons()`.
-     * Defined in BeanInlineImpl.hpp.
-     */
-    void materializeEagerSingleton(DescriptorId descId, ResolutionContext& ctx);
 
     /**
      * @brief Claims a singleton/session materialization key or waits for its owner.

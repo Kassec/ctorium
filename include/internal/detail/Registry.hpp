@@ -368,9 +368,8 @@ public:
 
                     // Register in the TypeIndex using locals captured before the move.
                     typeIndex_.insertCandidate(exposedType, name, id);
-                }
-                // Duplicate: verify key fields match (guards against hash collision / bugs).
-                {
+                } else {
+                    // Duplicate: verify key fields match (guards against hash collision / bugs).
                     const Descriptor& existing = descriptors_.at(it->second);
                     if (std::string_view{typeInterning_.nameOf(existing.exposedType)}
                                 != std::string_view{cd.exposedTypeName}

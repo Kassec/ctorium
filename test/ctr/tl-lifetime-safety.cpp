@@ -12,7 +12,7 @@
 
 #include <gtest/gtest.h>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 #include <detail/ThreadLocalStore.hpp>
 
 namespace tl_lifetime_m1_fixture {

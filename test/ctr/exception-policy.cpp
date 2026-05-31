@@ -4,7 +4,7 @@
 
 #include <gtest/gtest.h>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 namespace exception_lazy_constructor_fixture {
 

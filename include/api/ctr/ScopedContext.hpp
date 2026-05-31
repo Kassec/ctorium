@@ -10,11 +10,9 @@
 #include "BeanContext.hpp"
 #include "Errors.hpp"
 
-#ifndef CTORIUM_DYNAMIC_LINK
 #include "../../internal/NameId.hpp"
 #include "../../internal/detail/DefaultsTable.hpp"
 #include "../../internal/detail/SessionStore.hpp"
-#endif
 
 namespace ctr {
 
@@ -131,7 +129,6 @@ private:
 
     BeanContext* root_;
 
-#ifndef CTORIUM_DYNAMIC_LINK
     detail::NameId   scopeNameId_ = detail::kInvalidNameId;
     detail::SessionStore sessionStore_;
     bool             scopeStarted_ = false;
@@ -151,7 +148,6 @@ private:
         void*                instance;
     };
     std::vector<PendingRuntimeSession> pendingRuntimeSessions_;
-#endif
 };
 
 } // namespace ctr

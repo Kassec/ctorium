@@ -103,7 +103,7 @@ namespace ctr {
          * Zero-allocation; safe to call from lifecycle-listener callbacks.
          */
         [[nodiscard]] class BeanMetadata metadata() const noexcept;
-        // Defined in BeanInlineImpl.hpp.
+        // Defined in HandleInlineImpl.hpp.
 
         // -------------------------------------------------------------------------
         // Casts
@@ -114,7 +114,7 @@ namespace ctr {
          * @tparam U Target type.
          */
         template <class U>
-        [[nodiscard]] bool exact() const noexcept; // TODO: BeanInlineImpl.hpp
+        [[nodiscard]] bool exact() const noexcept; // TODO: HandleInlineImpl.hpp
 
         /**
          * @brief Tests whether this bean is compatible with U.
@@ -158,8 +158,8 @@ namespace ctr {
         template <class U>
         friend class Bean;
 
-        void retainIfPrototype() noexcept; // defined in BeanInlineImpl.hpp
-        void releaseIfPrototype() noexcept; // defined in BeanInlineImpl.hpp
+        void retainIfPrototype() noexcept; // defined in HandleInlineImpl.hpp
+        void releaseIfPrototype() noexcept; // defined in HandleInlineImpl.hpp
         [[nodiscard]] detail::Registry* registry() const noexcept;
 
         void *object_ = nullptr;

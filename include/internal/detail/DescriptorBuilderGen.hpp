@@ -1,0 +1,229 @@
+#pragma once
+
+namespace ctr::detail {
+// ─────────────────────────────────────────────────────────────────────────────
+// §6.1  makeDescriptorForAnnotatedType
+// ─────────────────────────────────────────────────────────────────────────────
+
+template<DiscoveredEntity entity, bool RetainMeta = false>
+consteval ContributedDescriptor makeDescriptorForAnnotatedType() {
+    static_assert(entity.kind == EntityKind::AnnotatedType);
+    using T = [:entity.entity:];
+
+    // Single-pass annotation + member scans: 1 traversal each (D4+D5).
+    constexpr auto ann     = scanAnnotations(entity.entity);
+    static_assert(!ann.lifetimeConflict,
+        "Ctorium: multiple lifetime annotations on the same type are invalid "
+        "(specs-api §7 step 6 condition 1).");
+    static_assert(!ann.emptyNameError,
+        "Ctorium: ctr::named annotation with an empty key is invalid (specs-api §4).");
+    constexpr auto members = scanMembers<entity.entity>();
+    // qualifiedNameOf computed once and reused for identity + type names (D1).
+    constexpr const char* typeName = qualifiedNameOf(entity.entity);
+
+    constexpr bool hasParams = (members.ctor != std::meta::info{})
+        && (std::meta::parameters_of(members.ctor).size() > 0);
+
+    void (*constructFn)(void*, void*);
+    if constexpr (hasParams) {
+        constructFn = &constructThunkInjected<T, members.ctor>;
+    } else {
+        constructFn = &constructThunkDefault<T>;
+    }
+
+    void (*postConstructFn)(void*, void*) = nullptr;
+    if constexpr (members.postConstruct != std::meta::info{}) {
+        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    }
+
+    void (*preDestroyFn)(void*, void*) = nullptr;
+    if constexpr (members.preDestroy != std::meta::info{}) {
+        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    }
+
+    // Build param descriptors for graph validation (session/scoped checks in start()).
+    const ContributedParamDescriptor* paramPtr = nullptr;
+    std::size_t paramCnt = 0;
+    if constexpr (hasParams) {
+        constexpr auto kParamDescs =
+            std::define_static_array(makeParamDescriptors<members.ctor>());
+        paramPtr = kParamDescs.data();
+        paramCnt = kParamDescs.size();
+    }
+
+    return ContributedDescriptor{
+        .identity          = computeIdentityForType(typeName, ann.beanName, ann.lifetime),
+        .exposedTypeName   = typeName,
+        .concreteTypeName  = typeName,
+        .exposedTypeInfo   = &TypeInfoGetter<T>::get,
+        .concreteTypeInfo  = &TypeInfoGetter<T>::get,
+        .beanName          = ann.beanName,
+        .priority          = ann.priority,
+        .lazy              = ann.lazy,
+        .lifetime          = ann.lifetime,
+        .origin            = Origin::AnnotatedType,
+        .construct         = constructFn,
+        .destroy           = &destroyThunk<T>,
+        .postConstruct     = postConstructFn,
+        .preDestroy        = preDestroyFn,
+        .size              = sizeof(T),
+        .align             = alignof(T),
+        .factoryMethodIdentity = kNoFactoryMethod,
+        .params            = paramPtr,
+        .paramCount        = paramCnt,
+        .reflectiveData    = RetainMeta ? makeReflectiveData<entity.entity>() : nullptr,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §6.2  makeDescriptorForFactory
+// ─────────────────────────────────────────────────────────────────────────────
+
+template<DiscoveredEntity entity>
+consteval ContributedDescriptor makeDescriptorForFactory() {
+    static_assert(entity.kind == EntityKind::Factory);
+    using T = [:entity.entity:];
+
+    // Factory lifetime is always Singleton; no annotation scan needed.
+    // Member scan to find compatible constructor (D4).
+    constexpr auto members   = scanMembers<entity.entity>();
+    constexpr const char* typeName = qualifiedNameOf(entity.entity); // D1: compute once
+    constexpr Lifetime lifetime = Lifetime::Singleton;
+    constexpr bool hasParams = (members.ctor != std::meta::info{})
+        && (std::meta::parameters_of(members.ctor).size() > 0);
+
+    void (*constructFn)(void*, void*);
+    if constexpr (hasParams) {
+        constructFn = &constructThunkInjected<T, members.ctor>;
+    } else {
+        constructFn = &constructThunkDefault<T>;
+    }
+
+    void (*postConstructFn)(void*, void*) = nullptr;
+    if constexpr (members.postConstruct != std::meta::info{}) {
+        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    }
+
+    void (*preDestroyFn)(void*, void*) = nullptr;
+    if constexpr (members.preDestroy != std::meta::info{}) {
+        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    }
+
+    return ContributedDescriptor{
+        .identity          = computeIdentityForType(typeName, "", lifetime),
+        .exposedTypeName   = typeName,
+        .concreteTypeName  = typeName,
+        .exposedTypeInfo   = &TypeInfoGetter<T>::get,
+        .concreteTypeInfo  = &TypeInfoGetter<T>::get,
+        .beanName          = std::define_static_string(std::string_view{""}),
+        .priority          = 0,
+        .lifetime          = lifetime,
+        .origin            = Origin::AnnotatedType,
+        .construct         = constructFn,
+        .destroy           = &destroyThunk<T>,
+        .postConstruct     = postConstructFn,
+        .preDestroy        = preDestroyFn,
+        .size              = sizeof(T),
+        .align             = alignof(T),
+        .factoryMethodIdentity = kNoFactoryMethod,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §6.3  makeDescriptorForProduct
+// ─────────────────────────────────────────────────────────────────────────────
+
+template<DiscoveredEntity entity>
+consteval ContributedDescriptor makeDescriptorForProduct() {
+    static_assert(entity.kind == EntityKind::FactoryProduct);
+
+    constexpr auto rawReturn   = std::meta::return_type_of(entity.entity);
+    constexpr auto productType = unwrapUniquePtr(rawReturn);
+    using T = [:productType:];
+
+    // Single-pass annotation scan on the producer method (D5).
+    constexpr auto ann         = scanAnnotations(entity.entity);
+    static_assert(!ann.lifetimeConflict,
+        "Ctorium: multiple lifetime annotations on the same factory product are invalid "
+        "(specs-api §7 step 6 condition 1).");
+    static_assert(!ann.emptyNameError,
+        "Ctorium: ctr::named annotation with an empty key is invalid (specs-api §4).");
+    // Single-pass member scan on the product type for hooks (D4).
+    constexpr auto members     = scanMembers<productType>();
+    // qualifiedNameOf computed once per entity (D1).
+    constexpr const char* productName = qualifiedNameOf(productType);
+    constexpr const char* factoryName = qualifiedNameOf(entity.declaringFactory);
+    constexpr const char* factoryMethodName =
+        std::define_static_string(std::meta::identifier_of(entity.entity));
+
+    constexpr auto factoryIdentity = computeIdentityForType(factoryName, "", Lifetime::Singleton);
+
+    void (*postConstructFn)(void*, void*) = nullptr;
+    if constexpr (members.postConstruct != std::meta::info{}) {
+        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    }
+
+    void (*preDestroyFn)(void*, void*) = nullptr;
+    if constexpr (members.preDestroy != std::meta::info{}) {
+        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    }
+
+    // Detect whether the return type is unique_ptr<T>.
+    constexpr bool isUniquePtrReturn = isUniquePtrType(rawReturn);
+
+    void* (*allocAndConstructFn)(void*)        = nullptr;
+    void  (*deallocFn)(void*) noexcept         = nullptr;
+    if constexpr (isUniquePtrReturn) {
+        allocAndConstructFn =
+            &allocAndConstructFactoryProductThunk<T, entity.declaringFactory, entity.entity>;
+        deallocFn = &deallocFactoryProductThunk<T>;
+    }
+
+    return ContributedDescriptor{
+        .identity          = computeIdentityForProduct(entity.entity, factoryName, ann.beanName, ann.lifetime),
+        .exposedTypeName   = productName,
+        .concreteTypeName  = productName,
+        .exposedTypeInfo   = &TypeInfoGetter<T>::get,
+        .concreteTypeInfo  = &TypeInfoGetter<T>::get,
+        .beanName          = ann.beanName,
+        .priority          = ann.priority,
+        .lifetime          = ann.lifetime,
+        .origin            = Origin::FactoryProduct,
+        .construct         = &constructFactoryProductThunk<T, entity.declaringFactory, entity.entity>,
+        .destroy           = &destroyThunk<T>,
+        .postConstruct     = postConstructFn,
+        .preDestroy        = preDestroyFn,
+        .size              = sizeof(T),
+        .align             = alignof(T),
+        .factoryMethodIdentity = factoryIdentity,
+        .factoryMethodName = factoryMethodName,
+        .allocAndConstruct = allocAndConstructFn,
+        .dealloc           = deallocFn,
+    };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// §7  makeAllDescriptors
+// ─────────────────────────────────────────────────────────────────────────────
+
+template<bool RetainMeta, auto... Roots>
+consteval std::vector<ContributedDescriptor> makeAllDescriptors() {
+    static constexpr auto kEntities =
+        std::define_static_array(enumerateDiscovery<Roots...>());
+    std::vector<ContributedDescriptor> result;
+    result.reserve(kEntities.size());
+    template for (constexpr auto entity : kEntities) {
+        if constexpr (entity.kind == EntityKind::AnnotatedType) {
+            result.push_back(makeDescriptorForAnnotatedType<entity, RetainMeta>());
+            // Also generate alias descriptors for each accessible direct public base.
+            makeExposedDescriptors<entity>(result);
+        } else if constexpr (entity.kind == EntityKind::Factory) {
+            result.push_back(makeDescriptorForFactory<entity>());
+        } else if constexpr (entity.kind == EntityKind::FactoryProduct) {
+            result.push_back(makeDescriptorForProduct<entity>());
+        }
+    }
+    return result;
+}
+
+} // namespace ctr::detail

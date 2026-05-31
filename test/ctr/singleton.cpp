@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 #include <meta>
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 //

@@ -580,7 +580,7 @@ public:
      * during user destructors.
      */
     void cleanupCurrentThread() noexcept;
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     /**
      * @brief Materializes (or retrieves) the thread-local instance for `descId`
@@ -591,7 +591,7 @@ public:
      * @return Live instance pointer (never null on success).
      */
     void* materializeThreadLocalInstance(DescriptorId descId, ResolutionContext& ctx);
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     /** @brief True after a successful `start()`, false before or after `stop()`. */
     [[nodiscard]] bool started() const noexcept {
@@ -809,7 +809,7 @@ public:
      */
     template <typename T>
     [[nodiscard]] auto resolve(NameId nameId, ResolutionContext& ctx) -> ctr::Bean<T>;
-    // Defined in BeanInlineImpl.hpp (included at the bottom of Ctorium.hpp) to
+    // Defined in RegistryRuntimeImpl.hpp (included at the bottom of Ctorium.hpp) to
     // avoid a circular dependency between Registry.hpp and Bean.hpp.
 
     /**
@@ -828,7 +828,7 @@ public:
     void* materializeSessionInstance(DescriptorId descId,
                                      ctr::ScopedContext* scope,
                                      ResolutionContext& ctx);
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     // -------------------------------------------------------------------------
     // Runtime binding
@@ -871,7 +871,7 @@ public:
     template <typename T>
     [[nodiscard]] ctr::Bean<T> bindSingleton(std::unique_ptr<T> object,
                                              NameId nameId, int32_t priority);
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in BindReflectiveImpl.hpp.
 
     /**
      * @brief Fires onInitialized/onCreated for pre-start bound singletons.
@@ -893,7 +893,7 @@ public:
      * the registry's internal write lock (`started_` is already published before this call).
      */
     void materializeEagerSingletons();
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     /**
      * @brief Releases pre-start contributions after the full public start succeeds.
@@ -913,11 +913,11 @@ public:
      * left intact so the prepared descriptor state can be started again.
      */
     void rollbackFailedStart() noexcept;
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     /** @brief Destroys registry-owned beans and pending runtime singleton bindings. */
     ~Registry() noexcept;
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
 private:
     /**
@@ -951,7 +951,7 @@ private:
     [[nodiscard]] MaterializedBeanHandle materializeOneImpl(
         DescriptorId descId,
         ResolutionContext& ctx);
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     /**
      * @brief Builds the typed `Bean<T>` handle from `materializeOneImpl()`.
@@ -967,7 +967,7 @@ private:
     template <typename T>
     [[nodiscard]] auto materializeOne(DescriptorId descId, ResolutionContext& ctx)
         -> ctr::Bean<T>;
-    // Defined in BeanInlineImpl.hpp.
+    // Defined in RegistryRuntimeImpl.hpp.
 
     /**
      * @brief Claims a singleton/session materialization key or waits for its owner.
@@ -1071,14 +1071,14 @@ private:
      *
      * Sequence: onPreDestroy → preDestroy hook → C++ destructor → onDestroyed →
      * `::operator delete` (skipped when `d.size == 0` — externally owned memory).
-     * Defined in BeanInlineImpl.hpp on the model of `resolve<T>()`.
+     * Defined in RegistryRuntimeImpl.hpp on the model of `resolve<T>()`.
      */
     void executeDestructionLifecycle(DescriptorId descId, void* mem) noexcept;
 
     /**
      * @brief Destroys all session instances owned by `scope` in reverse construction
      * order.  Marks the scope stopped, clears its SessionStore.
-     * Called by `ScopedContext::stop()`.  Defined in BeanInlineImpl.hpp.
+     * Called by `ScopedContext::stop()`.  Defined in RegistryRuntimeImpl.hpp.
      */
     void stopScope(ctr::ScopedContext& scope) noexcept;
 
@@ -1088,7 +1088,7 @@ private:
      * Called during `start()` before `typeInterning_.freeze()`.  Appends a synthetic
      * `Descriptor` with `size == 0` (externally owned memory) and stores `ctx` in
      * the `SingletonStore`.  Dispatches `onInitialized` and `onCreated`.
-     * Defined in BeanInlineImpl.hpp.
+     * Defined in RegistryRuntimeImpl.hpp.
      */
     void registerContextBean(BeanContext* ctx);
 

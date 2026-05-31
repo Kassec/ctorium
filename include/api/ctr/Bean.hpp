@@ -8,7 +8,6 @@
 #include "../../internal/NameId.hpp"
 #include "../../internal/SlotId.hpp"
 #include "../../internal/TypeId.hpp"
-#include "Export.hpp"
 
 namespace ctr {
 
@@ -123,7 +122,7 @@ namespace ctr {
          * Form 1 (direct): returns `object_` immediately — no registry call, O(1).
          * Form 2 (proxy):  resolves the current session object from the active scope.
          *   Returns `nullptr` if the scope is stopped or missing (specs-api §7.1).
-         *   The proxy path is implemented in `BeanInlineImpl.hpp` once `Registry` is
+         *   The proxy path is implemented in `HandleInlineImpl.hpp` once `Registry` is
          *   complete; until then it returns `nullptr` with a TODO marker.
          *
          * @return Pointer to the managed object, or `nullptr` for a stopped scope (Form 2).
@@ -141,7 +140,7 @@ namespace ctr {
                 return threadLocalResolve_();
 
             // Form 2 proxy path: resolve current session object.
-            // Defined in BeanInlineImpl.hpp (requires full ScopedContext definition).
+            // Defined in HandleInlineImpl.hpp (requires full ScopedContext definition).
             return proxyResolve_();
         }
 
@@ -196,7 +195,7 @@ namespace ctr {
          * discovered with `DiscoverOptions{.retainAllMetadata = true}`.
          */
         [[nodiscard]] class BeanMetadata metadata() const noexcept;
-        // Defined in BeanInlineImpl.hpp (requires BeanMetadata.hpp via Ctorium.hpp).
+        // Defined in HandleInlineImpl.hpp (requires BeanMetadata.hpp via Ctorium.hpp).
 
         // -------------------------------------------------------------------------
         // Identity comparison
@@ -227,7 +226,7 @@ namespace ctr {
          * @tparam U Target type.
          */
         template <class U>
-        [[nodiscard]] bool exact() const noexcept; // TODO: implemented in BeanInlineImpl.hpp
+        [[nodiscard]] bool exact() const noexcept; // TODO: implemented in HandleInlineImpl.hpp
 
         /**
          * @brief Tests whether this bean is compatible with (convertible to) U.
@@ -344,7 +343,7 @@ namespace ctr {
         /**
          * @brief Prototype refcount helpers (copy/move/destroy tracking).
          *
-         * Defined in BeanInlineImpl.hpp (need the full `Registry` definition).
+         * Defined in HandleInlineImpl.hpp (need the full `Registry` definition).
          * Callers must guard with
          * `bits_.f1.slot != kInvalidSlotId && object_ != nullptr`; the helper
          * body assumes a prototype handle and keeps only prototype tracking work.
@@ -352,8 +351,8 @@ namespace ctr {
         void retainIfPrototype() noexcept;
         void releaseIfPrototype() noexcept;
         [[nodiscard]] detail::Registry* registry() const noexcept;
-        T *proxyResolve_() const noexcept; // Form 2 proxy — defined in BeanInlineImpl.hpp
-        T *threadLocalResolve_() const noexcept; // Form 3 TL — defined in BeanInlineImpl.hpp
+        T *proxyResolve_() const noexcept; // Form 2 proxy — defined in HandleInlineImpl.hpp
+        T *threadLocalResolve_() const noexcept; // Form 3 TL — defined in HandleInlineImpl.hpp
 
         // -------------------------------------------------------------------------
         // Layout  (24 bytes on 64-bit, overloaded anchor)

@@ -2,7 +2,7 @@
 #include <meta>
 #include <utility>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 namespace graph_validation_session_into_singleton_fixture {
 

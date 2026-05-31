@@ -10,17 +10,14 @@
 
 #include "AnyBean.hpp"
 #include "Errors.hpp"
-#include "Export.hpp"
 #include "ListenerHandle.hpp"
 #include "Markers.hpp"
 #include "Options.hpp"
 
-#ifndef CTORIUM_DYNAMIC_LINK
 #include <functional>
 #include <shared_mutex>
 #include <typeindex>
 #include "../../internal/detail/HashUtils.hpp"
-#endif
 
 namespace ctr {
 
@@ -50,14 +47,14 @@ public:
      * @brief Resolves the default process-wide context.
      * @return Stable public context instance.
      */
-    static CTORIUM_API BeanContext& resolveContext();
+    static BeanContext& resolveContext();
 
     /**
      * @brief Resolves a context identified by a user-provided stable key.
      * @param key Stable user key.
      * @return Stable public context instance for the key.
      */
-    static CTORIUM_API BeanContext& resolveContext(std::string_view key);
+    static BeanContext& resolveContext(std::string_view key);
 
     /**
      * @brief Registers discovery contributions for compile-time roots on this root context.
@@ -66,8 +63,6 @@ public:
      * contributions for later merge/deduplication/indexing at start time.
      *
      * Roots must be visible at the call-site instantiation point.
-     *
-     * In dynamic-link mode, root ownership is centralized by the shared Ctorium DLL/SO.
      *
      * @tparam Roots Compile-time discovery roots.
      * @param options Discovery behavior options.
@@ -200,23 +195,20 @@ protected:
      * @brief Internal precondition guard for discover<...>().
      *
      * Throws ContextStateError when discovery is not allowed.
-     * Defined in BeanContextInlineImpl.hpp.
+     * Defined in ContextLifecycleImpl.hpp.
      */
     virtual void assertCanDiscover_() const;
 
-#ifndef CTORIUM_DYNAMIC_LINK
     [[nodiscard]] ctr::detail::Registry& core() noexcept { return *registry_; }
 
     std::shared_ptr<ctr::detail::Registry> registry_;
     /** Non-null only for ScopedContext instances; set in ScopedContext constructor body. */
     ScopedContext* asScope_ = nullptr;
-#endif
 
 private:
     template <auto... Roots>
     friend void detail::submitDiscoveryContribution(BeanContext& context, DiscoverOptions options);
 
-#ifndef CTORIUM_DYNAMIC_LINK
     std::string key_;
     std::unordered_map<std::string, std::unique_ptr<ScopedContext>,
                        ctr::detail::StringViewHash, std::equal_to<>> scopes_;
@@ -230,7 +222,6 @@ private:
     };
     std::vector<DeferredListener> deferredListeners_;
     void flushDeferredListeners_();
-#endif
 };
 
 } // namespace ctr

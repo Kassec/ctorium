@@ -3,7 +3,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 #include "fixture/SmallGraph.hpp"    // bench_startup_small  — 32 singletons
 #include "fixture/MediumGraph.hpp"   // bench_startup_medium — 128 singletons

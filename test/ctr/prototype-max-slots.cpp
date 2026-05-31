@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 namespace prototype_max_slots_limit_fixture {
 

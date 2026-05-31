@@ -16,11 +16,6 @@ target_include_directories(ctorium
         ${CMAKE_CURRENT_SOURCE_DIR}/include/api
 )
 
-target_compile_definitions(ctorium
-        INTERFACE
-        CTORIUM_API=
-)
-
 target_compile_options(ctorium
         INTERFACE
         -freflection

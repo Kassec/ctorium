@@ -6,7 +6,7 @@
 #include <meta>
 #include <utility>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 namespace injection_lazy_cycle_fixture {
 

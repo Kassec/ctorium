@@ -2,7 +2,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 //

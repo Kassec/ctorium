@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 #include <meta>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 namespace priority_higher_binding_fixture {
 

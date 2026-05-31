@@ -2,7 +2,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 

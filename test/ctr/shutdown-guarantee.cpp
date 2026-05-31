@@ -7,7 +7,7 @@
 
 #include <gtest/gtest.h>
 
-#include <ctr/Ctorium.hpp>
+#include <ctr/Registration.hpp>
 
 namespace shutdown_singleton_fixture {
 

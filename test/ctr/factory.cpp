@@ -184,6 +184,163 @@ TEST(Factory, UniquePtrProducerReturnFormIsBlockedByCurrentDescriptorGeneration)
     ctx.stop();
 }
 
+namespace factory_product_param_injection_fixture {
+
+struct [[=ctr::singleton{}]] Dep {
+    int value = 11;
+};
+
+struct NamedDep {
+    int value = 0;
+};
+
+struct ScopedDep {
+    int value = 0;
+};
+
+struct ValueProduct {
+    Dep* dep = nullptr;
+    int value = 0;
+};
+
+struct UniqueProduct {
+    Dep* dep = nullptr;
+    int value = 0;
+};
+
+struct NamedProduct {
+    NamedDep* dep = nullptr;
+    int value = 0;
+};
+
+struct ScopedProduct {
+    ctr::Bean<ScopedDep> dep;
+};
+
+struct [[=ctr::factory{}]] Factory {
+    [[=ctr::singleton{}]]
+    ValueProduct makeValue(ctr::Bean<Dep> dep) {
+        return ValueProduct{.dep = dep.operator->(), .value = dep->value};
+    }
+
+    [[=ctr::prototype{}]]
+    std::unique_ptr<UniqueProduct> makeUnique(ctr::Bean<Dep> dep) {
+        return std::make_unique<UniqueProduct>(
+            UniqueProduct{.dep = dep.operator->(), .value = dep->value});
+    }
+
+    [[=ctr::singleton{}]]
+    [[=ctr::named{.name = std::define_static_string("primary")}]]
+    NamedDep makePrimaryNamed() {
+        return NamedDep{.value = 21};
+    }
+
+    [[=ctr::singleton{}]]
+    [[=ctr::named{.name = std::define_static_string("secondary")}]]
+    NamedDep makeSecondaryNamed() {
+        return NamedDep{.value = 22};
+    }
+
+    [[=ctr::singleton{}]]
+    NamedProduct makeNamed(
+        [[=ctr::named{.name = std::define_static_string("secondary")}]]
+        ctr::Bean<NamedDep> dep) {
+        return NamedProduct{.dep = dep.operator->(), .value = dep->value};
+    }
+
+    [[=ctr::session{}]]
+    [[=ctr::named{.name = std::define_static_string("primary")}]]
+    ScopedDep makePrimaryScoped() {
+        return ScopedDep{.value = 31};
+    }
+
+    [[=ctr::session{}]]
+    [[=ctr::named{.name = std::define_static_string("secondary")}]]
+    ScopedDep makeSecondaryScoped() {
+        return ScopedDep{.value = 32};
+    }
+
+    [[=ctr::singleton{}]]
+    ScopedProduct makeScopedNamed(
+        [[=ctr::scoped{.name = std::define_static_string("factory-product-param-scope")}]]
+        [[=ctr::named{.name = std::define_static_string("primary")}]]
+        ctr::Bean<ScopedDep> dep) {
+        return ScopedProduct{.dep = std::move(dep)};
+    }
+};
+
+} // namespace factory_product_param_injection_fixture
+
+TEST(Factory, ValueProducerReceivesInjectedParameter) {
+    auto& ctx = ctr::BeanContext::resolveContext("ft-value-producer-param");
+    ctx.discover<^^factory_product_param_injection_fixture>().start();
+
+    auto product = ctx.resolve<factory_product_param_injection_fixture::ValueProduct>();
+    auto dep = ctx.resolve<factory_product_param_injection_fixture::Dep>();
+
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(product->dep, dep.operator->());
+    EXPECT_EQ(product->value, 11);
+
+    ctx.stop();
+}
+
+TEST(Factory, UniquePtrProducerReceivesInjectedParameter) {
+    auto& ctx = ctr::BeanContext::resolveContext("ft-unique-producer-param");
+    ctx.discover<^^factory_product_param_injection_fixture>().start();
+
+    auto first = ctx.resolve<factory_product_param_injection_fixture::UniqueProduct>();
+    auto second = ctx.resolve<factory_product_param_injection_fixture::UniqueProduct>();
+    auto dep = ctx.resolve<factory_product_param_injection_fixture::Dep>();
+
+    ASSERT_NE(first.operator->(), nullptr);
+    ASSERT_NE(second.operator->(), nullptr);
+    EXPECT_EQ(first->dep, dep.operator->());
+    EXPECT_EQ(second->dep, dep.operator->());
+    EXPECT_EQ(first->value, 11);
+    EXPECT_NE(first.operator->(), second.operator->());
+
+    ctx.stop();
+}
+
+TEST(Factory, NamedProducerParameterSelectsNamedCandidate) {
+    auto& ctx = ctr::BeanContext::resolveContext("ft-named-producer-param");
+    ctx.discover<^^factory_product_param_injection_fixture>().start();
+
+    auto product = ctx.resolve<factory_product_param_injection_fixture::NamedProduct>();
+    auto primary = ctx.resolve<factory_product_param_injection_fixture::NamedDep>(
+        ctr::named{"primary"});
+    auto secondary = ctx.resolve<factory_product_param_injection_fixture::NamedDep>(
+        ctr::named{"secondary"});
+
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(product->dep, secondary.operator->());
+    EXPECT_NE(product->dep, primary.operator->());
+    EXPECT_EQ(product->value, 22);
+
+    ctx.stop();
+}
+
+TEST(Factory, ScopedNamedProducerParameterUsesDeferredScopedHandle) {
+    auto& ctx = ctr::BeanContext::resolveContext("ft-scoped-named-producer-param");
+    ctx.discover<^^factory_product_param_injection_fixture>().start();
+    auto& scope = ctx.resolveScope("factory-product-param-scope");
+    scope.start();
+
+    auto product = ctx.resolve<factory_product_param_injection_fixture::ScopedProduct>();
+    auto primary = scope.resolve<factory_product_param_injection_fixture::ScopedDep>(
+        ctr::named{"primary"});
+    auto secondary = scope.resolve<factory_product_param_injection_fixture::ScopedDep>(
+        ctr::named{"secondary"});
+
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(product->dep.operator->(), primary.operator->());
+    EXPECT_NE(product->dep.operator->(), secondary.operator->());
+    EXPECT_EQ(product->dep->value, 31);
+
+    ctx.stop();
+}
+
 namespace factory_product_hook_fixture {
 
 std::atomic<int> postConstructCount{0};

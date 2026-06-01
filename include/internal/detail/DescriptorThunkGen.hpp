@@ -604,35 +604,63 @@ consteval std::meta::info unwrapUniquePtr(std::meta::info returnType) {
 
 // Standard construct thunk: placement-new from factory call for value returns
 // and fallback paths where the engine pre-allocates mem.
+template<typename T, std::meta::info FactoryType, std::meta::info Method, std::size_t... Is>
+void constructFactoryProductThunkImpl(
+        void* mem,
+        void* factoryPtr,
+        ResolutionContext& ctx,
+        std::index_sequence<Is...>) {
+    using Factory = [:FactoryType:];
+    constexpr auto pmf = &[:Method:];
+    Factory* fp = static_cast<Factory*>(factoryPtr);
+    if constexpr (std::meta::is_same_type(
+            std::meta::dealias(std::meta::return_type_of(Method)),
+            std::meta::dealias(^^std::unique_ptr<T>))) {
+        auto ptr = (fp->*pmf)(injectParam<Factory, Method, Is>(ctx)...);
+        new (mem) T(std::move(*ptr));
+    } else {
+        new (mem) T((fp->*pmf)(injectParam<Factory, Method, Is>(ctx)...));
+    }
+}
+
 template<typename T, std::meta::info FactoryType, std::meta::info Method>
 void constructFactoryProductThunk(void* mem, void* vctx) {
     auto& ctx = *static_cast<ResolutionContext*>(vctx);
     using Factory = [:FactoryType:];
     auto factoryBean = ctx.registry.resolve<Factory>(kUnnamed, ctx);
-    constexpr auto pmf = &[:Method:];
+    static constexpr auto kParams =
+        std::define_static_array(std::meta::parameters_of(Method));
     Factory* fp = factoryBean.operator->();
-    if constexpr (std::meta::is_same_type(
-            std::meta::dealias(std::meta::return_type_of(Method)),
-            std::meta::dealias(^^std::unique_ptr<T>))) {
-        auto ptr = (fp->*pmf)();
-        new (mem) T(std::move(*ptr));
-    } else {
-        new (mem) T((fp->*pmf)());
-    }
+    constructFactoryProductThunkImpl<T, FactoryType, Method>(
+        mem, fp, ctx, std::make_index_sequence<kParams.size()>{});
 }
 
 // Auto-allocating thunk for unique_ptr<T> factory products.
 // Calls the factory method, releases the unique_ptr, and returns the raw pointer.
 // No pre-allocated mem involved; allocation is performed by the factory's operator new.
 // Used by materialization paths when allocAndConstruct != nullptr.
+template<typename T, std::meta::info FactoryType, std::meta::info Method, std::size_t... Is>
+void* allocAndConstructFactoryProductThunkImpl(
+        void* factoryPtr,
+        ResolutionContext& ctx,
+        std::index_sequence<Is...>) {
+    using Factory = [:FactoryType:];
+    constexpr auto pmf = &[:Method:];
+    Factory* fp = static_cast<Factory*>(factoryPtr);
+    // unique_ptr<T>: transfer ownership to the registry.
+    return (fp->*pmf)(injectParam<Factory, Method, Is>(ctx)...).release();
+}
+
 template<typename T, std::meta::info FactoryType, std::meta::info Method>
 void* allocAndConstructFactoryProductThunk(void* vctx) {
     auto& ctx = *static_cast<ResolutionContext*>(vctx);
     using Factory = [:FactoryType:];
     auto factoryBean = ctx.registry.resolve<Factory>(kUnnamed, ctx);
-    constexpr auto pmf = &[:Method:];
+    static constexpr auto kParams =
+        std::define_static_array(std::meta::parameters_of(Method));
     Factory* fp = factoryBean.operator->();
-    return (fp->*pmf)().release(); // unique_ptr<T>: transfer ownership; never throws
+    return allocAndConstructFactoryProductThunkImpl<T, FactoryType, Method>(
+        fp, ctx, std::make_index_sequence<kParams.size()>{});
 }
 
 // Deallocation thunk for unique_ptr<T> factory products.

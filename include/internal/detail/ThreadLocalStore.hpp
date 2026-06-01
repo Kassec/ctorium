@@ -127,7 +127,6 @@ struct TLData {
     };
 
     InstanceIndex instances;
-    std::vector<Key> order;  ///< Compatibility order for existing internal tests.
 
     /** O(1) lookup by DescriptorId; returns nullptr when not present. */
     [[nodiscard]] void* findInstance(std::uint32_t registryId, DescriptorId descId) const noexcept {
@@ -136,8 +135,7 @@ struct TLData {
 
     /** Record a newly materialized instance. */
     void storeInstance(std::uint32_t registryId, DescriptorId descId, void* ptr) {
-        if (instances.storeInstance(registryId, descId, ptr))
-            order.push_back({registryId, descId});
+        (void)instances.storeInstance(registryId, descId, ptr);
     }
 
     /** Returns true when at least one entry for `registryId` exists. */
@@ -166,10 +164,6 @@ struct TLData {
             }
         }
         instances.eraseRegistry(registryId);
-        order.erase(
-            std::remove_if(order.begin(), order.end(),
-                           [registryId](const Key &key) { return key.first == registryId; }),
-            order.end());
     }
 };
 

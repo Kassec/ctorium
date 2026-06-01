@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -86,22 +85,19 @@ void collectAndDestroyThreadLocalStateFor(std::uint32_t registryId) {
     auto& tl = ctr::detail::tlData();
     std::vector<void*> instances;
 
-    for (const auto& key : tl.order) {
-        if (key.first == registryId) {
-            const auto it = tl.instances.find(key);
-            if (it != tl.instances.end()) {
-                instances.push_back(it->second);
-                tl.instances.erase(it);
+    const auto regIt = tl.instances.registries.find(registryId);
+    if (regIt != tl.instances.registries.end()) {
+        const auto& entries = regIt->second;
+        for (ctr::detail::DescriptorId descId : entries.order) {
+            const auto index = static_cast<std::size_t>(descId);
+            if (index < entries.instances.size()) {
+                void* instance = entries.instances[index];
+                if (instance != nullptr)
+                    instances.push_back(instance);
             }
         }
+        tl.instances.eraseRegistry(registryId);
     }
-    tl.order.erase(
-        std::remove_if(
-            tl.order.begin(), tl.order.end(),
-            [registryId](const auto& key) {
-                return key.first == registryId;
-            }),
-        tl.order.end());
 
     auto& cleanup = ctr::detail::tlCleanup();
     for (auto it = cleanup.registered.begin(); it != cleanup.registered.end();) {

@@ -704,17 +704,29 @@ public:
      */
     void registerScope(NameId id, ctr::ScopedContext* scope) {
         std::lock_guard lock(scopesMutex_);
-        scopeTable_.emplace(id, scope);
+        const auto idx = static_cast<std::size_t>(id);
+        if (idx >= scopeSlots_.size())
+            scopeSlots_.resize(idx + 1, nullptr);
+        if (scopeSlots_[idx] == nullptr)
+            scopeSlots_[idx] = scope;
+
+        auto snapshot =
+            std::make_unique<const std::vector<ctr::ScopedContext*>>(scopeSlots_);
+        const auto* raw = snapshot.get();
+        scopeSlotSnapshots_.push_back(std::move(snapshot));
+        scopeSlotsSnapshot_.store(raw, std::memory_order_release);
     }
 
     /**
      * @brief Looks up a scope by its NameId.  Returns `nullptr` if not found.
-     * Used by the Form 2 proxy path in `Bean<T>::operator->`.  Cold path.
+     * Used by the Form 2 proxy path in `Bean<T>::operator->`.
      */
     [[nodiscard]] ctr::ScopedContext* findScope(NameId id) const noexcept {
-        std::lock_guard lock(scopesMutex_);
-        const auto it = scopeTable_.find(id);
-        return it != scopeTable_.end() ? it->second : nullptr;
+        const auto* slots = scopeSlotsSnapshot_.load(std::memory_order_acquire);
+        const auto idx = static_cast<std::size_t>(id);
+        if (slots == nullptr || idx >= slots->size())
+            return nullptr;
+        return (*slots)[idx];
     }
 
     /**
@@ -1132,10 +1144,12 @@ private:
     /// Serializes wait-edge table growth performed before publishing under writeLock_.
     mutable std::mutex waitSlotsMutex_;
 
-    /// Scope name → ScopedContext* lookup table.  Populated by registerScope().
-    /// Protected by scopesMutex_ (separate from writeLock_ to avoid blocking hot path).
+    /// Dense scope NameId -> ScopedContext* slots. registerScope() publishes immutable
+    /// snapshots so Form 2 operator-> can find its scope without taking a lock.
     mutable std::mutex scopesMutex_;
-    std::unordered_map<NameId, ctr::ScopedContext*> scopeTable_;
+    std::vector<ctr::ScopedContext*> scopeSlots_;
+    std::vector<std::unique_ptr<const std::vector<ctr::ScopedContext*>>> scopeSlotSnapshots_;
+    std::atomic<const std::vector<ctr::ScopedContext*>*> scopeSlotsSnapshot_{nullptr};
 
     /// Thread-local store pointers: one per registered thread.
     /// Protected by tlMutex_.  Each pointer remains valid as long as the owning

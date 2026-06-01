@@ -1,7 +1,8 @@
 # Ctorium
 
-**Ctorium is a C++26 Inversion of Control (IoC) and Dependency Injection (DI) library powered by compile-time (AoT)
-reflection.**
+**Ctorium** is a modern C++ dependency injection container focused on easy declarative discovery, explicit bean handles,
+lifecycle metadata, and application-level runtime composition. Its Inversion of Control (IoC) and Dependency Injection (
+DI) runtime is powered by compile-time (AoT) reflection.
 
 It lets you declare application services directly in C++ with attributes, discover them through visible reflection
 roots, and resolve them at runtime through a tracked bean context.
@@ -31,7 +32,7 @@ and construction paths at compile time, then uses that prepared information duri
 
 ## Toolchain requirements
 
-**C++ 26** capable compiler (**gcc 16.1.0** is fine).
+**C++ 26 with reflection** capable compiler (**gcc 16.1.0+** is fine).
 
 Compile and run `toolchain-check` to check your toolchain against the C++ 26 reflexion API needed by **Ctorium**.
 

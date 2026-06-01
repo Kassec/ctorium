@@ -9,22 +9,44 @@ namespace ctr::detail {
         const DescriptorCold &cold = descriptors_.coldAt(descId);
         ResolutionContext ctx{*this};
 
-        ctr::AnyBean anyBean;
-        anyBean.object_ = mem;
-        anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-        anyBean.bits_.f1.descId = descId;
-        anyBean.registry_ = this;
+        const bool dispatchPreDestroy =
+            listeners_.hasListeners(ListenerStore::phasePreDestroy());
+        const bool dispatchDestroyed =
+            listeners_.hasListeners(ListenerStore::phaseDestroyed());
+        if (dispatchPreDestroy || dispatchDestroyed) {
+            ctr::AnyBean anyBean;
+            anyBean.object_ = mem;
+            anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
+            anyBean.bits_.f1.descId = descId;
+            anyBean.registry_ = this;
 
-        listeners_.dispatch(ListenerStore::phasePreDestroy(), cold.exposedType, &anyBean);
+            if (dispatchPreDestroy) {
+                listeners_.dispatch(
+                    ListenerStore::phasePreDestroy(),
+                    cold.exposedType,
+                    &anyBean);
+            }
 
-        if (cold.preDestroy) {
-            cold.preDestroy(mem, static_cast<void *>(&ctx));
+            if (cold.preDestroy) {
+                cold.preDestroy(mem, static_cast<void *>(&ctx));
+            }
+
+            cold.destroy(mem);
+
+            if (dispatchDestroyed) {
+                // anyBean.object_ points to destroyed memory; listeners must not dereference it.
+                listeners_.dispatch(
+                    ListenerStore::phaseDestroyed(),
+                    cold.exposedType,
+                    &anyBean);
+            }
+        } else {
+            if (cold.preDestroy) {
+                cold.preDestroy(mem, static_cast<void *>(&ctx));
+            }
+
+            cold.destroy(mem);
         }
-
-        cold.destroy(mem);
-
-        // anyBean.object_ points to freed memory from here; listeners must not dereference it.
-        listeners_.dispatch(ListenerStore::phaseDestroyed(), cold.exposedType, &anyBean);
 
         if (cold.dealloc != nullptr) {
             cold.dealloc(mem);

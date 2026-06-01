@@ -51,13 +51,13 @@ consteval ContributedDescriptor makeDescriptorForAnnotatedType() {
     }
 
     void (*postConstructFn)(void*, void*) = nullptr;
-    if constexpr (members.postConstruct != std::meta::info{}) {
-        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    if constexpr (!members.postConstruct.empty()) {
+        postConstructFn = &postConstructThunkImpl<T>;
     }
 
     void (*preDestroyFn)(void*, void*) = nullptr;
-    if constexpr (members.preDestroy != std::meta::info{}) {
-        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    if constexpr (!members.preDestroy.empty()) {
+        preDestroyFn = &preDestroyThunkImpl<T>;
     }
 
     // Build param descriptors for graph validation (session/scoped checks in start()).
@@ -121,13 +121,13 @@ consteval ContributedDescriptor makeDescriptorForFactory() {
     }
 
     void (*postConstructFn)(void*, void*) = nullptr;
-    if constexpr (members.postConstruct != std::meta::info{}) {
-        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    if constexpr (!members.postConstruct.empty()) {
+        postConstructFn = &postConstructThunkImpl<T>;
     }
 
     void (*preDestroyFn)(void*, void*) = nullptr;
-    if constexpr (members.preDestroy != std::meta::info{}) {
-        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    if constexpr (!members.preDestroy.empty()) {
+        preDestroyFn = &preDestroyThunkImpl<T>;
     }
 
     return ContributedDescriptor{
@@ -179,13 +179,13 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
     constexpr auto factoryIdentity = computeIdentityForType(factoryName, "", Lifetime::Singleton);
 
     void (*postConstructFn)(void*, void*) = nullptr;
-    if constexpr (members.postConstruct != std::meta::info{}) {
-        postConstructFn = &postConstructThunkImpl<T, members.postConstruct>;
+    if constexpr (!members.postConstruct.empty()) {
+        postConstructFn = &postConstructThunkImpl<T>;
     }
 
     void (*preDestroyFn)(void*, void*) = nullptr;
-    if constexpr (members.preDestroy != std::meta::info{}) {
-        preDestroyFn = &preDestroyThunkImpl<T, members.preDestroy>;
+    if constexpr (!members.preDestroy.empty()) {
+        preDestroyFn = &preDestroyThunkImpl<T>;
     }
 
     // Detect whether the return type is unique_ptr<T>.

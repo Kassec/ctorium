@@ -46,6 +46,7 @@ add_executable(ctorium-tests
         ctr/factory.cpp
         ctr/graph-validation.cpp
         ctr/injection.cpp
+        ctr/lifecycle-hooks.cpp
         ctr/listeners.cpp
         ctr/priority.cpp
         ctr/prototype.cpp

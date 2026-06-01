@@ -359,98 +359,223 @@ consteval bool isBeanType(std::meta::info paramType) {
     return std::meta::template_of(d) == ^^ctr::Bean;
 }
 
+struct HookList {
+    const std::meta::info* data = nullptr;
+    std::size_t size = 0;
+
+    consteval bool empty() const {
+        return size == 0;
+    }
+};
+
+consteval bool operator!=(HookList hooks, std::meta::info) {
+    return !hooks.empty();
+}
+
+struct MemberScan {
+    std::meta::info ctor{}; ///< Compatible constructor; info{} if absent.
+    HookList postConstruct{}; ///< postConstruct hooks in construction order.
+    HookList preDestroy{}; ///< preDestroy hooks in construction order; thunk reverses it.
+    bool compatibleConstructorConflict = false; ///< Multiple compatible constructors.
+};
+
+template<std::meta::info Type>
+consteval MemberScan scanMembers();
+
 // ─────────────────────────────────────────────────────────────────────────────
 // postConstruct / preDestroy thunks
 // ─────────────────────────────────────────────────────────────────────────────
 
-template<typename T, std::meta::info Method>
-void postConstructThunkImpl(void* instance, void* vctx) {
-    auto& ctx = *static_cast<ResolutionContext*>(vctx);
-    static constexpr auto kParams =
-        std::define_static_array(std::meta::parameters_of(Method));
-    T* obj = static_cast<T*>(instance);
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        constexpr auto pmf = &[:Method:];
-        (obj->*pmf)(injectParam<T, Method, Is>(ctx)...);
-    }(std::make_index_sequence<kParams.size()>{});
+template<typename T, std::meta::info Method, std::size_t... Is>
+void invokeLifecycleHookImpl(T* obj, ResolutionContext& ctx, std::index_sequence<Is...>) {
+    constexpr auto pmf = &[:Method:];
+    (obj->*pmf)(injectParam<T, Method, Is>(ctx)...);
 }
 
 template<typename T, std::meta::info Method>
-void preDestroyThunkImpl(void* instance, void* vctx) {
-    auto& ctx = *static_cast<ResolutionContext*>(vctx);
+void invokeLifecycleHook(T* obj, ResolutionContext& ctx) {
     static constexpr auto kParams =
         std::define_static_array(std::meta::parameters_of(Method));
+    invokeLifecycleHookImpl<T, Method>(obj, ctx, std::make_index_sequence<kParams.size()>{});
+}
+
+consteval std::vector<std::meta::info> copyInfos(HookList infos) {
+    std::vector<std::meta::info> result;
+    result.reserve(infos.size);
+    for (std::size_t i = 0; i < infos.size; ++i) {
+        result.push_back(infos.data[i]);
+    }
+    return result;
+}
+
+consteval std::vector<std::meta::info> reverseInfos(HookList infos) {
+    std::vector<std::meta::info> result;
+    result.reserve(infos.size);
+    for (std::size_t i = infos.size; i > 0; --i) {
+        result.push_back(infos.data[i - 1]);
+    }
+    return result;
+}
+
+template<typename T>
+void postConstructThunkImpl(void* instance, void* vctx) {
+    auto& ctx = *static_cast<ResolutionContext*>(vctx);
     T* obj = static_cast<T*>(instance);
-    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-        constexpr auto pmf = &[:Method:];
-        (obj->*pmf)(injectParam<T, Method, Is>(ctx)...);
-    }(std::make_index_sequence<kParams.size()>{});
+    static constexpr auto kHooks =
+        std::define_static_array(copyInfos(scanMembers<^^T>().postConstruct));
+    template for (constexpr auto method : kHooks) {
+        invokeLifecycleHook<T, method>(obj, ctx);
+    }
+}
+
+template<typename T>
+void preDestroyThunkImpl(void* instance, void* vctx) {
+    auto& ctx = *static_cast<ResolutionContext*>(vctx);
+    T* obj = static_cast<T*>(instance);
+    static constexpr auto kHooks =
+        std::define_static_array(reverseInfos(scanMembers<^^T>().preDestroy));
+    template for (constexpr auto method : kHooks) {
+        invokeLifecycleHook<T, method>(obj, ctx);
+    }
+}
+
+template<typename T, HookList Hooks>
+void preDestroyThunkImpl(void* instance, void* vctx) {
+    preDestroyThunkImpl<T>(instance, vctx);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // scanMembers<Type>() — single-pass member scan (D4)
 //
+// Hierarchy-aware: public bases are scanned before the concrete type.
 // Combines findCompatibleCtor<T>() and the two findHookMethod calls into one
-// members_of traversal per type, instead of three separate calls.
+// members_of traversal per visited type, instead of three separate calls.
+// Hook collection visits public bases before the concrete type, deduplicating
+// base types so virtual diamonds do not invoke the same base hook twice.
 // ─────────────────────────────────────────────────────────────────────────────
 
-struct MemberScan {
-    std::meta::info ctor{};          ///< Compatible constructor; info{} if absent.
-    std::meta::info postConstruct{}; ///< postConstruct hook; info{} if absent.
-    std::meta::info preDestroy{};    ///< preDestroy hook; info{} if absent.
-    bool compatibleConstructorConflict = false; ///< Multiple compatible constructors.
-};
+consteval bool containsType(
+        const std::vector<std::meta::info>& types,
+        std::meta::info type) {
+    for (auto current : types) {
+        if (std::meta::is_same_type(current, type)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+consteval bool memberHasAnnotationOfType(std::meta::info member, std::meta::info annotationType) {
+    for (auto ann : std::meta::annotations_of(member)) {
+        if (std::meta::is_same_type(
+                std::meta::remove_const(std::meta::type_of(ann)),
+                annotationType)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+consteval void scanMembersOfType(
+        std::meta::info type,
+        bool includeConstructors,
+        MemberScan& result,
+        std::size_t& compatibleConstructorCount,
+        std::vector<std::meta::info>& postConstructHooks,
+        std::vector<std::meta::info>& preDestroyHooks) {
+    const auto members = std::meta::members_of(type, std::meta::access_context::unchecked());
+    for (auto m : members) {
+        if (includeConstructors && std::meta::is_constructor(m)) {
+            const auto params = std::meta::parameters_of(m);
+            bool compatible = params.empty();
+            if (!compatible) {
+                compatible = true;
+                for (auto p : params) {
+                    if (!isBeanType(std::meta::type_of(p))) {
+                        compatible = false;
+                        break;
+                    }
+                }
+            }
+            if (compatible) {
+                ++compatibleConstructorCount;
+                if (compatibleConstructorCount >= 2) {
+                    result.compatibleConstructorConflict = true;
+                }
+                result.ctor = m;
+            }
+        } else if (!std::meta::is_type(m)
+                   && !std::meta::is_special_member_function(m)) {
+            if (memberHasAnnotationOfType(m, ^^ctr::postConstruct)) {
+                postConstructHooks.push_back(m);
+            }
+            if (memberHasAnnotationOfType(m, ^^ctr::preDestroy)) {
+                preDestroyHooks.push_back(m);
+            }
+        }
+    }
+}
+
+consteval void scanBaseHooks(
+        std::meta::info type,
+        std::vector<std::meta::info>& visitedBaseTypes,
+        MemberScan& result,
+        std::size_t& compatibleConstructorCount,
+        std::vector<std::meta::info>& postConstructHooks,
+        std::vector<std::meta::info>& preDestroyHooks) {
+    const auto bases = std::meta::bases_of(type, std::meta::access_context::unchecked());
+    for (auto baseRel : bases) {
+        if (std::meta::is_public(baseRel)) {
+            const auto baseTypeInfo = std::meta::dealias(std::meta::type_of(baseRel));
+            if (!containsType(visitedBaseTypes, baseTypeInfo)) {
+                visitedBaseTypes.push_back(baseTypeInfo);
+                scanBaseHooks(
+                    baseTypeInfo,
+                    visitedBaseTypes,
+                    result,
+                    compatibleConstructorCount,
+                    postConstructHooks,
+                    preDestroyHooks);
+                scanMembersOfType(
+                    baseTypeInfo,
+                    false,
+                    result,
+                    compatibleConstructorCount,
+                    postConstructHooks,
+                    preDestroyHooks);
+            }
+        }
+    }
+}
 
 template<std::meta::info Type>
 consteval MemberScan scanMembers() {
-    static constexpr auto kMembers =
-        std::define_static_array(
-            std::meta::members_of(Type, std::meta::access_context::unchecked()));
-    MemberScan r;
+    MemberScan result;
     std::size_t compatibleConstructorCount = 0;
-    template for (constexpr auto m : kMembers) {
-        if constexpr (std::meta::is_constructor(m)) {
-            static constexpr auto kParams =
-                std::define_static_array(std::meta::parameters_of(m));
-            constexpr bool compatible = []{
-                if constexpr (kParams.size() == 0) return true;
-                template for (constexpr auto p : kParams) {
-                    if constexpr (!isBeanType(std::meta::type_of(p))) return false;
-                }
-                return true;
-            }();
-            if constexpr (compatible) {
-                ++compatibleConstructorCount;
-                if (compatibleConstructorCount >= 2) r.compatibleConstructorConflict = true;
-                r.ctor = m;
-            }
-        } else if constexpr (!std::meta::is_type(m)
-                          && !std::meta::is_special_member_function(m)) {
-            constexpr bool isPostConstruct = []{
-                for (auto ann : std::meta::annotations_of(m)) {
-                    if (std::meta::is_same_type(
-                            std::meta::remove_const(std::meta::type_of(ann)),
-                            ^^ctr::postConstruct)) {
-                        return true;
-                    }
-                }
-                return false;
-            }();
-            constexpr bool isPreDestroy = []{
-                for (auto ann : std::meta::annotations_of(m)) {
-                    if (std::meta::is_same_type(
-                            std::meta::remove_const(std::meta::type_of(ann)),
-                            ^^ctr::preDestroy)) {
-                        return true;
-                    }
-                }
-                return false;
-            }();
-            if constexpr (isPostConstruct) { r.postConstruct = m; }
-            if constexpr (isPreDestroy)    { r.preDestroy = m; }
-        }
-    }
-    return r;
+    std::vector<std::meta::info> visitedBaseTypes;
+    std::vector<std::meta::info> postConstructHooks;
+    std::vector<std::meta::info> preDestroyHooks;
+
+    scanBaseHooks(
+        Type,
+        visitedBaseTypes,
+        result,
+        compatibleConstructorCount,
+        postConstructHooks,
+        preDestroyHooks);
+    scanMembersOfType(
+        Type,
+        true,
+        result,
+        compatibleConstructorCount,
+        postConstructHooks,
+        preDestroyHooks);
+
+    const auto postConstructArray = std::define_static_array(postConstructHooks);
+    const auto preDestroyArray = std::define_static_array(preDestroyHooks);
+    result.postConstruct = {postConstructArray.data(), postConstructArray.size()};
+    result.preDestroy = {preDestroyArray.data(), preDestroyArray.size()};
+    return result;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

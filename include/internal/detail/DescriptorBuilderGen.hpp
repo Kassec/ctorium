@@ -170,6 +170,8 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
         "Ctorium: ctr::named annotation with an empty key is invalid.");
     // Single-pass member scan on the product type for hooks (D4).
     constexpr auto members     = scanMembers<productType>();
+    // Single-pass annotation scan on the product type to check for Bean status.
+    constexpr auto productAnn  = scanAnnotations(productType);
     // qualifiedNameOf computed once per entity (D1).
     constexpr const char* productName = qualifiedNameOf(productType);
     constexpr const char* factoryName = qualifiedNameOf(entity.declaringFactory);
@@ -179,12 +181,12 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
     constexpr auto factoryIdentity = computeIdentityForType(factoryName, "", Lifetime::Singleton);
 
     void (*postConstructFn)(void*, void*) = nullptr;
-    if constexpr (!members.postConstruct.empty()) {
+    if constexpr (productAnn.hasLifetimeMarker && !members.postConstruct.empty()) {
         postConstructFn = &postConstructThunkImpl<T>;
     }
 
     void (*preDestroyFn)(void*, void*) = nullptr;
-    if constexpr (!members.preDestroy.empty()) {
+    if constexpr (productAnn.hasLifetimeMarker && !members.preDestroy.empty()) {
         preDestroyFn = &preDestroyThunkImpl<T>;
     }
 

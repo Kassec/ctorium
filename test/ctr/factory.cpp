@@ -341,6 +341,31 @@ TEST(Factory, ScopedNamedProducerParameterUsesDeferredScopedHandle) {
     ctx.stop();
 }
 
+// Defined outside the discovery namespace so it is not enumerated as a standalone AnnotatedType
+// when discover<^^factory_product_hook_fixture>() is called.
+namespace factory_product_hook_bean {
+
+std::atomic<int> postConstructCount{0};
+std::atomic<int> preDestroyCount{0};
+
+struct [[=ctr::singleton{}]] BeanHookedProduct {
+    [[=ctr::postConstruct{}]]
+    void init();
+
+    [[=ctr::preDestroy{}]]
+    void cleanup();
+};
+
+void BeanHookedProduct::init() {
+    postConstructCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+void BeanHookedProduct::cleanup() {
+    preDestroyCount.fetch_add(1, std::memory_order_relaxed);
+}
+
+} // namespace factory_product_hook_bean
+
 namespace factory_product_hook_fixture {
 
 std::atomic<int> postConstructCount{0};
@@ -389,13 +414,21 @@ struct [[=ctr::factory{}]] Factory {
     Plain makePlain() {
         return Plain{};
     }
+
+    [[=ctr::singleton{}]]
+    [[=ctr::named{.name = std::define_static_string("bean-hooked")}]]
+    factory_product_hook_bean::BeanHookedProduct makeBeanHooked() {
+        return factory_product_hook_bean::BeanHookedProduct{};
+    }
 };
 
 } // namespace factory_product_hook_fixture
 
-TEST(Factory, FactoryProductHooksApplyOnlyWhenProductDeclaresCtoriumHooks) {
+TEST(Factory, FactoryProductHooksExecuteOnlyWhenProductIsABean) {
     factory_product_hook_fixture::postConstructCount.store(0, std::memory_order_relaxed);
     factory_product_hook_fixture::preDestroyCount.store(0, std::memory_order_relaxed);
+    factory_product_hook_bean::postConstructCount.store(0, std::memory_order_relaxed);
+    factory_product_hook_bean::preDestroyCount.store(0, std::memory_order_relaxed);
 
     auto& ctx = ctr::BeanContext::resolveContext("ft-product-hooks");
     ctx.discover<^^factory_product_hook_fixture>().start();
@@ -405,17 +438,30 @@ TEST(Factory, FactoryProductHooksApplyOnlyWhenProductDeclaresCtoriumHooks) {
             ctr::named{.name = std::define_static_string("hooked")});
         auto plain = ctx.resolve<factory_product_hook_fixture::Plain>(
             ctr::named{.name = std::define_static_string("plain")});
+        auto beanHooked = ctx.resolve<factory_product_hook_bean::BeanHookedProduct>(
+            ctr::named{.name = std::define_static_string("bean-hooked")});
         EXPECT_NE(hooked.operator->(), nullptr);
         EXPECT_NE(plain.operator->(), nullptr);
+        EXPECT_NE(beanHooked.operator->(), nullptr);
+        // Non-Bean product: hooks suppressed despite annotations
         EXPECT_EQ(
             factory_product_hook_fixture::postConstructCount.load(std::memory_order_relaxed),
+            0);
+        // Bean product: postConstruct executed
+        EXPECT_EQ(
+            factory_product_hook_bean::postConstructCount.load(std::memory_order_relaxed),
             1);
     }
 
     ctx.stop();
 
+    // Non-Bean product: preDestroy suppressed
     EXPECT_EQ(
         factory_product_hook_fixture::preDestroyCount.load(std::memory_order_relaxed),
+        0);
+    // Bean product: preDestroy executed
+    EXPECT_EQ(
+        factory_product_hook_bean::preDestroyCount.load(std::memory_order_relaxed),
         1);
 }
 

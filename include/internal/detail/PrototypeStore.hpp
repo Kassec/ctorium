@@ -90,6 +90,7 @@ public:
                 return poppedChunk->nextFree[poppedOffset];
             });
         if (freeSlot != kInvalidSlotId) {
+            prefetchRefcountForStore(poppedChunk->refcounts[poppedOffset]);
             poppedChunk->metas[poppedOffset] = {mem, descId};
             return freeSlot;
         }
@@ -114,6 +115,7 @@ public:
             chunks_[chunkIdx].store(chunk, std::memory_order_release);
             ownedChunks_.push_back(std::move(owned));
         }
+        prefetchRefcountForStore(chunk->refcounts[offset]);
         chunk->metas[offset] = {mem, descId};
         // refcounts, nextFree, generation are value-initialised to 0 by Chunk ctor.
         return static_cast<SlotId>(id);
@@ -256,6 +258,41 @@ private:
 
     static constexpr std::size_t kChunkSize = 256;
     static constexpr std::size_t kMaxChunks = 256; // max 65536 slots
+#ifdef __cpp_lib_hardware_interference_size
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Winterference-size"
+#endif
+    static constexpr std::size_t kRefcountAlignment =
+        std::hardware_destructive_interference_size;
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+#else
+    static constexpr std::size_t kRefcountAlignment = 64;
+#endif
+
+    /**
+     * @brief One hot prototype refcount isolated on its own cache line.
+     *
+     * Memory trade-off: each slot spends one destructive-interference line for
+     * its refcount so concurrent retain/release on neighboring slots do not
+     * false-share. Other chunk arrays stay compact because they are not the
+     * contended per-slot hot counters.
+     */
+    struct alignas(kRefcountAlignment) RefcountCell {
+        std::atomic<uint32_t> value{};
+    };
+    static_assert(alignof(RefcountCell) == kRefcountAlignment);
+    static_assert(sizeof(RefcountCell) % kRefcountAlignment == 0);
+
+    static void prefetchRefcountForStore(RefcountCell& cell) noexcept {
+#if defined(__GNUC__) || defined(__clang__)
+        __builtin_prefetch(static_cast<const void*>(&cell.value), 1, 3);
+#else
+        (void)cell;
+#endif
+    }
 
     /**
      * Fixed-size chunk of kChunkSize slots.  Heap-allocated; pointer stored
@@ -263,7 +300,7 @@ private:
      */
     struct Chunk {
         SlotMeta              metas[kChunkSize];
-        std::atomic<uint32_t> refcounts[kChunkSize];
+        RefcountCell          refcounts[kChunkSize];
         std::atomic<uint32_t> nextFree[kChunkSize];
         uint32_t              generation[kChunkSize];
     };
@@ -289,7 +326,7 @@ private:
     }
     std::atomic<uint32_t>& refcountAt(std::size_t id) noexcept {
         return chunks_[id / kChunkSize].load(std::memory_order_acquire)
-                   ->refcounts[id % kChunkSize];
+                   ->refcounts[id % kChunkSize].value;
     }
     std::atomic<uint32_t>& nextFreeAt(std::size_t id) noexcept {
         return chunks_[id / kChunkSize].load(std::memory_order_acquire)

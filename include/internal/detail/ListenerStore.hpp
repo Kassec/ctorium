@@ -3,7 +3,10 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -35,13 +38,10 @@ namespace ctr::detail {
  * lock (no heap allocation, no spinlock): a listener
  * added or removed during dispatch does not affect the current event.
  *
- * When a listener is added or removed, a new `View` is built under `mutex_`, its
- * `unique_ptr` moved into `allViews_` (persistent storage), then the raw pointer is
- * published.  Views are never freed until `clear()` or the destructor; `allViews_`
- * therefore grows by one entry per `addListener`/`removeListener` call until the
- * next `clear()` (RAM trade-off against the two `seq_cst` RMWs removed from
- * `dispatch()`).  `clear()` runs under exclusive ownership so no `dispatch()` can
- * hold a stale view pointer at that point — no use-after-free risk.
+ * When a listener is added or removed, a new `View` is built under `mutex_` and
+ * published as the current view. The previous view is moved to `allViews_`, which
+ * is a retired-list reclaimed opportunistically after scanning dispatch hazard
+ * slots. A retired view is freed only when no published hazard slot references it.
  *
  * Dispatch visits only global listeners (`kInvalidTypeId`) and typed listeners whose
  * filter matches `beanTypeId`, using a two-pointer merge — no scan of all listeners.
@@ -61,6 +61,15 @@ public:
 
     /// Number of distinct lifecycle phases.
     static constexpr std::size_t kPhaseCount = 4;
+
+    /**
+     * @brief Fixed dispatch hazard slot count.
+     *
+     * Dispatch hazard slots are indexed by a process-wide monotone thread token.
+     * The table is fixed-size to keep `dispatch()` allocation-free and lock-free;
+     * exceeding this many dispatching threads is a configuration error.
+     */
+    static constexpr std::size_t kDispatchHazardSlotCount = 4096;
 
     /// Opaque callback type.  The void* points to a `const AnyBean` (never null).
     using Callback = std::function<void(const void*)>;
@@ -157,10 +166,25 @@ public:
         // Fast-exit: lock-free; avoids even the atomic load when idle.
         if (phaseSizes_[phaseIndex].load(std::memory_order_relaxed) == 0) return;
 
-        // Load the published view — no heap allocation, no spinlock.
-        // acquire pairs with the release store in rebuildView_().
+        // Load the published view and protect it before dereferencing. acquire
+        // pairs with the release store in rebuildView_().
         const View* view = view_.load(std::memory_order_acquire);
-        if (view) {
+        if (view == nullptr) return;
+
+        std::atomic<const View*>& hazardSlot = dispatchHazardSlot_();
+        while (true) {
+            hazardSlot.store(view, std::memory_order_relaxed);
+            const View* observed = view_.load(std::memory_order_acquire);
+            if (observed == view)
+                break;
+            view = observed;
+            if (view == nullptr) {
+                hazardSlot.store(nullptr, std::memory_order_relaxed);
+                return;
+            }
+        }
+
+        try {
             const PhaseView& pv = (*view)[phaseIndex];
 
             static const std::vector<ViewEntry> kEmpty;
@@ -186,7 +210,11 @@ public:
             }
             while (gi < globals.size()) globals[gi++].callback(bean);
             while (ti < typeds.size()) typeds[ti++].callback(bean);
+        } catch (...) {
+            hazardSlot.store(nullptr, std::memory_order_relaxed);
+            throw;
         }
+        hazardSlot.store(nullptr, std::memory_order_relaxed);
     }
 
     /**
@@ -214,10 +242,9 @@ public:
         for (std::size_t i = 0; i < kPhaseCount; ++i)
             phaseSizes_[i].store(0, std::memory_order_relaxed);
         view_.store(nullptr, std::memory_order_release);
-        // clear() runs under exclusive ownership: no concurrent dispatch()
-        // holds a view pointer.  Freeing allViews_ here reclaims all accumulated
-        // views (one per add/remove since last clear) at shutdown.
-        allViews_.clear();
+        if (currentView_)
+            allViews_.push_back(std::move(currentView_));
+        reclaimRetiredViews_();
     }
 
     /**
@@ -304,9 +331,61 @@ private:
             }
         }
         const View* rawPtr = newView.get();
+        if (currentView_)
+            allViews_.push_back(std::move(currentView_));
+        currentView_ = std::move(newView);
         view_.store(rawPtr, std::memory_order_release);
-        allViews_.push_back(std::move(newView));
-        // allViews_ grows by one per addListener/removeListener; freed at clear()/dtor.
+        reclaimRetiredViews_();
+    }
+
+    [[nodiscard]] static std::uint32_t dispatchThreadToken_() noexcept {
+        thread_local const std::uint32_t token = [] {
+            const std::uint32_t assigned =
+                nextDispatchThreadToken_.fetch_add(1, std::memory_order_relaxed);
+            if (assigned >= kDispatchHazardSlotCount)
+                std::terminate();
+            publishHazardSlotCount_(static_cast<std::size_t>(assigned) + 1);
+            return assigned;
+        }();
+        return token;
+    }
+
+    static void publishHazardSlotCount_(std::size_t count) noexcept {
+        std::size_t observed =
+            publishedDispatchHazardSlots_.load(std::memory_order_relaxed);
+        while (observed < count
+                && !publishedDispatchHazardSlots_.compare_exchange_weak(
+                    observed,
+                    count,
+                    std::memory_order_release,
+                    std::memory_order_relaxed)) {
+        }
+    }
+
+    [[nodiscard]] std::atomic<const View*>& dispatchHazardSlot_() const noexcept {
+        return hazardViews_[dispatchThreadToken_()];
+    }
+
+    [[nodiscard]] bool hazardReferences_(const View* view) const noexcept {
+        const std::size_t slotCount = std::min(
+            publishedDispatchHazardSlots_.load(std::memory_order_acquire),
+            kDispatchHazardSlotCount);
+        for (std::size_t i = 0; i < slotCount; ++i) {
+            if (hazardViews_[i].load(std::memory_order_relaxed) == view)
+                return true;
+        }
+        return false;
+    }
+
+    void reclaimRetiredViews_() {
+        allViews_.erase(
+            std::remove_if(
+                allViews_.begin(),
+                allViews_.end(),
+                [this](const std::unique_ptr<const View>& view) {
+                    return !hazardReferences_(view.get());
+                }),
+            allViews_.end());
     }
 
     // -------------------------------------------------------------------------
@@ -321,10 +400,17 @@ private:
     /// Published immutable view; loaded lock-free by dispatch() with acquire ordering.
     mutable std::atomic<const View*> view_{nullptr};
 
-    /// Persistent storage for all published Views; entries are never freed until the
-    /// destructor runs, ensuring raw pointers loaded by concurrent dispatch() remain valid.
-    /// Grows by at most one entry per addListener()/removeListener() call.
+    /// Current published view owner. `view_` is the raw pointer published from this owner.
+    std::unique_ptr<const View> currentView_;
+
+    /// Retired published views awaiting hazard-pointer reclamation.
     std::vector<std::unique_ptr<const View>> allViews_;
+
+    mutable std::array<
+        std::atomic<const View*>,
+        kDispatchHazardSlotCount> hazardViews_{};
+    inline static std::atomic<std::uint32_t> nextDispatchThreadToken_{0};
+    inline static std::atomic<std::size_t> publishedDispatchHazardSlots_{0};
 };
 
 } // namespace ctr::detail

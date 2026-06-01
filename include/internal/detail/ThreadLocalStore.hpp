@@ -57,11 +57,20 @@ struct TLData {
         };
 
         std::unordered_map<std::uint32_t, RegistryEntries> registries;
+        mutable std::uint32_t cachedRegistryId = 0;
+        mutable const RegistryEntries* cachedRegistryEntries = nullptr;
 
         [[nodiscard]] void* findInstance(std::uint32_t registryId, DescriptorId descId) const noexcept {
+            if (cachedRegistryId == registryId && cachedRegistryEntries != nullptr) {
+                const auto index = static_cast<std::size_t>(descId);
+                const auto &values = cachedRegistryEntries->instances;
+                return index < values.size() ? values[index] : nullptr;
+            }
             const auto regIt = registries.find(registryId);
             if (regIt == registries.end())
                 return nullptr;
+            cachedRegistryId = registryId;
+            cachedRegistryEntries = &regIt->second;
             const auto index = static_cast<std::size_t>(descId);
             const auto &values = regIt->second.instances;
             return index < values.size() ? values[index] : nullptr;
@@ -69,6 +78,8 @@ struct TLData {
 
         [[nodiscard]] bool storeInstance(std::uint32_t registryId, DescriptorId descId, void *ptr) {
             RegistryEntries &entry = registries[registryId];
+            cachedRegistryId = registryId;
+            cachedRegistryEntries = &entry;
             const auto index = static_cast<std::size_t>(descId);
             if (index >= entry.instances.size())
                 entry.instances.resize(index + 1u, nullptr);
@@ -94,6 +105,8 @@ struct TLData {
             const auto regIt = registries.find(it.key.first);
             if (regIt == registries.end())
                 return;
+            cachedRegistryId = it.key.first;
+            cachedRegistryEntries = &regIt->second;
             const auto index = static_cast<std::size_t>(it.key.second);
             auto &values = regIt->second.instances;
             if (index < values.size())
@@ -105,6 +118,10 @@ struct TLData {
         }
 
         void eraseRegistry(std::uint32_t registryId) {
+            if (cachedRegistryId == registryId) {
+                cachedRegistryId = 0;
+                cachedRegistryEntries = nullptr;
+            }
             registries.erase(registryId);
         }
     };

@@ -231,24 +231,37 @@ public:
     }
 
     /**
-     * @brief Returns `{head, ambiguous}` for `(typeId, nameId)` in one flat_map lookup.
+     * @brief Returns the precomputed `{head, ambiguous}` for `(typeId, nameId)`.
      *
      * Replaces the `candidatesFor() + isAmbiguousFor()` pair on the named resolve path.
-     * Returns `{kInvalidDescriptorId, false}` when no candidates exist for the pair.
-     * Stored in the `NameEntry`; result is identical to reading
-     * `(*candidatesFor(typeId, nameId))[0]` and `isAmbiguousFor(typeId, nameId)`.
+     * Returns `{kInvalidDescriptorId, false}` when no entry exists, or when a post-start
+     * direct insertion has populated only the canonical candidate vector.
      *
      * Lock-free after `start()`.
      */
     [[nodiscard]] std::pair<DescriptorId, bool>
     headFor(TypeId typeId, NameId nameId) const noexcept {
+        const NameEntry* entry = entryFor(typeId, nameId);
+        if (entry == nullptr)
+            return {kInvalidDescriptorId, false};
+        return {entry->head, entry->ambiguous};
+    }
+
+    /**
+     * @brief Returns the full entry for `(typeId, nameId)` in one flat_map lookup.
+     *
+     * Used by resolve fallback paths that need both precomputed head state and
+     * the canonical candidate vector populated by post-start bindings.
+     */
+    [[nodiscard]] const NameEntry*
+    entryFor(TypeId typeId, NameId nameId) const noexcept {
         const auto idx = static_cast<std::size_t>(typeId);
         if (idx >= typeIndex_.size() || !typeIndex_[idx])
-            return {kInvalidDescriptorId, false};
+            return nullptr;
         const auto it = typeIndex_[idx]->entries.find(nameId);
         if (it == typeIndex_[idx]->entries.end())
-            return {kInvalidDescriptorId, false};
-        return {it->second.head, it->second.ambiguous};
+            return nullptr;
+        return &it->second;
     }
 
 private:

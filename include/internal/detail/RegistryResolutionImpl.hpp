@@ -69,13 +69,15 @@ namespace ctr::detail {
         }
 
         {
-            // 4 + 5. Single flat_map lookup: head DescriptorId + ambiguity flag.
-            // Replaces candidatesFor() + isAmbiguousFor() (two lookups) with one.
-            const auto [head, ambig] = typeIndex_.headFor(typeId, effectiveNameId);
+            // 4 + 5. Single flat_map lookup: precomputed head plus canonical
+            // candidates for post-start bindings whose head was not precomputed.
+            const NameEntry* entry = typeIndex_.entryFor(typeId, effectiveNameId);
+            const DescriptorId head =
+                entry != nullptr ? entry->head : kInvalidDescriptorId;
             if (head == kInvalidDescriptorId) [[unlikely]] {
                 // Post-start bindings update the canonical entries table; the
                 // precomputed entry head only covers candidates known at start().
-                const auto* candidates = typeIndex_.candidatesFor(typeId, effectiveNameId);
+                const auto* candidates = entry != nullptr ? &entry->candidates : nullptr;
                 if (!candidates || candidates->empty()) {
                     throw ctr::ResolutionError(
                         "Registry::resolve: no bean registered for the requested "
@@ -93,7 +95,7 @@ namespace ctr::detail {
                 }
             } else {
                 descId = head;
-                if (ambig) [[unlikely]] {
+                if (entry->ambiguous) [[unlikely]] {
                     throw ctr::ResolutionError(
                         "Registry::resolve: ambiguous resolution — two candidates share "
                         "the highest priority for the requested type and named key."

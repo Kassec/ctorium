@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <condition_variable>
@@ -47,6 +48,12 @@ namespace ctr::detail {
 
 
 inline constexpr std::uint32_t kNoMaterializationThreadToken = 0;
+
+inline constexpr std::size_t kScopeChunkSize = 256;
+inline constexpr std::size_t kScopeTopCapacity = 256;
+using ScopeChunk = std::array<
+    std::atomic<ctr::ScopedContext*>,
+    kScopeChunkSize>;
 
 /** @brief Key used to serialize singleton and session materialization. */
 struct MaterializationKey {
@@ -705,21 +712,33 @@ public:
 
     /**
      * @brief Registers a scope under its interned NameId.
-     * Called by `BeanContext::resolveScope` under `writeLock_`.
+     *
+     * Called by `BeanContext::resolveScope`.  Publishes the two-level scope
+     * table with release stores so Form 2 handles can find scopes lock-free.
+     *
+     * @throws ctr::ConfigurationError if `id` exceeds the fixed top-level
+     *         scope table capacity.
      */
     void registerScope(NameId id, ctr::ScopedContext* scope) {
         std::lock_guard lock(scopesMutex_);
         const auto idx = static_cast<std::size_t>(id);
-        if (idx >= scopeSlots_.size())
-            scopeSlots_.resize(idx + 1, nullptr);
-        if (scopeSlots_[idx] == nullptr)
-            scopeSlots_[idx] = scope;
+        const std::size_t chunkIndex = idx / kScopeChunkSize;
+        if (chunkIndex >= kScopeTopCapacity) {
+            throw ctr::ConfigurationError(
+                "Registry::registerScope: scope NameId exceeds segmented "
+                "scope table capacity.");
+        }
 
-        auto snapshot =
-            std::make_unique<const std::vector<ctr::ScopedContext*>>(scopeSlots_);
-        const auto* raw = snapshot.get();
-        scopeSlotSnapshots_.push_back(std::move(snapshot));
-        scopeSlotsSnapshot_.store(raw, std::memory_order_release);
+        ScopeChunk* chunk = scopeChunks_[chunkIndex].load(std::memory_order_acquire);
+        if (chunk == nullptr) {
+            auto owned = std::make_unique<ScopeChunk>();
+            chunk = owned.get();
+            ownedScopeChunks_.push_back(std::move(owned));
+            scopeChunks_[chunkIndex].store(chunk, std::memory_order_release);
+        }
+
+        auto& slot = (*chunk)[idx % kScopeChunkSize];
+        slot.store(scope, std::memory_order_release);
     }
 
     /**
@@ -727,11 +746,16 @@ public:
      * Used by the Form 2 proxy path in `Bean<T>::operator->`.
      */
     [[nodiscard]] ctr::ScopedContext* findScope(NameId id) const noexcept {
-        const auto* slots = scopeSlotsSnapshot_.load(std::memory_order_acquire);
         const auto idx = static_cast<std::size_t>(id);
-        if (slots == nullptr || idx >= slots->size())
+        const std::size_t chunkIndex = idx / kScopeChunkSize;
+        if (chunkIndex >= kScopeTopCapacity)
             return nullptr;
-        return (*slots)[idx];
+
+        const ScopeChunk* chunk =
+            scopeChunks_[chunkIndex].load(std::memory_order_acquire);
+        if (chunk == nullptr)
+            return nullptr;
+        return (*chunk)[idx % kScopeChunkSize].load(std::memory_order_acquire);
     }
 
     /**
@@ -1149,12 +1173,12 @@ private:
     /// Serializes wait-edge table growth performed before publishing under writeLock_.
     mutable std::mutex waitSlotsMutex_;
 
-    /// Dense scope NameId -> ScopedContext* slots. registerScope() publishes immutable
-    /// snapshots so Form 2 operator-> can find its scope without taking a lock.
+    /// Segmented scope NameId -> ScopedContext* table.  The top-level array never
+    /// moves; published chunks are retained until Registry destruction so Form 2
+    /// operator-> can dereference chunk pointers without reclamation.
     mutable std::mutex scopesMutex_;
-    std::vector<ctr::ScopedContext*> scopeSlots_;
-    std::vector<std::unique_ptr<const std::vector<ctr::ScopedContext*>>> scopeSlotSnapshots_;
-    std::atomic<const std::vector<ctr::ScopedContext*>*> scopeSlotsSnapshot_{nullptr};
+    std::array<std::atomic<ScopeChunk*>, kScopeTopCapacity> scopeChunks_{};
+    std::vector<std::unique_ptr<ScopeChunk>> ownedScopeChunks_;
 
     /// Thread-local store pointers: one per registered thread.
     /// Protected by tlMutex_.  Each pointer remains valid as long as the owning

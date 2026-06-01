@@ -83,6 +83,10 @@ struct MaterializationWait {
     bool active = false;
 };
 
+inline constexpr std::size_t kMaterializationWaitChunkSize = 256;
+using MaterializationWaitChunk =
+    std::array<MaterializationWait, kMaterializationWaitChunkSize>;
+
 /** @brief Type-erased handle form selected by non-template materialization. */
 enum class MaterializedHandleForm {
     Direct,
@@ -1043,11 +1047,29 @@ private:
     /** @brief Returns the lazily assigned non-zero token for the calling thread. */
     [[nodiscard]] static std::uint32_t materializationThreadToken() noexcept;
 
+    /** @brief Clears this registry's wait-graph slot for a recycled thread token. */
+    void clearMaterializationWaitSlot(std::uint32_t threadToken) noexcept;
+
+    /** @brief Returns a thread-exit materialization token to the global freelist. */
+    static void recycleMaterializationThreadToken(std::uint32_t threadToken) noexcept;
+
+    /** @brief True when a wait-graph slot has been published for `threadToken`. */
+    [[nodiscard]] bool hasMaterializationWaitSlot(
+        std::uint32_t threadToken) const noexcept;
+
+    /** @brief Returns the published wait-graph slot for `threadToken`. */
+    [[nodiscard]] MaterializationWait& materializationWaitSlot(
+        std::uint32_t threadToken) noexcept;
+
+    /** @brief Returns the published wait-graph slot for `threadToken`. */
+    [[nodiscard]] const MaterializationWait& materializationWaitSlot(
+        std::uint32_t threadToken) const noexcept;
+
     /**
      * @brief Ensures the wait-edge table has a slot for `threadToken`.
      *
-     * Any allocation happens before `writeLock_` is acquired.  Publication into
-     * `waitingByThread_` happens under `writeLock_` without allocating.
+     * Any allocation happens before `writeLock_` is acquired.  Publication of
+     * new wait-slot chunks happens under `writeLock_` without copying entries.
      */
     void ensureMaterializationWaitSlot(std::uint32_t threadToken);
 
@@ -1287,10 +1309,14 @@ private:
     std::vector<MaterializingEntry> materializing_;
 
     /// Outgoing wait edge per materialization thread token. Index 0 is unused.
-    /// Guarded by writeLock_; resized by ensureMaterializationWaitSlot().
-    std::vector<MaterializationWait> waitingByThread_;
+    /// Entries are guarded by writeLock_; chunk growth is published by
+    /// ensureMaterializationWaitSlot().
+    std::vector<MaterializationWaitChunk*> waitingByThreadChunks_;
+    std::vector<std::unique_ptr<MaterializationWaitChunk>>
+        ownedWaitingByThreadChunks_;
+    std::size_t waitingByThreadCapacity_ = 0;
 
-    /// Serializes wait-edge table growth performed before publishing under writeLock_.
+    /// Serializes wait-edge chunk growth performed before publishing under writeLock_.
     mutable std::mutex waitSlotsMutex_;
 
     /// Segmented scope NameId -> ScopedContext* table.  The top-level array never

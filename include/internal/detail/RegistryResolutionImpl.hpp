@@ -154,18 +154,89 @@ namespace ctr::detail {
         return token;
     }
 
-    inline void Registry::ensureMaterializationWaitSlot(std::uint32_t threadToken) {
-        std::unique_lock slotsLock(waitSlotsMutex_);
-        if (threadToken < waitingByThread_.size())
+    inline void Registry::clearMaterializationWaitSlot(
+        std::uint32_t threadToken
+        ) noexcept {
+        if (threadToken == kNoMaterializationThreadToken)
             return;
 
-        std::vector<MaterializationWait> grown(static_cast<std::size_t>(threadToken) + 1);
+        std::lock_guard lock(writeLock_);
+        if (hasMaterializationWaitSlot(threadToken))
+            materializationWaitSlot(threadToken) = MaterializationWait{};
+    }
+
+    inline void Registry::recycleMaterializationThreadToken(
+        std::uint32_t threadToken
+        ) noexcept {
+        if (threadToken == kNoMaterializationThreadToken)
+            return;
+
+        try {
+            std::lock_guard lock(materializationThreadTokenMutex_);
+            freeMaterializationThreadTokens_.push_back(threadToken);
+        } catch (...) {
+        }
+    }
+
+    inline bool Registry::hasMaterializationWaitSlot(
+        std::uint32_t threadToken) const noexcept {
+        return static_cast<std::size_t>(threadToken) < waitingByThreadCapacity_;
+    }
+
+    inline MaterializationWait& Registry::materializationWaitSlot(
+        std::uint32_t threadToken) noexcept {
+        const std::size_t index = static_cast<std::size_t>(threadToken);
+        const std::size_t chunk = index / kMaterializationWaitChunkSize;
+        assert(chunk < waitingByThreadChunks_.size());
+        return (*waitingByThreadChunks_[chunk])[index % kMaterializationWaitChunkSize];
+    }
+
+    inline const MaterializationWait& Registry::materializationWaitSlot(
+        std::uint32_t threadToken) const noexcept {
+        const std::size_t index = static_cast<std::size_t>(threadToken);
+        const std::size_t chunk = index / kMaterializationWaitChunkSize;
+        assert(chunk < waitingByThreadChunks_.size());
+        return (*waitingByThreadChunks_[chunk])[index % kMaterializationWaitChunkSize];
+    }
+
+    inline void Registry::ensureMaterializationWaitSlot(std::uint32_t threadToken) {
+        std::unique_lock slotsLock(waitSlotsMutex_);
+        const std::size_t requiredSlotCount =
+            static_cast<std::size_t>(threadToken) + 1;
+        if (requiredSlotCount <= waitingByThreadCapacity_)
+            return;
+
+        const std::size_t requiredChunkCount =
+            (requiredSlotCount + kMaterializationWaitChunkSize - 1)
+            / kMaterializationWaitChunkSize;
+
+        std::vector<MaterializationWaitChunk*> grown;
+        grown.reserve(requiredChunkCount);
+        grown.insert(
+            grown.end(),
+            waitingByThreadChunks_.begin(),
+            waitingByThreadChunks_.end());
+
+        std::vector<std::unique_ptr<MaterializationWaitChunk>> newChunks;
+        newChunks.reserve(requiredChunkCount - grown.size());
+        while (grown.size() < requiredChunkCount) {
+            auto chunk = std::make_unique<MaterializationWaitChunk>();
+            grown.push_back(chunk.get());
+            newChunks.push_back(std::move(chunk));
+        }
+
+        ownedWaitingByThreadChunks_.reserve(
+            ownedWaitingByThreadChunks_.size() + newChunks.size());
+        for (auto& chunk : newChunks)
+            ownedWaitingByThreadChunks_.push_back(std::move(chunk));
+
         {
             std::lock_guard lock(writeLock_);
-            if (threadToken < waitingByThread_.size())
+            if (requiredSlotCount <= waitingByThreadCapacity_)
                 return;
-            std::copy(waitingByThread_.begin(), waitingByThread_.end(), grown.begin());
-            waitingByThread_.swap(grown);
+            waitingByThreadChunks_.swap(grown);
+            waitingByThreadCapacity_ =
+                waitingByThreadChunks_.size() * kMaterializationWaitChunkSize;
         }
     }
 
@@ -178,10 +249,10 @@ namespace ctr::detail {
             if (token == currentThreadToken)
                 return true;
             if (token == kNoMaterializationThreadToken
-                    || token >= waitingByThread_.size()) {
+                    || !hasMaterializationWaitSlot(token)) {
                 return false;
             }
-            const MaterializationWait& wait = waitingByThread_[token];
+            const MaterializationWait& wait = materializationWaitSlot(token);
             if (!wait.active)
                 return false;
 
@@ -207,10 +278,16 @@ namespace ctr::detail {
         const char* intraThreadCycleMessage,
         const char* crossThreadCycleMessage) {
         const std::uint32_t currentThreadToken = materializationThreadToken();
+        TLCleanup& cleanup = tlCleanup();
+        const std::uint32_t id = registryId();
+        if (cleanup.registered.find(id) == cleanup.registered.end())
+            cleanup.registered.emplace(id, weak_from_this());
+
         ensureMaterializationWaitSlot(currentThreadToken);
 
         const MaterializationKey key{descId, scope};
         std::unique_lock lock(writeLock_);
+        materializationWaitSlot(currentThreadToken) = MaterializationWait{};
         std::vector<DescriptorId>& stack = materializationStack();
         auto hasIntraThreadCycle = [&] {
             for (DescriptorId existing : stack) {
@@ -259,9 +336,9 @@ namespace ctr::detail {
                 throw ctr::ResolutionError(crossThreadCycleMessage);
             }
 
-            waitingByThread_[currentThreadToken] = MaterializationWait{key, true};
+            materializationWaitSlot(currentThreadToken) = MaterializationWait{key, true};
             cv_.wait(lock);
-            waitingByThread_[currentThreadToken].active = false;
+            materializationWaitSlot(currentThreadToken).active = false;
         }
     }
 

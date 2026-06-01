@@ -43,8 +43,8 @@ namespace ctr {
 
 // Heterogeneous map: resolveContext(string_view) performs no heap allocation on hit.
 inline std::unordered_map<std::string, std::unique_ptr<BeanContext>,
-                           detail::StringViewHash, std::equal_to<>> g_roots;
-inline std::mutex g_rootsMutex;
+                           detail::StringViewHash, std::equal_to<>> kCtoriumBeanContextRoot;
+inline std::mutex kCtoriumBeanContextRootMutex;
 
 // -------------------------------------------------------------------------
 // BeanContext constructors and destructor
@@ -79,11 +79,11 @@ inline BeanContext& BeanContext::resolveContext() {
 }
 
 inline BeanContext& BeanContext::resolveContext(std::string_view key) {
-    std::lock_guard lock(g_rootsMutex);
+    std::lock_guard lock(kCtoriumBeanContextRootMutex);
     // Transparent find: no std::string allocated on hit.
-    auto it = g_roots.find(key);
-    if (it != g_roots.end()) return *it->second;
-    auto [jt, _] = g_roots.emplace(std::string(key),
+    auto it = kCtoriumBeanContextRoot.find(key);
+    if (it != kCtoriumBeanContextRoot.end()) return *it->second;
+    auto [jt, _] = kCtoriumBeanContextRoot.emplace(std::string(key),
         std::unique_ptr<BeanContext>(new BeanContext(std::string(key))));
     return *jt->second;
 }
@@ -156,8 +156,8 @@ inline void BeanContext::stop() {
     core().stop();
     // Remove from the global table; the unique_ptr deletion may destroy *this.
     // No access to *this is permitted after this line.
-    std::lock_guard lock(g_rootsMutex);
-    g_roots.erase(key_);
+    std::lock_guard lock(kCtoriumBeanContextRootMutex);
+    kCtoriumBeanContextRoot.erase(key_);
 }
 
 // -------------------------------------------------------------------------

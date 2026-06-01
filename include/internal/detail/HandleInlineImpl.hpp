@@ -194,43 +194,112 @@ namespace ctr {
         return found;
     }
 
+    enum class CastTargetKind {
+        Incompatible,
+        Proxy,
+        SameExposed,
+        Concrete,
+        ExposedAlias,
+        DowncastUnavailable
+    };
+
+    struct CastTarget {
+        CastTargetKind kind = CastTargetKind::Incompatible;
+        detail::DescriptorId descId = detail::kInvalidDescriptorId;
+        void* object = nullptr;
+
+        [[nodiscard]] bool compatible() const noexcept {
+            return kind != CastTargetKind::Incompatible;
+        }
+
+        [[nodiscard]] bool castable() const noexcept {
+            return compatible() && kind != CastTargetKind::DowncastUnavailable;
+        }
+    };
+
+    template <class U>
+    [[nodiscard]] static CastTarget resolveCastTarget(
+        detail::Registry* reg,
+        void* object,
+        detail::DescriptorId descId
+        ) noexcept {
+        if (reg == nullptr)
+            return {};
+
+        const detail::TypeId uid = reg->typeIdFor<U>();
+        if (uid == detail::kInvalidTypeId)
+            return {};
+
+        const detail::Descriptor& desc = reg->descriptorTable().at(descId);
+        const detail::DescriptorCold& cold = reg->descriptorTable().coldAt(descId);
+        if (object == nullptr) {
+            return cold.exposedType == uid
+                ? CastTarget{CastTargetKind::Proxy, descId, nullptr}
+                : CastTarget{};
+        }
+
+        if (cold.exposedType == uid)
+            return CastTarget{CastTargetKind::SameExposed, descId, object};
+
+        const detail::DescriptorId primary = desc.primaryDescriptor;
+        const bool concreteTarget = cold.concreteType == uid;
+        detail::DescriptorId aliasTarget = detail::kInvalidDescriptorId;
+        if (!concreteTarget && primary != detail::kInvalidDescriptorId) {
+            aliasTarget = findAliasByPrimary(reg, uid, cold.name, primary);
+            if (aliasTarget == detail::kInvalidDescriptorId)
+                return {};
+        } else if (!concreteTarget) {
+            return {};
+        }
+
+        void* concretePtr = object;
+        if (cold.adjustToConcrete != nullptr) {
+            concretePtr = cold.adjustToConcrete(object);
+        } else if (primary != descId && primary != detail::kInvalidDescriptorId) {
+            return CastTarget{
+                CastTargetKind::DowncastUnavailable,
+                concreteTarget ? primary : aliasTarget,
+                nullptr};
+        }
+
+        if (concreteTarget)
+            return CastTarget{CastTargetKind::Concrete, primary, concretePtr};
+
+        const detail::Descriptor& targetDesc =
+            reg->descriptorTable().at(aliasTarget);
+        void* targetPtr = concretePtr;
+        if (targetDesc.adjustToExposed != nullptr)
+            targetPtr = targetDesc.adjustToExposed(concretePtr);
+        return CastTarget{CastTargetKind::ExposedAlias, aliasTarget, targetPtr};
+    }
+
     template <class T>
     template <class U>
     bool Bean<T>::compatible() const noexcept {
         detail::Registry* reg = registry();
-        if (reg == nullptr)
-            return false;
-        const detail::TypeId uid = reg->typeIdFor<U>();
-        if (uid == detail::kInvalidTypeId)
-            return false;
-        if (object_ != nullptr) {
-            const detail::Descriptor &d =
-                reg->descriptorTable().at(bits_.f1.descId);
-            const detail::DescriptorCold &cold =
-                reg->descriptorTable().coldAt(bits_.f1.descId);
-            if (cold.exposedType == uid)
-                return true;
-            if (cold.concreteType == uid)
-                return true;
-            // Check if U is another exposed base of the same primary.
-            if (d.primaryDescriptor != detail::kInvalidDescriptorId) {
-                return findAliasByPrimary(reg, uid, cold.name, d.primaryDescriptor)
-                    != detail::kInvalidDescriptorId;
-            }
-            return false;
-        }
-        return reg->descriptorTable().coldAt(bits_.f2.descId).exposedType == uid;
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        return resolveCastTarget<U>(reg, object_, descId).compatible();
     }
 
     template <class T>
     template <class U>
     Bean<U> Bean<T>::cast() const {
-        if (!compatible<U>()) {
+        detail::Registry* reg = registry();
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        const CastTarget target = resolveCastTarget<U>(reg, object_, descId);
+        if (!target.compatible()) {
             throw ctr::ResolutionError(
                 "Bean::cast: the bean is not compatible with the requested type."
                 );
         }
-        if (object_ == nullptr) {
+        if (!target.castable()) {
+            throw ctr::ResolutionError(
+                "Bean::cast: cannot cast from virtual base — downcast unavailable."
+                );
+        }
+        if (target.kind == CastTargetKind::Proxy) {
             // Form 2: reinterpret bits (scope-proxy — no pointer adjustment needed).
             Bean<U> result;
             result.object_ = nullptr;
@@ -239,18 +308,9 @@ namespace ctr {
             return result;
         }
 
-        detail::Registry* reg = registry();
-        const detail::Descriptor &selfDesc =
-            reg->descriptorTable().at(bits_.f1.descId);
-        const detail::DescriptorCold &selfCold =
-            reg->descriptorTable().coldAt(bits_.f1.descId);
-        const detail::TypeId uid = reg->typeIdFor<U>();
-        const detail::DescriptorId selfPrimary = selfDesc.primaryDescriptor;
-
-        // Case 1: U is the exact same exposed type — no adjustment needed.
-        if (selfCold.exposedType == uid) {
+        if (target.kind == CastTargetKind::SameExposed) {
             Bean<U> result;
-            result.object_ = static_cast<U *>(object_);
+            result.object_ = static_cast<U *>(target.object);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
             if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
@@ -258,49 +318,10 @@ namespace ctr {
             return result;
         }
 
-        // Recover the concrete pointer via adjustToConcrete.
-        void *concretePtr = object_;
-        if (selfCold.adjustToConcrete != nullptr) {
-            concretePtr = selfCold.adjustToConcrete(object_);
-        } else if (selfDesc.primaryDescriptor != bits_.f1.descId
-            && selfDesc.primaryDescriptor != detail::kInvalidDescriptorId) {
-            // Virtual base alias: adjustToConcrete == nullptr means no downcast available.
-            // compatible<U>() returning true here means U == exposedType (already handled above).
-            throw ctr::ResolutionError(
-                "Bean::cast: cannot cast from virtual base — downcast unavailable."
-                );
-        }
-        // else: primary (identity), concretePtr == object_
-
-        // Case 2: U is the concrete type — use primary descriptor.
-        if (selfCold.concreteType == uid) {
-            Bean<U> result;
-            result.object_ = static_cast<U *>(concretePtr);
-            result.bits_.f1.slot = bits_.f1.slot;
-            result.bits_.f1.descId = selfPrimary;
-            result.registry_ = registry_;
-            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
-                result.retainIfPrototype();
-            return result;
-        }
-
-        // Case 3: U is another exposed base — find its alias descriptor.
-        const detail::DescriptorId targetId =
-            findAliasByPrimary(reg, uid, selfCold.name, selfPrimary);
-        if (targetId == detail::kInvalidDescriptorId) {
-            throw ctr::ResolutionError(
-                "Bean::cast: the bean is not compatible with the requested type."
-                );
-        }
-        const detail::Descriptor &targetDesc = reg->descriptorTable().at(targetId);
-        void *targetPtr = concretePtr;
-        if (targetDesc.adjustToExposed != nullptr)
-            targetPtr = targetDesc.adjustToExposed(concretePtr);
-
         Bean<U> result;
-        result.object_ = static_cast<U *>(targetPtr);
+        result.object_ = static_cast<U *>(target.object);
         result.bits_.f1.slot = bits_.f1.slot;
-        result.bits_.f1.descId = targetId;
+        result.bits_.f1.descId = target.descId;
         result.registry_ = registry_;
         if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
             result.retainIfPrototype();
@@ -310,13 +331,39 @@ namespace ctr {
     template <class T>
     template <class U>
     std::optional<Bean<U>> Bean<T>::tryCast() const {
-        if (!compatible<U>())
+        detail::Registry* reg = registry();
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        const CastTarget target = resolveCastTarget<U>(reg, object_, descId);
+        if (!target.castable())
             return std::nullopt;
-        try {
-            return cast<U>();
-        } catch (...) {
-            return std::nullopt;
+
+        if (target.kind == CastTargetKind::Proxy) {
+            Bean<U> result;
+            result.object_ = nullptr;
+            result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.registry_ = registry_;
+            return result;
         }
+
+        if (target.kind == CastTargetKind::SameExposed) {
+            Bean<U> result;
+            result.object_ = static_cast<U *>(target.object);
+            result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.registry_ = registry_;
+            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+                result.retainIfPrototype();
+            return result;
+        }
+
+        Bean<U> result;
+        result.object_ = static_cast<U *>(target.object);
+        result.bits_.f1.slot = bits_.f1.slot;
+        result.bits_.f1.descId = target.descId;
+        result.registry_ = registry_;
+        if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+            result.retainIfPrototype();
+        return result;
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -349,53 +396,37 @@ namespace ctr {
     template <class U>
     bool AnyBean::compatible() const noexcept {
         detail::Registry* reg = registry();
-        if (reg == nullptr)
-            return false;
-        const detail::TypeId uid = reg->typeIdFor<U>();
-        if (uid == detail::kInvalidTypeId)
-            return false;
         const detail::DescriptorId descId =
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
-        const detail::Descriptor &d = reg->descriptorTable().at(descId);
-        const detail::DescriptorCold &cold = reg->descriptorTable().coldAt(descId);
-        if (object_ == nullptr)
-            return cold.exposedType == uid;
-        if (cold.exposedType == uid)
-            return true;
-        if (cold.concreteType == uid)
-            return true;
-        if (d.primaryDescriptor != detail::kInvalidDescriptorId) {
-            return findAliasByPrimary(reg, uid, cold.name, d.primaryDescriptor)
-                != detail::kInvalidDescriptorId;
-        }
-        return false;
+        return resolveCastTarget<U>(reg, object_, descId).compatible();
     }
 
     template <class U>
     Bean<U> AnyBean::cast() const {
-        if (!compatible<U>()) {
+        detail::Registry* reg = registry();
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        const CastTarget target = resolveCastTarget<U>(reg, object_, descId);
+        if (!target.compatible()) {
             throw ctr::ResolutionError(
                 "AnyBean::cast: the bean is not compatible with the requested type."
                 );
         }
-        if (object_ == nullptr) {
+        if (!target.castable()) {
+            throw ctr::ResolutionError(
+                "AnyBean::cast: cannot cast from virtual base — downcast unavailable."
+                );
+        }
+        if (target.kind == CastTargetKind::Proxy) {
             Bean<U> result;
             result.object_ = nullptr;
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
             return result;
         }
-        detail::Registry* reg = registry();
-        const detail::Descriptor &selfDesc =
-            reg->descriptorTable().at(bits_.f1.descId);
-        const detail::DescriptorCold &selfCold =
-            reg->descriptorTable().coldAt(bits_.f1.descId);
-        const detail::TypeId uid = reg->typeIdFor<U>();
-        const detail::DescriptorId selfPrimary = selfDesc.primaryDescriptor;
-
-        if (selfCold.exposedType == uid) {
+        if (target.kind == CastTargetKind::SameExposed) {
             Bean<U> result;
-            result.object_ = static_cast<U *>(object_);
+            result.object_ = static_cast<U *>(target.object);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
             result.registry_ = registry_;
             if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
@@ -403,43 +434,10 @@ namespace ctr {
             return result;
         }
 
-        void *concretePtr = object_;
-        if (selfCold.adjustToConcrete != nullptr) {
-            concretePtr = selfCold.adjustToConcrete(object_);
-        } else if (selfDesc.primaryDescriptor != bits_.f1.descId
-            && selfDesc.primaryDescriptor != detail::kInvalidDescriptorId) {
-            throw ctr::ResolutionError(
-                "AnyBean::cast: cannot cast from virtual base — downcast unavailable."
-                );
-        }
-
-        if (selfCold.concreteType == uid) {
-            Bean<U> result;
-            result.object_ = static_cast<U *>(concretePtr);
-            result.bits_.f1.slot = bits_.f1.slot;
-            result.bits_.f1.descId = selfPrimary;
-            result.registry_ = registry_;
-            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
-                result.retainIfPrototype();
-            return result;
-        }
-
-        const detail::DescriptorId targetId =
-            findAliasByPrimary(reg, uid, selfCold.name, selfPrimary);
-        if (targetId == detail::kInvalidDescriptorId) {
-            throw ctr::ResolutionError(
-                "AnyBean::cast: the bean is not compatible with the requested type."
-                );
-        }
-        const detail::Descriptor &targetDesc = reg->descriptorTable().at(targetId);
-        void *targetPtr = concretePtr;
-        if (targetDesc.adjustToExposed != nullptr)
-            targetPtr = targetDesc.adjustToExposed(concretePtr);
-
         Bean<U> result;
-        result.object_ = static_cast<U *>(targetPtr);
+        result.object_ = static_cast<U *>(target.object);
         result.bits_.f1.slot = bits_.f1.slot;
-        result.bits_.f1.descId = targetId;
+        result.bits_.f1.descId = target.descId;
         result.registry_ = registry_;
         if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
             result.retainIfPrototype();
@@ -448,13 +446,39 @@ namespace ctr {
 
     template <class U>
     std::optional<Bean<U>> AnyBean::tryCast() const {
-        if (!compatible<U>())
+        detail::Registry* reg = registry();
+        const detail::DescriptorId descId =
+            object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
+        const CastTarget target = resolveCastTarget<U>(reg, object_, descId);
+        if (!target.castable())
             return std::nullopt;
-        try {
-            return cast<U>();
-        } catch (...) {
-            return std::nullopt;
+
+        if (target.kind == CastTargetKind::Proxy) {
+            Bean<U> result;
+            result.object_ = nullptr;
+            result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.registry_ = registry_;
+            return result;
         }
+
+        if (target.kind == CastTargetKind::SameExposed) {
+            Bean<U> result;
+            result.object_ = static_cast<U *>(target.object);
+            result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.registry_ = registry_;
+            if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+                result.retainIfPrototype();
+            return result;
+        }
+
+        Bean<U> result;
+        result.object_ = static_cast<U *>(target.object);
+        result.bits_.f1.slot = bits_.f1.slot;
+        result.bits_.f1.descId = target.descId;
+        result.registry_ = registry_;
+        if (result.bits_.f1.slot != detail::kInvalidSlotId && result.object_ != nullptr)
+            result.retainIfPrototype();
+        return result;
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

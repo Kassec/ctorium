@@ -13,6 +13,7 @@
 #include "../DescriptorId.hpp"
 #include "../SlotId.hpp"
 #include "../../api/ctr/Errors.hpp"
+#include "TreiberFreelist.hpp"
 
 namespace ctr::detail {
 
@@ -77,20 +78,20 @@ public:
      */
     [[nodiscard]] SlotId allocate(DescriptorId descId, void* mem) {
         // Lock-free pop from ABA-safe Treiber stack.
-        std::uint64_t head = freelistHead_.load(std::memory_order_acquire);
-        while ((head & 0xFFFF'FFFFu) != static_cast<std::uint64_t>(kInvalidSlotId)) {
-            const std::uint32_t slotId =
-                static_cast<std::uint32_t>(head & 0xFFFF'FFFFu);
-            const std::size_t offset = slotId % kChunkSize;
-            Chunk* chunk = chunks_[slotId / kChunkSize].load(std::memory_order_acquire);
-            const std::uint32_t next =
-                chunk->nextFree[offset].load(std::memory_order_relaxed);
-            if (freelistHead_.compare_exchange_weak(
-                    head, static_cast<std::uint64_t>(next),
-                    std::memory_order_release, std::memory_order_acquire)) {
-                chunk->metas[offset] = {mem, descId};
-                return static_cast<SlotId>(slotId);
-            }
+        Chunk* poppedChunk = nullptr;
+        std::size_t poppedOffset = 0;
+        const SlotId freeSlot = popTreiberFreelist(
+            freelistHead_,
+            [this, &poppedChunk, &poppedOffset](SlotId slot)
+                    -> std::atomic<std::uint32_t>& {
+                poppedOffset = slot % kChunkSize;
+                poppedChunk = chunks_[slot / kChunkSize].load(
+                    std::memory_order_acquire);
+                return poppedChunk->nextFree[poppedOffset];
+            });
+        if (freeSlot != kInvalidSlotId) {
+            poppedChunk->metas[poppedOffset] = {mem, descId};
+            return freeSlot;
         }
         // Freelist empty — ensure the target chunk exists, then claim the slot.
         std::lock_guard lock(growMutex_);
@@ -133,16 +134,13 @@ public:
         Chunk* chunk = chunks_[id / kChunkSize].load(std::memory_order_acquire);
         chunk->metas[offset].memory = nullptr;
         const std::uint32_t generation = chunk->generation[offset];
-        std::uint64_t head = freelistHead_.load(std::memory_order_relaxed);
-        do {
-            chunk->nextFree[offset].store(
-                static_cast<std::uint32_t>(head & 0xFFFF'FFFFu),
-                std::memory_order_relaxed);
-        } while (!freelistHead_.compare_exchange_weak(
-            head,
-            (static_cast<std::uint64_t>(generation) << 32)
-                | static_cast<std::uint64_t>(id),
-            std::memory_order_release, std::memory_order_relaxed));
+        pushTreiberFreelist(
+            freelistHead_,
+            id,
+            generation,
+            [chunk, offset](SlotId) -> std::atomic<std::uint32_t>& {
+                return chunk->nextFree[offset];
+            });
     }
 
     /** @brief Increments the reference count (Bean<T> copy). Lock-free. */
@@ -214,16 +212,13 @@ public:
         Chunk* chunk = chunks_[id / kChunkSize].load(std::memory_order_acquire);
         chunk->metas[offset].memory = nullptr;
         const std::uint32_t generation = ++chunk->generation[offset];
-        std::uint64_t head = freelistHead_.load(std::memory_order_relaxed);
-        do {
-            chunk->nextFree[offset].store(
-                static_cast<std::uint32_t>(head & 0xFFFF'FFFFu),
-                std::memory_order_relaxed);
-        } while (!freelistHead_.compare_exchange_weak(
-            head,
-            (static_cast<std::uint64_t>(generation) << 32)
-                | static_cast<std::uint64_t>(id),
-            std::memory_order_release, std::memory_order_relaxed));
+        pushTreiberFreelist(
+            freelistHead_,
+            id,
+            generation,
+            [chunk, offset](SlotId) -> std::atomic<std::uint32_t>& {
+                return chunk->nextFree[offset];
+            });
         releaseLiveSlot();
     }
 

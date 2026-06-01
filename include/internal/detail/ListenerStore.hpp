@@ -15,6 +15,7 @@
 
 #include "../TypeId.hpp"
 #include "../../api/ctr/ListenerHandle.hpp"
+#include "TreiberFreelist.hpp"
 
 namespace ctr::detail {
 
@@ -48,9 +49,11 @@ namespace ctr::detail {
  *
  * ### Thread safety
  * `addListener()` and `removeListener()` acquire `mutex_` (exclusive).
- * `dispatch()` is fully lock-free: it loads the raw pointer with `acquire` ordering
- * and iterates outside any lock, so callbacks can register or remove listeners without
- * deadlock.
+ * `dispatch()` is lock-free when a dispatch hazard slot is available: it loads
+ * the raw pointer with `acquire` ordering and iterates outside any lock, so
+ * callbacks can register or remove listeners without deadlock. If all fixed
+ * hazard slots are held by other live dispatching threads, only that thread
+ * falls back to dispatch under `mutex_` instead of terminating.
  */
 class ListenerStore {
 public:
@@ -65,9 +68,15 @@ public:
     /**
      * @brief Fixed dispatch hazard slot count.
      *
-     * Dispatch hazard slots are indexed by a process-wide monotone thread token.
-     * The table is fixed-size to keep `dispatch()` allocation-free and lock-free;
-     * exceeding this many dispatching threads is a configuration error.
+     * Dispatch hazard slots are indexed by a recyclable process-wide thread
+     * token. The table is fixed-size to keep normal `dispatch()` allocation-free
+     * and lock-free; exceeding this many concurrently alive dispatching threads
+     * uses the locked fallback for the affected thread.
+     *
+     * Kept at 4096: reducing the table would make the documented locked
+     * fallback, including its reentrant-mutation deadlock risk, easier to hit in
+     * normal workloads. A smaller table requires a reentrant-safe fallback,
+     * which is outside this correction.
      */
     static constexpr std::size_t kDispatchHazardSlotCount = 4096;
 
@@ -154,6 +163,13 @@ public:
      * Dispatches global listeners and typed listeners for `beanTypeId` in
      * priority-descending, registration-order-ascending order via two-pointer merge.
      *
+     * Fallback: if more than `kDispatchHazardSlotCount` live threads dispatch
+     * concurrently, the affected thread cannot acquire a hazard slot and calls
+     * `dispatchLocked_()`. That path dispatches under `mutex_` to avoid a crash
+     * or dropped callback. It costs one mutex acquisition and serializes listener
+     * mutation; unlike the lock-free path, listener add/remove from a callback on
+     * the same store can deadlock because the mutex is already held.
+     *
      * @param phaseIndex  Phase index in `[0, kPhaseCount)`.
      * @param beanTypeId  TypeId of the bean being dispatched.
      * @param bean        Pointer to the `const AnyBean` (cast from void* by callers).
@@ -166,55 +182,41 @@ public:
         // Fast-exit: lock-free; avoids even the atomic load when idle.
         if (phaseSizes_[phaseIndex].load(std::memory_order_relaxed) == 0) return;
 
+        std::atomic<const View*>* hazardSlot = dispatchHazardSlot_();
+        if (hazardSlot == nullptr) {
+            dispatchLocked_(phaseIndex, beanTypeId, bean);
+            return;
+        }
+
         // Load the published view and protect it before dereferencing. acquire
         // pairs with the release store in rebuildView_().
         const View* view = view_.load(std::memory_order_acquire);
         if (view == nullptr) return;
 
-        std::atomic<const View*>& hazardSlot = dispatchHazardSlot_();
         while (true) {
-            hazardSlot.store(view, std::memory_order_relaxed);
+            hazardSlot->store(view, std::memory_order_release);
+            // Closes the StoreLoad hole: without this, a dispatcher could
+            // reload view_ before its hazard publication is visible, while a
+            // reclaimer publishes a replacement, scans the old empty slot, and
+            // frees the view the dispatcher is about to dereference.
+            std::atomic_thread_fence(std::memory_order_seq_cst);
             const View* observed = view_.load(std::memory_order_acquire);
             if (observed == view)
                 break;
             view = observed;
             if (view == nullptr) {
-                hazardSlot.store(nullptr, std::memory_order_relaxed);
+                hazardSlot->store(nullptr, std::memory_order_release);
                 return;
             }
         }
 
         try {
-            const PhaseView& pv = (*view)[phaseIndex];
-
-            static const std::vector<ViewEntry> kEmpty;
-            const std::vector<ViewEntry>* typedList = &kEmpty;
-            if (!pv.typed.empty()) {
-                const auto it = pv.typed.find(beanTypeId);
-                if (it != pv.typed.end()) typedList = &it->second;
-            }
-            const auto& typeds = *typedList;
-            const auto& globals = pv.global;
-
-            // Two-pointer merge: both lists sorted by (priority desc, token asc).
-            std::size_t gi = 0, ti = 0;
-            while (gi < globals.size() && ti < typeds.size()) {
-                const auto& g = globals[gi];
-                const auto& t = typeds[ti];
-                if (g.priority > t.priority
-                        || (g.priority == t.priority && g.token < t.token)) {
-                    g.callback(bean); ++gi;
-                } else {
-                    t.callback(bean); ++ti;
-                }
-            }
-            while (gi < globals.size()) globals[gi++].callback(bean);
-            while (ti < typeds.size()) typeds[ti++].callback(bean);
+            dispatchFromView_(*view, phaseIndex, beanTypeId, bean);
         } catch (...) {
-            hazardSlot.store(nullptr, std::memory_order_relaxed);
+            hazardSlot->store(nullptr, std::memory_order_release);
             throw;
         }
-        hazardSlot.store(nullptr, std::memory_order_relaxed);
+        hazardSlot->store(nullptr, std::memory_order_release);
     }
 
     /**
@@ -244,6 +246,7 @@ public:
         view_.store(nullptr, std::memory_order_release);
         if (currentView_)
             allViews_.push_back(std::move(currentView_));
+        std::atomic_thread_fence(std::memory_order_seq_cst);
         reclaimRetiredViews_();
     }
 
@@ -335,19 +338,76 @@ private:
             allViews_.push_back(std::move(currentView_));
         currentView_ = std::move(newView);
         view_.store(rawPtr, std::memory_order_release);
+        // Pairs with dispatch()'s seq_cst fence so the scan cannot pass the
+        // publication of the replacement view before a dispatcher's hazard
+        // publication is globally ordered.
+        std::atomic_thread_fence(std::memory_order_seq_cst);
         reclaimRetiredViews_();
     }
 
-    [[nodiscard]] static std::uint32_t dispatchThreadToken_() noexcept {
-        thread_local const std::uint32_t token = [] {
-            const std::uint32_t assigned =
-                nextDispatchThreadToken_.fetch_add(1, std::memory_order_relaxed);
-            if (assigned >= kDispatchHazardSlotCount)
-                std::terminate();
-            publishHazardSlotCount_(static_cast<std::size_t>(assigned) + 1);
-            return assigned;
-        }();
+    static constexpr std::uint32_t kInvalidDispatchHazardSlot = kInvalidSlotId;
+
+    // Spec-authorized nested token; kept with Entry/ViewEntry/PhaseView/View
+    // because it belongs to ListenerStore's dispatch reclamation internals.
+    struct DispatchHazardToken {
+        std::uint32_t slot = kInvalidDispatchHazardSlot;
+
+        DispatchHazardToken() = default;
+        DispatchHazardToken(const DispatchHazardToken&) = delete;
+        DispatchHazardToken& operator=(const DispatchHazardToken&) = delete;
+
+        ~DispatchHazardToken() {
+            if (slot != kInvalidDispatchHazardSlot)
+                releaseDispatchHazardSlot_(slot);
+        }
+
+        [[nodiscard]] std::uint32_t acquire() noexcept {
+            if (slot == kInvalidDispatchHazardSlot)
+                slot = acquireDispatchHazardSlot_();
+            return slot;
+        }
+    };
+
+    [[nodiscard]] static DispatchHazardToken& dispatchHazardToken_() noexcept {
+        thread_local DispatchHazardToken token;
         return token;
+    }
+
+    [[nodiscard]] static std::uint32_t acquireDispatchHazardSlot_() noexcept {
+        const SlotId recycled = popTreiberFreelist(
+            dispatchHazardFreelistHead_,
+            [](SlotId slot) -> std::atomic<std::uint32_t>& {
+                return dispatchHazardNextFree_[slot];
+            });
+        if (recycled != kInvalidSlotId)
+            return recycled;
+
+        std::uint32_t observed =
+            nextDispatchHazardSlot_.load(std::memory_order_relaxed);
+        while (observed < kDispatchHazardSlotCount) {
+            if (nextDispatchHazardSlot_.compare_exchange_weak(
+                    observed,
+                    observed + 1,
+                    std::memory_order_acq_rel,
+                    std::memory_order_relaxed)) {
+                publishHazardSlotCount_(static_cast<std::size_t>(observed) + 1);
+                return observed;
+            }
+        }
+
+        return kInvalidDispatchHazardSlot;
+    }
+
+    static void releaseDispatchHazardSlot_(std::uint32_t slot) noexcept {
+        const std::uint32_t generation =
+            ++dispatchHazardGeneration_[slot];
+        pushTreiberFreelist(
+            dispatchHazardFreelistHead_,
+            slot,
+            generation,
+            [](SlotId freeSlot) -> std::atomic<std::uint32_t>& {
+                return dispatchHazardNextFree_[freeSlot];
+            });
     }
 
     static void publishHazardSlotCount_(std::size_t count) noexcept {
@@ -362,8 +422,11 @@ private:
         }
     }
 
-    [[nodiscard]] std::atomic<const View*>& dispatchHazardSlot_() const noexcept {
-        return hazardViews_[dispatchThreadToken_()];
+    [[nodiscard]] std::atomic<const View*>* dispatchHazardSlot_() const noexcept {
+        const std::uint32_t slot = dispatchHazardToken_().acquire();
+        if (slot == kInvalidDispatchHazardSlot)
+            return nullptr;
+        return &hazardViews_[slot];
     }
 
     [[nodiscard]] bool hazardReferences_(const View* view) const noexcept {
@@ -371,7 +434,7 @@ private:
             publishedDispatchHazardSlots_.load(std::memory_order_acquire),
             kDispatchHazardSlotCount);
         for (std::size_t i = 0; i < slotCount; ++i) {
-            if (hazardViews_[i].load(std::memory_order_relaxed) == view)
+            if (hazardViews_[i].load(std::memory_order_acquire) == view)
                 return true;
         }
         return false;
@@ -386,6 +449,57 @@ private:
                     return !hazardReferences_(view.get());
                 }),
             allViews_.end());
+    }
+
+    /**
+     * @brief Locked fallback when all dispatch hazard slots are exhausted.
+     *
+     * Trigger: more than `kDispatchHazardSlotCount` concurrently alive threads
+     * dispatch on listener stores. Behavior: dispatch the current view under
+     * `mutex_`. Cost: one mutex acquisition and serialized listener mutation.
+     * Semantic loss: reentrant listener mutation from a callback on this store
+     * can deadlock on this fallback path; cross-thread mutation waits behind
+     * the dispatch. Reason: preserve callback delivery and avoid terminate when
+     * the fixed hazard table is exhausted.
+     */
+    void dispatchLocked_(std::size_t phaseIndex,
+                         TypeId beanTypeId,
+                         const void* bean) const {
+        std::lock_guard lock(mutex_);
+        if (currentView_ == nullptr)
+            return;
+        dispatchFromView_(*currentView_, phaseIndex, beanTypeId, bean);
+    }
+
+    static void dispatchFromView_(const View& view,
+                                  std::size_t phaseIndex,
+                                  TypeId beanTypeId,
+                                  const void* bean) {
+        const PhaseView& pv = view[phaseIndex];
+
+        static const std::vector<ViewEntry> kEmpty;
+        const std::vector<ViewEntry>* typedList = &kEmpty;
+        if (!pv.typed.empty()) {
+            const auto it = pv.typed.find(beanTypeId);
+            if (it != pv.typed.end()) typedList = &it->second;
+        }
+        const auto& typeds = *typedList;
+        const auto& globals = pv.global;
+
+        // Two-pointer merge: both lists sorted by (priority desc, token asc).
+        std::size_t gi = 0, ti = 0;
+        while (gi < globals.size() && ti < typeds.size()) {
+            const auto& g = globals[gi];
+            const auto& t = typeds[ti];
+            if (g.priority > t.priority
+                    || (g.priority == t.priority && g.token < t.token)) {
+                g.callback(bean); ++gi;
+            } else {
+                t.callback(bean); ++ti;
+            }
+        }
+        while (gi < globals.size()) globals[gi++].callback(bean);
+        while (ti < typeds.size()) typeds[ti++].callback(bean);
     }
 
     // -------------------------------------------------------------------------
@@ -409,7 +523,15 @@ private:
     mutable std::array<
         std::atomic<const View*>,
         kDispatchHazardSlotCount> hazardViews_{};
-    inline static std::atomic<std::uint32_t> nextDispatchThreadToken_{0};
+    inline static std::atomic<std::uint32_t> nextDispatchHazardSlot_{0};
+    inline static std::atomic<std::uint64_t> dispatchHazardFreelistHead_{
+        static_cast<std::uint64_t>(kInvalidDispatchHazardSlot)};
+    inline static std::array<
+        std::atomic<std::uint32_t>,
+        kDispatchHazardSlotCount> dispatchHazardNextFree_{};
+    inline static std::array<
+        std::uint32_t,
+        kDispatchHazardSlotCount> dispatchHazardGeneration_{};
     inline static std::atomic<std::size_t> publishedDispatchHazardSlots_{0};
 };
 

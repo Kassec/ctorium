@@ -24,20 +24,20 @@ inline constexpr SessionSlot kInvalidSessionSlot = std::numeric_limits<SessionSl
 // between this internal header and detail/ResolutionContext.hpp.
 
 /**
- * @brief Runtime descriptor stored in the registry descriptor table.
+ * @brief Cold runtime descriptor data stored out of the hot descriptor table.
  *
- * Built by start() from a ContributedDescriptor: the Identity is consumed for deduplication
- * and discarded; factoryMethodIdentity is resolved to factoryMethodDescriptor (DescriptorId).
+ * Fields here are read only during metadata inspection, casting, materialization,
+ * destruction, eager-start selection, or startup validation. `DescriptorTable`
+ * stores these blocks in a parallel vector indexed by the same `DescriptorId`
+ * as the hot `Descriptor`.
  */
-struct Descriptor {
+struct DescriptorCold {
     /** TypeId of the type exposed to resolution callers. */
     TypeId       exposedType;
     /** TypeId of the actual instantiated concrete type. */
     TypeId       concreteType;
     /** NameId qualifier; kUnnamed when no named annotation is present. */
     NameId       name;
-    /** Priority used to arbitrate among candidates sharing the same exposedType and name. */
-    std::int32_t priority;
     /**
      * sizeof the concrete type, in bytes.
      * When `size == 0`, the memory is externally owned;
@@ -47,25 +47,9 @@ struct Descriptor {
     /** alignof the concrete type, in bytes. */
     std::size_t  align;
     /** DescriptorId of the source factory method, or kInvalidDescriptorId when not factory-produced. */
-    DescriptorId factoryMethodDescriptor;
+    DescriptorId factoryMethodDescriptor = kInvalidDescriptorId;
     /** Unqualified producer method name for `BeanMetadata::factoryMethod()`. */
     const char*  factoryMethodName = nullptr;
-    /**
-     * @brief DescriptorId of the primary (concrete-typed) descriptor.
-     *
-     * For a primary descriptor: equals `this` descriptor's own DescriptorId.
-     * For an alias (exposed-base) descriptor: equals the concrete type's DescriptorId.
-     * `kInvalidDescriptorId` before `start()` initialises it.
-     *
-     * Used by `materializeOne` to redirect alias resolution to the primary,
-     * by `compatible<U>()` to walk the alias graph, and by
-     * `materializeEagerSingletons()` to skip alias descriptors.
-     */
-    DescriptorId primaryDescriptor = kInvalidDescriptorId;
-    /** Dense per-session descriptor slot; kInvalidSessionSlot for non-session descriptors. */
-    SessionSlot  sessionSlot = kInvalidSessionSlot;
-    /** Scope lifetime governing instance sharing and destruction. */
-    Lifetime     lifetime;
     /** How this descriptor was contributed to the registry. */
     Origin       origin;
 
@@ -74,7 +58,7 @@ struct Descriptor {
      *
      * Propagated from `[[=ctr::singleton{.lazy = ...}]]`; always `true` for non-singleton
      * lifetimes (lazy is meaningless for prototype/session/threadLocal).
-     * `false` → `materializeEagerSingletons()` constructs this instance at `start()`.
+     * `false` means `materializeEagerSingletons()` constructs this instance at `start()`.
      */
     bool lazy = true;
 
@@ -100,13 +84,11 @@ struct Descriptor {
     /**
      * @brief Deallocation thunk matching `allocAndConstruct`.
      * When non-null, `executeDestructionLifecycle` calls this instead of
-     * `::operator delete(mem, size, align_val)`.  Calls `T::operator delete(p)`
-     * (plain deallocation, no destructor — `destroy` already called `~T()`).
-     * Non-null ↔ `allocAndConstruct` non-null.
+     * `::operator delete(mem, size, align_val)`. Calls `T::operator delete(p)`
+     * (plain deallocation, no destructor because `destroy` already called `~T()`).
+     * Non-null iff `allocAndConstruct` is non-null.
      */
     void       (*dealloc)(void*) noexcept = nullptr;
-
-    // ── Bean-metadata fields (SPEC-bean-metadata) ────────────────────────────
 
     /**
      * @brief Returns `typeid(ExposedType)` at runtime for `BeanMetadata::observedType()`.
@@ -122,7 +104,7 @@ struct Descriptor {
 
     /**
      * @brief Static-lifetime bean name string for `BeanMetadata::name()`.
-     * Propagated from `ContributedDescriptor::beanName`.  Never null (may be "").
+     * Propagated from `ContributedDescriptor::beanName`. Never null (may be "").
      */
     const char* nameStr = nullptr;
 
@@ -133,27 +115,54 @@ struct Descriptor {
      */
     const ctr::BeanReflectiveData* reflectiveData = nullptr;
 
-    // ── Polymorphic-exposure fields (SPEC-polymorphic-exposure) ──────────────
-
     /**
-     * @brief Upcast thunk: `(void* concrete) → void* base`.
-     *
-     * Applied after the primary instance is materialized to yield the exposed pointer.
-     * Equivalent to `static_cast<Base*>(static_cast<Concrete*>(p))`.
-     * `nullptr` for primary descriptors (the concrete ptr IS the exposed ptr).
-     */
-    void*      (*adjustToExposed)(void*) = nullptr;
-
-    /**
-     * @brief Downcast thunk: `(void* base) → void* concrete`.
+     * @brief Downcast thunk: `(void* base) -> void* concrete`.
      *
      * Used by `cast<U>()` / `tryCast<U>()` to recover the concrete pointer before
      * re-adjusting to a different exposed type.
-     * Equivalent to `static_cast<Concrete*>(static_cast<Base*>(p))`.
-     * `nullptr` for primary descriptors AND for virtual-base aliases (downcast
-     * from a virtual base is not expressible as a static_cast).
+     * `nullptr` for primary descriptors and for virtual-base aliases.
      */
     void*      (*adjustToConcrete)(void*) noexcept = nullptr;
+};
+
+/**
+ * @brief Hot runtime descriptor stored in the registry descriptor table.
+ *
+ * Built by start() from a ContributedDescriptor: the Identity is consumed for deduplication
+ * and discarded; factoryMethodIdentity is resolved to DescriptorCold::factoryMethodDescriptor.
+ *
+ * This block keeps only fields needed by resolution arbitration and handle
+ * dereference forms. Rarely-read metadata, casting, construction, and destruction
+ * fields live in `DescriptorCold`.
+ */
+struct Descriptor {
+    /** Priority used to arbitrate among candidates sharing the same exposedType and name. */
+    std::int32_t priority;
+    /**
+     * @brief DescriptorId of the primary (concrete-typed) descriptor.
+     *
+     * For a primary descriptor: equals `this` descriptor's own DescriptorId.
+     * For an alias (exposed-base) descriptor: equals the concrete type's DescriptorId.
+     * `kInvalidDescriptorId` before `start()` initialises it.
+     *
+     * Used by `materializeOne` to redirect alias resolution to the primary,
+     * by `compatible<U>()` to walk the alias graph, and by
+     * `materializeEagerSingletons()` to skip alias descriptors.
+     */
+    DescriptorId primaryDescriptor = kInvalidDescriptorId;
+    /** Dense per-session descriptor slot; kInvalidSessionSlot for non-session descriptors. */
+    SessionSlot  sessionSlot = kInvalidSessionSlot;
+    /** Scope lifetime governing instance sharing. */
+    Lifetime     lifetime;
+
+    /**
+     * @brief Upcast thunk: `(void* concrete) -> void* base`.
+     *
+     * Applied by `Bean<T>::operator->` forms 2/3 after the primary instance is
+     * found or materialized. Kept hot to avoid a cold-block load on dereference.
+     * `nullptr` for primary descriptors (the concrete ptr is the exposed ptr).
+     */
+    void*      (*adjustToExposed)(void*) = nullptr;
 };
 
 } // namespace ctr::detail

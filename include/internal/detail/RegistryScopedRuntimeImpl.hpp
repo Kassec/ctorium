@@ -57,6 +57,7 @@ namespace ctr::detail {
                 : descId;
         const Descriptor &desc =
             primaryDescId == descId ? requestedDesc : descriptors_.at(primaryDescId);
+        const DescriptorCold &cold = descriptors_.coldAt(primaryDescId);
         const SessionSlot slot = desc.sessionSlot;
 
         // Fast path: already materialized (lock-free acquire).
@@ -68,7 +69,7 @@ namespace ctr::detail {
 
         // RuntimeBinding session beans must be pre-stored in sessionStore_ at
         // scope start(). A nil slot means the binding was not renewed for this cycle.
-        if (desc.origin == Origin::RuntimeBinding) {
+        if (cold.origin == Origin::RuntimeBinding) {
             throw ctr::ContextStateError(
                 "Registry::materializeSessionInstance: bound session bean has no "
                 "instance for this scope cycle; call bindSession<T>() before start()."
@@ -93,18 +94,18 @@ namespace ctr::detail {
         if (didMaterialize) {
             void *mem = nullptr;
             try {
-                if (desc.allocAndConstruct != nullptr) {
-                    mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+                if (cold.allocAndConstruct != nullptr) {
+                    mem = cold.allocAndConstruct(static_cast<void *>(&ctx));
                 } else {
-                    mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                    desc.construct(mem, static_cast<void *>(&ctx));
+                    mem = ::operator new(cold.size, std::align_val_t{cold.align});
+                    cold.construct(mem, static_cast<void *>(&ctx));
                 }
             } catch (...) {
                 if (mem) {
-                    if (desc.dealloc != nullptr) {
-                        desc.dealloc(mem);
+                    if (cold.dealloc != nullptr) {
+                        cold.dealloc(mem);
                     } else {
-                        ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                        ::operator delete(mem, cold.size, std::align_val_t{cold.align});
                     }
                 }
                 {
@@ -153,11 +154,11 @@ namespace ctr::detail {
             anyBean.bits_.f1.descId = primaryDescId;
             anyBean.registry_ = this;
 
-            listeners_.dispatch(ListenerStore::phaseInitialized(), desc.exposedType, &anyBean);
-            if (desc.postConstruct) {
-                desc.postConstruct(instance, static_cast<void *>(&ctx));
+            listeners_.dispatch(ListenerStore::phaseInitialized(), cold.exposedType, &anyBean);
+            if (cold.postConstruct) {
+                cold.postConstruct(instance, static_cast<void *>(&ctx));
             }
-            listeners_.dispatch(ListenerStore::phaseCreated(), desc.exposedType, &anyBean);
+            listeners_.dispatch(ListenerStore::phaseCreated(), cold.exposedType, &anyBean);
         }
 
         return instance;
@@ -178,7 +179,7 @@ namespace ctr::detail {
         {
             std::lock_guard lock(writeLock_);
             if (!started_.load(std::memory_order_relaxed)) return false;
-            // Mark stopped first so that Bean<T> destructors triggered by d.destroy()
+            // Mark stopped first so that Bean<T> destructors triggered by cold.destroy()
             // see startedRelaxed()==false and skip releaseIfPrototype(), preventing
             // double-destroy when a bean holds a Bean<T> member to another prototype.
             started_.store(false, std::memory_order_relaxed);

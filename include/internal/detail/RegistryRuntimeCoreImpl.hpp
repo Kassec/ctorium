@@ -6,7 +6,7 @@ namespace ctr::detail {
     // ─────────────────────────────────────────────────────────────────────────────
 
     inline void Registry::executeDestructionLifecycle(DescriptorId descId, void *mem) noexcept {
-        const Descriptor &d = descriptors_.at(descId);
+        const DescriptorCold &cold = descriptors_.coldAt(descId);
         ResolutionContext ctx{*this};
 
         ctr::AnyBean anyBean;
@@ -15,21 +15,21 @@ namespace ctr::detail {
         anyBean.bits_.f1.descId = descId;
         anyBean.registry_ = this;
 
-        listeners_.dispatch(ListenerStore::phasePreDestroy(), d.exposedType, &anyBean);
+        listeners_.dispatch(ListenerStore::phasePreDestroy(), cold.exposedType, &anyBean);
 
-        if (d.preDestroy) {
-            d.preDestroy(mem, static_cast<void *>(&ctx));
+        if (cold.preDestroy) {
+            cold.preDestroy(mem, static_cast<void *>(&ctx));
         }
 
-        d.destroy(mem);
+        cold.destroy(mem);
 
         // anyBean.object_ points to freed memory from here; listeners must not dereference it.
-        listeners_.dispatch(ListenerStore::phaseDestroyed(), d.exposedType, &anyBean);
+        listeners_.dispatch(ListenerStore::phaseDestroyed(), cold.exposedType, &anyBean);
 
-        if (d.dealloc != nullptr) {
-            d.dealloc(mem);
-        } else if (d.size != 0) {
-            ::operator delete(mem, d.size, std::align_val_t{d.align});
+        if (cold.dealloc != nullptr) {
+            cold.dealloc(mem);
+        } else if (cold.size != 0) {
+            ::operator delete(mem, cold.size, std::align_val_t{cold.align});
         }
     }
 
@@ -58,27 +58,28 @@ namespace ctr::detail {
             );
 
         Descriptor d;
-        d.exposedType = typeId;
-        d.concreteType = typeId;
-        d.name = kUnnamed;
+        DescriptorCold cold;
+        cold.exposedType = typeId;
+        cold.concreteType = typeId;
+        cold.name = kUnnamed;
         d.priority = 0;
         d.lifetime = Lifetime::Singleton;
-        d.origin = Origin::RuntimeBinding;
-        d.construct = [](void *, void *) noexcept {
+        cold.origin = Origin::RuntimeBinding;
+        cold.construct = [](void *, void *) noexcept {
         };
-        d.destroy = [](void *) noexcept {
+        cold.destroy = [](void *) noexcept {
         };
-        d.postConstruct = nullptr;
-        d.preDestroy = nullptr;
-        d.size = 0; // externally owned — executeDestructionLifecycle skips ::operator delete
-        d.align = alignof(ctr::BeanContext);
-        d.factoryMethodDescriptor = kInvalidDescriptorId;
+        cold.postConstruct = nullptr;
+        cold.preDestroy = nullptr;
+        cold.size = 0; // externally owned; executeDestructionLifecycle skips ::operator delete
+        cold.align = alignof(ctr::BeanContext);
+        cold.factoryMethodDescriptor = kInvalidDescriptorId;
 
-        d.observedTypeGetter = &TypeInfoGetter<ctr::BeanContext>::get;
-        d.exactTypeGetter = &TypeInfoGetter<ctr::BeanContext>::get;
-        d.nameStr = "ctr::BeanContext";
+        cold.observedTypeGetter = &TypeInfoGetter<ctr::BeanContext>::get;
+        cold.exactTypeGetter = &TypeInfoGetter<ctr::BeanContext>::get;
+        cold.nameStr = "ctr::BeanContext";
 
-        beanContextDescId_ = descriptors_.append(std::move(d));
+        beanContextDescId_ = descriptors_.append(std::move(d), std::move(cold));
         typeIndex_.insertCandidate(typeId, kUnnamed, beanContextDescId_);
         typeIndex_.updateSingleUnnamed(typeId);
 

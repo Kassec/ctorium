@@ -41,6 +41,7 @@ namespace ctr::detail {
                 : descId;
         const Descriptor &desc =
             primaryDescId == descId ? requestedDesc : descriptors_.at(primaryDescId);
+        const DescriptorCold &cold = descriptors_.coldAt(primaryDescId);
         TLData &tl = tlData();
 
         // Fast path: already materialized on this thread.
@@ -62,18 +63,18 @@ namespace ctr::detail {
 
         void *mem = nullptr;
         try {
-            if (desc.allocAndConstruct != nullptr) {
-                mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+            if (cold.allocAndConstruct != nullptr) {
+                mem = cold.allocAndConstruct(static_cast<void *>(&ctx));
             } else {
-                mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                desc.construct(mem, static_cast<void *>(&ctx));
+                mem = ::operator new(cold.size, std::align_val_t{cold.align});
+                cold.construct(mem, static_cast<void *>(&ctx));
             }
         } catch (...) {
             if (mem) {
-                if (desc.dealloc != nullptr) {
-                    desc.dealloc(mem);
+                if (cold.dealloc != nullptr) {
+                    cold.dealloc(mem);
                 } else {
-                    ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                    ::operator delete(mem, cold.size, std::align_val_t{cold.align});
                 }
             }
             throw;
@@ -87,10 +88,10 @@ namespace ctr::detail {
         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
         anyBean.bits_.f1.descId = primaryDescId;
         anyBean.registry_ = this;
-        listeners_.dispatch(ListenerStore::phaseInitialized(), desc.exposedType, &anyBean);
-        if (desc.postConstruct)
-            desc.postConstruct(mem, static_cast<void *>(&ctx));
-        listeners_.dispatch(ListenerStore::phaseCreated(), desc.exposedType, &anyBean);
+        listeners_.dispatch(ListenerStore::phaseInitialized(), cold.exposedType, &anyBean);
+        if (cold.postConstruct)
+            cold.postConstruct(mem, static_cast<void *>(&ctx));
+        listeners_.dispatch(ListenerStore::phaseCreated(), cold.exposedType, &anyBean);
 
         return mem;
     }

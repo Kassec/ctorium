@@ -262,7 +262,7 @@ public:
             singletons_.resize(descriptors_.size());
             singletons_.store(beanContextDescId_, static_cast<void*>(ctx));
             started_.store(true, std::memory_order_release);
-            const TypeId beanCtxTypeId = descriptors_.at(beanContextDescId_).exposedType;
+            const TypeId beanCtxTypeId = descriptors_.coldAt(beanContextDescId_).exposedType;
             lock.unlock();
 
             ctr::AnyBean beanCtxBean;
@@ -298,38 +298,39 @@ public:
                     // New descriptor: intern names and types, build runtime Descriptor.
                     // Capture interned ids before std::move(d) invalidates the descriptor.
                     Descriptor d;
+                    DescriptorCold cold;
                     const TypeId exposedType = typeInterning_.internByName(
                         cd.exposedTypeName, cd.exposedTypeInfo);
-                    d.exposedType  = exposedType;
-                    d.concreteType = typeInterning_.internByName(
+                    cold.exposedType  = exposedType;
+                    cold.concreteType = typeInterning_.internByName(
                         cd.concreteTypeName, cd.concreteTypeInfo);
                     const NameId name = nameInterning_.intern(cd.beanName);
-                    d.name         = name;
+                    cold.name      = name;
                     d.priority     = cd.priority;
                     d.lifetime     = cd.lifetime;
-                    d.origin       = cd.origin;
-                    d.construct         = cd.construct;
-                    d.destroy           = cd.destroy;
-                    d.postConstruct     = cd.postConstruct;
-                    d.preDestroy        = cd.preDestroy;
-                    d.size              = cd.size;
-                    d.align             = cd.align;
-                    d.lazy              = cd.lazy;
-                    d.allocAndConstruct = cd.allocAndConstruct;
-                    d.dealloc           = cd.dealloc;
-                    d.factoryMethodDescriptor = kInvalidDescriptorId; // resolved in Phase 2
-                    d.factoryMethodName       = cd.factoryMethodName;
+                    cold.origin         = cd.origin;
+                    cold.construct         = cd.construct;
+                    cold.destroy           = cd.destroy;
+                    cold.postConstruct     = cd.postConstruct;
+                    cold.preDestroy        = cd.preDestroy;
+                    cold.size              = cd.size;
+                    cold.align             = cd.align;
+                    cold.lazy              = cd.lazy;
+                    cold.allocAndConstruct = cd.allocAndConstruct;
+                    cold.dealloc           = cd.dealloc;
+                    cold.factoryMethodDescriptor = kInvalidDescriptorId; // resolved in Phase 2
+                    cold.factoryMethodName       = cd.factoryMethodName;
                     d.adjustToExposed  = cd.adjustToExposed;
-                    d.adjustToConcrete = cd.adjustToConcrete;
+                    cold.adjustToConcrete = cd.adjustToConcrete;
                     // primaryDescriptor: set to self for primaries; resolved in Phase 2 for aliases.
                     d.primaryDescriptor = kInvalidDescriptorId;
                     // Bean-metadata fields.
-                    d.observedTypeGetter = cd.exposedTypeInfo;
-                    d.exactTypeGetter    = cd.concreteTypeInfo;
-                    d.nameStr            = cd.beanName;
-                    d.reflectiveData     = cd.reflectiveData;
+                    cold.observedTypeGetter = cd.exposedTypeInfo;
+                    cold.exactTypeGetter    = cd.concreteTypeInfo;
+                    cold.nameStr            = cd.beanName;
+                    cold.reflectiveData     = cd.reflectiveData;
 
-                    const DescriptorId id = descriptors_.append(std::move(d));
+                    const DescriptorId id = descriptors_.append(std::move(d), std::move(cold));
                     it->second = id;
 
                     if (!cd.isExposedAlias) {
@@ -348,16 +349,17 @@ public:
                 } else {
                     // Duplicate: verify key fields match (guards against hash collision / bugs).
                     const Descriptor& existing = descriptors_.at(it->second);
-                    if (std::string_view{typeInterning_.nameOf(existing.exposedType)}
+                    const DescriptorCold& existingCold = descriptors_.coldAt(it->second);
+                    if (std::string_view{typeInterning_.nameOf(existingCold.exposedType)}
                                 != std::string_view{cd.exposedTypeName}
-                            || nameInterning_.nameOf(existing.name)
+                            || nameInterning_.nameOf(existingCold.name)
                                 != std::string_view{cd.beanName}
                             || existing.lifetime != cd.lifetime) {
                         throw ctr::ConfigurationError(
                             std::string("Registry::start(): Identity collision between '"
                                 )
                             + cd.exposedTypeName + "' and existing '"
-                            + typeInterning_.nameOf(existing.exposedType)
+                            + typeInterning_.nameOf(existingCold.exposedType)
                             + "' — divergent exposedTypeName, beanName, or lifetime "
                               "for the same Identity value.");
                     }
@@ -373,26 +375,27 @@ public:
         for (auto& pb : pendingRuntimeSingletons_) {
             const TypeId typeId = typeInterning_.internByName(pb.typeName, pb.typeInfoGetter);
             Descriptor d;
-            d.exposedType            = typeId;
-            d.concreteType           = typeId;
-            d.name                   = pb.nameId;
+            DescriptorCold cold;
+            cold.exposedType         = typeId;
+            cold.concreteType        = typeId;
+            cold.name                = pb.nameId;
             d.priority               = pb.priority;
             d.lifetime               = Lifetime::Singleton;
-            d.origin                 = Origin::RuntimeBinding;
-            d.construct              = [](void*, void*) noexcept {};
-            d.destroy                = pb.destroy;
-            d.postConstruct          = nullptr;
-            d.preDestroy             = pb.preDestroy;
-            d.size                   = pb.size;
-            d.align                  = pb.align;
-            d.allocAndConstruct      = nullptr;
-            d.dealloc                = pb.dealloc;
-            d.factoryMethodDescriptor = kInvalidDescriptorId;
-            d.factoryMethodName       = nullptr;
-            d.observedTypeGetter     = pb.typeInfoGetter;
-            d.exactTypeGetter        = pb.typeInfoGetter;
-            d.nameStr                = pb.typeName;
-            const DescriptorId descId = descriptors_.append(std::move(d));
+            cold.origin              = Origin::RuntimeBinding;
+            cold.construct           = [](void*, void*) noexcept {};
+            cold.destroy             = pb.destroy;
+            cold.postConstruct       = nullptr;
+            cold.preDestroy          = pb.preDestroy;
+            cold.size                = pb.size;
+            cold.align               = pb.align;
+            cold.allocAndConstruct   = nullptr;
+            cold.dealloc             = pb.dealloc;
+            cold.factoryMethodDescriptor = kInvalidDescriptorId;
+            cold.factoryMethodName       = nullptr;
+            cold.observedTypeGetter  = pb.typeInfoGetter;
+            cold.exactTypeGetter     = pb.typeInfoGetter;
+            cold.nameStr             = pb.typeName;
+            const DescriptorId descId = descriptors_.append(std::move(d), std::move(cold));
             typeIndex_.insertCandidate(typeId, pb.nameId, descId);
             runtimeBound.push_back({descId, pb.instance, typeId});
         }
@@ -404,11 +407,13 @@ public:
             if (fit == identityMap.end()) {
                 throw ctr::ConfigurationError(
                     std::string("Registry::start(): factory method identity not found "
-                                "for bean '") + std::string(typeInterning_.nameOf(descriptors_.at(beanId).concreteType)) + "'.");
+                                "for bean '")
+                    + std::string(typeInterning_.nameOf(descriptors_.coldAt(beanId).concreteType))
+                    + "'.");
             }
             // Write factoryMethodDescriptor into the already-appended Descriptor.
             // Safe: descriptors_ is append-only during start(); the reference is stable.
-            descriptors_.atMutable(beanId).factoryMethodDescriptor = fit->second;
+            descriptors_.coldAtMutable(beanId).factoryMethodDescriptor = fit->second;
         }
 
         // --- Phase 2.5: resolve exposed alias → primary DescriptorId ---
@@ -418,7 +423,7 @@ public:
                 throw ctr::ConfigurationError(
                     std::string("Registry::start(): primary descriptor not found for "
                                 "exposed alias '")
-                    + typeInterning_.nameOf(descriptors_.at(aliasId).exposedType)
+                    + typeInterning_.nameOf(descriptors_.coldAt(aliasId).exposedType)
                     + "'.");
             }
             descriptors_.atMutable(aliasId).primaryDescriptor = fit->second;
@@ -441,10 +446,10 @@ public:
             for (const auto& [nameId, entry] : table->entries) {
                 factoryIds.clear();
                 for (DescriptorId id : entry.candidates) {
-                    const Descriptor& d = descriptors_.at(id);
-                    if (d.origin == Origin::FactoryProduct
-                            && d.factoryMethodDescriptor != kInvalidDescriptorId) {
-                        factoryIds.push_back(d.factoryMethodDescriptor);
+                    const DescriptorCold& cold = descriptors_.coldAt(id);
+                    if (cold.origin == Origin::FactoryProduct
+                            && cold.factoryMethodDescriptor != kInvalidDescriptorId) {
+                        factoryIds.push_back(cold.factoryMethodDescriptor);
                     }
                 }
                 std::sort(factoryIds.begin(), factoryIds.end());
@@ -511,7 +516,7 @@ public:
                 d.sessionSlot = kInvalidSessionSlot;
             }
         }
-        const TypeId beanCtxTypeId = descriptors_.at(beanContextDescId_).exposedType;
+        const TypeId beanCtxTypeId = descriptors_.coldAt(beanContextDescId_).exposedType;
 
         // Store pre-start bound instances.
         // Lifecycle dispatch (onInitialized/onCreated) is deferred to
@@ -1083,7 +1088,7 @@ private:
      * @brief Executes the full destruction lifecycle for one bean instance.
      *
      * Sequence: onPreDestroy → preDestroy hook → C++ destructor → onDestroyed →
-     * `::operator delete` (skipped when `d.size == 0` — externally owned memory).
+     * `::operator delete` (skipped when `DescriptorCold::size == 0` — externally owned memory).
      * Defined in RegistryRuntimeImpl.hpp on the model of `resolve<T>()`.
      */
     void executeDestructionLifecycle(DescriptorId descId, void* mem) noexcept;

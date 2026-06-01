@@ -291,6 +291,7 @@ namespace ctr::detail {
 
         // Single Descriptor& reference reused in the alias block and the switch.
         const Descriptor &desc = descriptors_.at(descId);
+        const DescriptorCold &cold = descriptors_.coldAt(descId);
 
         // ── Polymorphic alias: redirect to primary then apply adjustToExposed ────
         {
@@ -316,23 +317,24 @@ namespace ctr::detail {
 
                 if (lt == Lifetime::Prototype) {
                     const Descriptor &primaryDesc = descriptors_.at(primaryId);
+                    const DescriptorCold &primaryCold = descriptors_.coldAt(primaryId);
                     CycleGuard guard(materializationStack(), primaryId);
 
                     void *mem;
                     SlotId slotId;
-                    if (primaryDesc.allocAndConstruct != nullptr) {
-                        mem = primaryDesc.allocAndConstruct(static_cast<void *>(&ctx));
+                    if (primaryCold.allocAndConstruct != nullptr) {
+                        mem = primaryCold.allocAndConstruct(static_cast<void *>(&ctx));
                         slotId = prototypeStore().allocate(primaryId, mem);
                     } else {
-                        mem = ::operator new(primaryDesc.size, std::align_val_t{primaryDesc.align});
+                        mem = ::operator new(primaryCold.size, std::align_val_t{primaryCold.align});
                         slotId = prototypeStore().allocate(primaryId, mem);
                         try {
-                            primaryDesc.construct(mem, static_cast<void *>(&ctx));
+                            primaryCold.construct(mem, static_cast<void *>(&ctx));
                         } catch (...) {
                             ::operator delete(
                                 mem,
-                                primaryDesc.size,
-                                std::align_val_t{primaryDesc.align}
+                                primaryCold.size,
+                                std::align_val_t{primaryCold.align}
                                 );
                             prototypeStore().reclaim(slotId);
                             throw;
@@ -359,22 +361,22 @@ namespace ctr::detail {
                         if (dispatchInitialized) {
                             listeners_.dispatch(
                                 ListenerStore::phaseInitialized(),
-                                desc.exposedType,
+                                cold.exposedType,
                                 &anyBean
                                 );
                         }
-                        if (primaryDesc.postConstruct) {
-                            primaryDesc.postConstruct(mem, static_cast<void *>(&ctx));
+                        if (primaryCold.postConstruct) {
+                            primaryCold.postConstruct(mem, static_cast<void *>(&ctx));
                         }
                         if (dispatchCreated) {
                             listeners_.dispatch(
                                 ListenerStore::phaseCreated(),
-                                desc.exposedType,
+                                cold.exposedType,
                                 &anyBean
                                 );
                         }
-                    } else if (primaryDesc.postConstruct) {
-                        primaryDesc.postConstruct(mem, static_cast<void *>(&ctx));
+                    } else if (primaryCold.postConstruct) {
+                        primaryCold.postConstruct(mem, static_cast<void *>(&ctx));
                     }
                     return MaterializedBeanHandle::direct(exposedPtr, slotId, descId);
                 }
@@ -412,23 +414,23 @@ namespace ctr::detail {
                     // RuntimeBinding singletons are pre-stored before start() or via
                     // growAndStore() in bindSingleton(). Reaching this allocation path
                     // is an internal invariant violation.
-                    assert(desc.origin != Origin::RuntimeBinding);
+                    assert(cold.origin != Origin::RuntimeBinding);
                     try {
-                        if (desc.allocAndConstruct != nullptr) {
-                            mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+                        if (cold.allocAndConstruct != nullptr) {
+                            mem = cold.allocAndConstruct(static_cast<void *>(&ctx));
                         } else {
-                            mem = ::operator new(desc.size, std::align_val_t{desc.align});
-                            desc.construct(mem, static_cast<void *>(&ctx));
+                            mem = ::operator new(cold.size, std::align_val_t{cold.align});
+                            cold.construct(mem, static_cast<void *>(&ctx));
                         }
                     } catch (...) {
                         if (mem) {
-                            if (desc.dealloc != nullptr) {
-                                desc.dealloc(mem);
+                            if (cold.dealloc != nullptr) {
+                                cold.dealloc(mem);
                             } else {
                                 ::operator delete(
                                     mem,
-                                    desc.size,
-                                    std::align_val_t{desc.align}
+                                    cold.size,
+                                    std::align_val_t{cold.align}
                                     );
                             }
                         }
@@ -483,15 +485,15 @@ namespace ctr::detail {
 
                     listeners_.dispatch(
                         ListenerStore::phaseInitialized(),
-                        desc.exposedType,
+                        cold.exposedType,
                         &anyBean
                         );
-                    if (desc.postConstruct) {
-                        desc.postConstruct(instance, static_cast<void *>(&ctx));
+                    if (cold.postConstruct) {
+                        cold.postConstruct(instance, static_cast<void *>(&ctx));
                     }
                     listeners_.dispatch(
                         ListenerStore::phaseCreated(),
-                        desc.exposedType,
+                        cold.exposedType,
                         &anyBean
                         );
                 }
@@ -507,16 +509,16 @@ namespace ctr::detail {
             void *mem;
             SlotId slotId;
 
-            if (desc.allocAndConstruct != nullptr) {
-                mem = desc.allocAndConstruct(static_cast<void *>(&ctx));
+            if (cold.allocAndConstruct != nullptr) {
+                mem = cold.allocAndConstruct(static_cast<void *>(&ctx));
                 slotId = prototypeStore().allocate(descId, mem);
             } else {
-                mem = ::operator new(desc.size, std::align_val_t{desc.align});
+                mem = ::operator new(cold.size, std::align_val_t{cold.align});
                 slotId = prototypeStore().allocate(descId, mem);
                 try {
-                    desc.construct(mem, static_cast<void *>(&ctx));
+                    cold.construct(mem, static_cast<void *>(&ctx));
                 } catch (...) {
-                    ::operator delete(mem, desc.size, std::align_val_t{desc.align});
+                    ::operator delete(mem, cold.size, std::align_val_t{cold.align});
                     prototypeStore().reclaim(slotId);
                     throw;
                 }
@@ -539,22 +541,22 @@ namespace ctr::detail {
                 if (dispatchInitialized) {
                     listeners_.dispatch(
                         ListenerStore::phaseInitialized(),
-                        desc.exposedType,
+                        cold.exposedType,
                         &anyBean
                         );
                 }
-                if (desc.postConstruct) {
-                    desc.postConstruct(mem, static_cast<void *>(&ctx));
+                if (cold.postConstruct) {
+                    cold.postConstruct(mem, static_cast<void *>(&ctx));
                 }
                 if (dispatchCreated) {
                     listeners_.dispatch(
                         ListenerStore::phaseCreated(),
-                        desc.exposedType,
+                        cold.exposedType,
                         &anyBean
                         );
                 }
-            } else if (desc.postConstruct) {
-                desc.postConstruct(mem, static_cast<void *>(&ctx));
+            } else if (cold.postConstruct) {
+                cold.postConstruct(mem, static_cast<void *>(&ctx));
             }
 
             return MaterializedBeanHandle::direct(mem, slotId, descId);

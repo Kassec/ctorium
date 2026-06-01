@@ -58,9 +58,10 @@ namespace ctr::detail {
         for (std::size_t i = 0; i < count; ++i) {
             const DescriptorId id = static_cast<DescriptorId>(i);
             const Descriptor &d = descriptors_.at(id);
+            const DescriptorCold &cold = descriptors_.coldAt(id);
             if (d.lifetime == Lifetime::Singleton
-                && d.origin != Origin::RuntimeBinding
-                && !d.lazy
+                && cold.origin != Origin::RuntimeBinding
+                && !cold.lazy
                 && d.primaryDescriptor == id) { // skip aliases (primaryDescriptor != self)
                 eager.push_back({d.priority, id});
             }

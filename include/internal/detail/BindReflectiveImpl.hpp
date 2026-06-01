@@ -101,7 +101,7 @@ namespace ctr::detail {
                 // Check concurrent materialization of the same type.
                 for (const MaterializingEntry& entry : materializing_) {
                     if (entry.key.scope == nullptr
-                            && descriptors_.at(entry.key.descId).exposedType == typeId) {
+                            && descriptors_.coldAt(entry.key.descId).exposedType == typeId) {
                         throw ctr::ConfigurationError(
                             std::string("Registry::bindSingleton: type '") + kTypeName
                             + "' is currently being materialized; binding conflicts with "
@@ -114,27 +114,28 @@ namespace ctr::detail {
                 void *rawPtr = object.release();
 
                 Descriptor d;
-                d.exposedType = typeId;
-                d.concreteType = typeId;
-                d.name = nameId;
+                DescriptorCold cold;
+                cold.exposedType = typeId;
+                cold.concreteType = typeId;
+                cold.name = nameId;
                 d.priority = priority;
                 d.lifetime = Lifetime::Singleton;
-                d.origin = Origin::RuntimeBinding;
-                d.construct = [](void *, void *) noexcept {
+                cold.origin = Origin::RuntimeBinding;
+                cold.construct = [](void *, void *) noexcept {
                 };
-                d.destroy = &destroyThunk<T>;
-                d.postConstruct = nullptr;
-                d.preDestroy = preDestroyFn;
-                d.size = sizeof(T);
-                d.align = alignof(T);
-                d.allocAndConstruct = nullptr;
-                d.dealloc = &deallocBoundObjectThunk<T>;
-                d.factoryMethodDescriptor = kInvalidDescriptorId;
-                d.observedTypeGetter = &TypeInfoGetter<T>::get;
-                d.exactTypeGetter = &TypeInfoGetter<T>::get;
-                d.nameStr = kTypeName;
+                cold.destroy = &destroyThunk<T>;
+                cold.postConstruct = nullptr;
+                cold.preDestroy = preDestroyFn;
+                cold.size = sizeof(T);
+                cold.align = alignof(T);
+                cold.allocAndConstruct = nullptr;
+                cold.dealloc = &deallocBoundObjectThunk<T>;
+                cold.factoryMethodDescriptor = kInvalidDescriptorId;
+                cold.observedTypeGetter = &TypeInfoGetter<T>::get;
+                cold.exactTypeGetter = &TypeInfoGetter<T>::get;
+                cold.nameStr = kTypeName;
 
-                const DescriptorId descId = descriptors_.append(std::move(d));
+                const DescriptorId descId = descriptors_.append(std::move(d), std::move(cold));
                 // Store instance before publishing to TypeIndex so materializeOne always
                 // finds the pre-stored pointer on any path.
                 singletons_.growAndStore(descId, rawPtr);
@@ -222,7 +223,8 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
             if (it != table->entries.end()) {
                 for (detail::DescriptorId did : it->second.candidates) {
                     const detail::Descriptor& d = reg.descriptors_.at(did);
-                    if (d.origin == detail::Origin::RuntimeBinding
+                    const detail::DescriptorCold& cold = reg.descriptors_.coldAt(did);
+                    if (cold.origin == detail::Origin::RuntimeBinding
                             && d.lifetime == detail::Lifetime::Session) {
                         descId = did;
                         break;
@@ -235,28 +237,29 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     if (descId == detail::kInvalidDescriptorId) {
         // Create new session descriptor.
         detail::Descriptor d;
-        d.exposedType            = typeId;
-        d.concreteType           = typeId;
-        d.name                   = nameId;
+        detail::DescriptorCold cold;
+        cold.exposedType         = typeId;
+        cold.concreteType        = typeId;
+        cold.name                = nameId;
         d.priority               = options.priority;
         d.lifetime               = detail::Lifetime::Session;
-        d.origin                 = detail::Origin::RuntimeBinding;
-        d.construct              = [](void*, void*) noexcept {};
-        d.destroy                = &detail::destroyThunk<T>;
-        d.postConstruct          = nullptr;
-        d.preDestroy             = preDestroyFn;
-        d.size                   = sizeof(T);
-        d.align                  = alignof(T);
-        d.allocAndConstruct      = nullptr;
-        d.dealloc                = &detail::deallocBoundObjectThunk<T>;
-        d.factoryMethodDescriptor = detail::kInvalidDescriptorId;
-        d.observedTypeGetter     = &detail::TypeInfoGetter<T>::get;
-        d.exactTypeGetter        = &detail::TypeInfoGetter<T>::get;
-        d.nameStr                = kTypeName;
+        cold.origin              = detail::Origin::RuntimeBinding;
+        cold.construct           = [](void*, void*) noexcept {};
+        cold.destroy             = &detail::destroyThunk<T>;
+        cold.postConstruct       = nullptr;
+        cold.preDestroy          = preDestroyFn;
+        cold.size                = sizeof(T);
+        cold.align               = alignof(T);
+        cold.allocAndConstruct   = nullptr;
+        cold.dealloc             = &detail::deallocBoundObjectThunk<T>;
+        cold.factoryMethodDescriptor = detail::kInvalidDescriptorId;
+        cold.observedTypeGetter  = &detail::TypeInfoGetter<T>::get;
+        cold.exactTypeGetter     = &detail::TypeInfoGetter<T>::get;
+        cold.nameStr             = kTypeName;
         if (reg.started_.load(std::memory_order_relaxed)) {
             d.sessionSlot = static_cast<detail::SessionSlot>(reg.sessionSlotCount_++);
         }
-        descId = reg.descriptors_.append(std::move(d));
+        descId = reg.descriptors_.append(std::move(d), std::move(cold));
         reg.typeIndex_.insertCandidate(typeId, nameId, descId);
         if (reg.started_.load(std::memory_order_relaxed)) {
             reg.typeIndex_.updateSingleUnnamed(typeId);
@@ -269,11 +272,11 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     // If a previous pending instance exists for this descId, replace it.
     for (auto& psb : pendingRuntimeSessions_) {
         if (psb.descId == descId) {
-            const detail::Descriptor& d = reg.descriptors_.at(psb.descId);
-            d.destroy(psb.instance);
-            if (d.dealloc) d.dealloc(psb.instance);
-            else if (d.size != 0)
-                ::operator delete(psb.instance, d.size, std::align_val_t{d.align});
+            const detail::DescriptorCold& cold = reg.descriptors_.coldAt(psb.descId);
+            cold.destroy(psb.instance);
+            if (cold.dealloc) cold.dealloc(psb.instance);
+            else if (cold.size != 0)
+                ::operator delete(psb.instance, cold.size, std::align_val_t{cold.align});
             psb.instance = rawPtr;
             return *this;
         }

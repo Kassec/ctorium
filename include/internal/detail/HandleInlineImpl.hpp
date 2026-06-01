@@ -168,9 +168,9 @@ namespace ctr {
         if (tid == detail::kInvalidTypeId)
             return false;
         if (object_ != nullptr) {
-            return reg->descriptorTable().at(bits_.f1.descId).concreteType == tid;
+            return reg->descriptorTable().coldAt(bits_.f1.descId).concreteType == tid;
         }
-        return reg->descriptorTable().at(bits_.f2.descId).concreteType == tid;
+        return reg->descriptorTable().coldAt(bits_.f2.descId).concreteType == tid;
     }
 
     // Helper: search TypeIndex for a descriptor of type `uid` with the given primary.
@@ -206,18 +206,20 @@ namespace ctr {
         if (object_ != nullptr) {
             const detail::Descriptor &d =
                 reg->descriptorTable().at(bits_.f1.descId);
-            if (d.exposedType == uid)
+            const detail::DescriptorCold &cold =
+                reg->descriptorTable().coldAt(bits_.f1.descId);
+            if (cold.exposedType == uid)
                 return true;
-            if (d.concreteType == uid)
+            if (cold.concreteType == uid)
                 return true;
             // Check if U is another exposed base of the same primary.
             if (d.primaryDescriptor != detail::kInvalidDescriptorId) {
-                return findAliasByPrimary(reg, uid, d.name, d.primaryDescriptor)
+                return findAliasByPrimary(reg, uid, cold.name, d.primaryDescriptor)
                     != detail::kInvalidDescriptorId;
             }
             return false;
         }
-        return reg->descriptorTable().at(bits_.f2.descId).exposedType == uid;
+        return reg->descriptorTable().coldAt(bits_.f2.descId).exposedType == uid;
     }
 
     template <class T>
@@ -240,11 +242,13 @@ namespace ctr {
         detail::Registry* reg = registry();
         const detail::Descriptor &selfDesc =
             reg->descriptorTable().at(bits_.f1.descId);
+        const detail::DescriptorCold &selfCold =
+            reg->descriptorTable().coldAt(bits_.f1.descId);
         const detail::TypeId uid = reg->typeIdFor<U>();
         const detail::DescriptorId selfPrimary = selfDesc.primaryDescriptor;
 
         // Case 1: U is the exact same exposed type — no adjustment needed.
-        if (selfDesc.exposedType == uid) {
+        if (selfCold.exposedType == uid) {
             Bean<U> result;
             result.object_ = static_cast<U *>(object_);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
@@ -256,8 +260,8 @@ namespace ctr {
 
         // Recover the concrete pointer via adjustToConcrete.
         void *concretePtr = object_;
-        if (selfDesc.adjustToConcrete != nullptr) {
-            concretePtr = selfDesc.adjustToConcrete(object_);
+        if (selfCold.adjustToConcrete != nullptr) {
+            concretePtr = selfCold.adjustToConcrete(object_);
         } else if (selfDesc.primaryDescriptor != bits_.f1.descId
             && selfDesc.primaryDescriptor != detail::kInvalidDescriptorId) {
             // Virtual base alias: adjustToConcrete == nullptr means no downcast available.
@@ -269,7 +273,7 @@ namespace ctr {
         // else: primary (identity), concretePtr == object_
 
         // Case 2: U is the concrete type — use primary descriptor.
-        if (selfDesc.concreteType == uid) {
+        if (selfCold.concreteType == uid) {
             Bean<U> result;
             result.object_ = static_cast<U *>(concretePtr);
             result.bits_.f1.slot = bits_.f1.slot;
@@ -282,7 +286,7 @@ namespace ctr {
 
         // Case 3: U is another exposed base — find its alias descriptor.
         const detail::DescriptorId targetId =
-            findAliasByPrimary(reg, uid, selfDesc.name, selfPrimary);
+            findAliasByPrimary(reg, uid, selfCold.name, selfPrimary);
         if (targetId == detail::kInvalidDescriptorId) {
             throw ctr::ResolutionError(
                 "Bean::cast: the bean is not compatible with the requested type."
@@ -339,7 +343,7 @@ namespace ctr {
             return false;
         const detail::DescriptorId descId =
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
-        return reg->descriptorTable().at(descId).concreteType == tid;
+        return reg->descriptorTable().coldAt(descId).concreteType == tid;
     }
 
     template <class U>
@@ -353,14 +357,15 @@ namespace ctr {
         const detail::DescriptorId descId =
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
         const detail::Descriptor &d = reg->descriptorTable().at(descId);
+        const detail::DescriptorCold &cold = reg->descriptorTable().coldAt(descId);
         if (object_ == nullptr)
-            return d.exposedType == uid;
-        if (d.exposedType == uid)
+            return cold.exposedType == uid;
+        if (cold.exposedType == uid)
             return true;
-        if (d.concreteType == uid)
+        if (cold.concreteType == uid)
             return true;
         if (d.primaryDescriptor != detail::kInvalidDescriptorId) {
-            return findAliasByPrimary(reg, uid, d.name, d.primaryDescriptor)
+            return findAliasByPrimary(reg, uid, cold.name, d.primaryDescriptor)
                 != detail::kInvalidDescriptorId;
         }
         return false;
@@ -383,10 +388,12 @@ namespace ctr {
         detail::Registry* reg = registry();
         const detail::Descriptor &selfDesc =
             reg->descriptorTable().at(bits_.f1.descId);
+        const detail::DescriptorCold &selfCold =
+            reg->descriptorTable().coldAt(bits_.f1.descId);
         const detail::TypeId uid = reg->typeIdFor<U>();
         const detail::DescriptorId selfPrimary = selfDesc.primaryDescriptor;
 
-        if (selfDesc.exposedType == uid) {
+        if (selfCold.exposedType == uid) {
             Bean<U> result;
             result.object_ = static_cast<U *>(object_);
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
@@ -397,8 +404,8 @@ namespace ctr {
         }
 
         void *concretePtr = object_;
-        if (selfDesc.adjustToConcrete != nullptr) {
-            concretePtr = selfDesc.adjustToConcrete(object_);
+        if (selfCold.adjustToConcrete != nullptr) {
+            concretePtr = selfCold.adjustToConcrete(object_);
         } else if (selfDesc.primaryDescriptor != bits_.f1.descId
             && selfDesc.primaryDescriptor != detail::kInvalidDescriptorId) {
             throw ctr::ResolutionError(
@@ -406,7 +413,7 @@ namespace ctr {
                 );
         }
 
-        if (selfDesc.concreteType == uid) {
+        if (selfCold.concreteType == uid) {
             Bean<U> result;
             result.object_ = static_cast<U *>(concretePtr);
             result.bits_.f1.slot = bits_.f1.slot;
@@ -418,7 +425,7 @@ namespace ctr {
         }
 
         const detail::DescriptorId targetId =
-            findAliasByPrimary(reg, uid, selfDesc.name, selfPrimary);
+            findAliasByPrimary(reg, uid, selfCold.name, selfPrimary);
         if (targetId == detail::kInvalidDescriptorId) {
             throw ctr::ResolutionError(
                 "AnyBean::cast: the bean is not compatible with the requested type."
@@ -496,15 +503,17 @@ namespace ctr {
         detail::Registry* reg = registry();
         if (object_ != nullptr && reg != nullptr) {
             const detail::Descriptor &d = reg->descriptorTable().at(bits_.f1.descId);
-            return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                d.nameStr ? d.nameStr : "", d.factoryMethodName,
-                                d.lifetime, d.origin, d.reflectiveData};
+            const detail::DescriptorCold &cold = reg->descriptorTable().coldAt(bits_.f1.descId);
+            return BeanMetadata{cold.observedTypeGetter, cold.exactTypeGetter,
+                                cold.nameStr ? cold.nameStr : "", cold.factoryMethodName,
+                                d.lifetime, cold.origin, cold.reflectiveData};
         }
         if (reg != nullptr) {
             const detail::Descriptor &d = reg->descriptorTable().at(bits_.f2.descId);
-            return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                d.nameStr ? d.nameStr : "", d.factoryMethodName,
-                                d.lifetime, d.origin, d.reflectiveData};
+            const detail::DescriptorCold &cold = reg->descriptorTable().coldAt(bits_.f2.descId);
+            return BeanMetadata{cold.observedTypeGetter, cold.exactTypeGetter,
+                                cold.nameStr ? cold.nameStr : "", cold.factoryMethodName,
+                                d.lifetime, cold.origin, cold.reflectiveData};
         }
         return BeanMetadata{nullptr, nullptr, "", detail::Lifetime::Singleton,
                             detail::Origin::AnnotatedType, nullptr};
@@ -516,9 +525,10 @@ namespace ctr {
             const detail::DescriptorId descId =
                 object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
             const detail::Descriptor &d = reg->descriptorTable().at(descId);
-            return BeanMetadata{d.observedTypeGetter, d.exactTypeGetter,
-                                d.nameStr ? d.nameStr : "", d.factoryMethodName,
-                                d.lifetime, d.origin, d.reflectiveData};
+            const detail::DescriptorCold &cold = reg->descriptorTable().coldAt(descId);
+            return BeanMetadata{cold.observedTypeGetter, cold.exactTypeGetter,
+                                cold.nameStr ? cold.nameStr : "", cold.factoryMethodName,
+                                d.lifetime, cold.origin, cold.reflectiveData};
         }
         return BeanMetadata{nullptr, nullptr, "", detail::Lifetime::Singleton,
                             detail::Origin::AnnotatedType, nullptr};

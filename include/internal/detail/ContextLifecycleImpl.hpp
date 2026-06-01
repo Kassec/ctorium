@@ -184,12 +184,12 @@ inline ScopedContext::ScopedContext(std::shared_ptr<ctr::detail::Registry> regis
 inline ScopedContext::~ScopedContext() {
     // Destroy pending session instances that were never started into the lifecycle.
     for (const auto& psb : pendingRuntimeSessions_) {
-        const detail::Descriptor& d = core().descriptorTable().at(psb.descId);
-        d.destroy(psb.instance);
-        if (d.dealloc) {
-            d.dealloc(psb.instance);
-        } else if (d.size != 0) {
-            ::operator delete(psb.instance, d.size, std::align_val_t{d.align});
+        const detail::DescriptorCold& cold = core().descriptorTable().coldAt(psb.descId);
+        cold.destroy(psb.instance);
+        if (cold.dealloc) {
+            cold.dealloc(psb.instance);
+        } else if (cold.size != 0) {
+            ::operator delete(psb.instance, cold.size, std::align_val_t{cold.align});
         }
     }
 }
@@ -205,14 +205,15 @@ inline ScopedContext& ScopedContext::start() {
     // Process pending session bindings entered before this start() call.
     for (const auto& psb : pendingRuntimeSessions_) {
         const detail::Descriptor& d = reg.descriptors_.at(psb.descId);
+        const detail::DescriptorCold& cold = reg.descriptors_.coldAt(psb.descId);
         sessionStore_.store(d.sessionSlot, psb.descId, psb.instance);
         ctr::AnyBean anyBean;
         anyBean.object_         = psb.instance;
         anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(detail::kInvalidSlotId);
         anyBean.bits_.f1.descId = psb.descId;
         anyBean.registry_       = &reg;
-        reg.listeners_.dispatch(detail::ListenerStore::phaseInitialized(), d.exposedType, &anyBean);
-        reg.listeners_.dispatch(detail::ListenerStore::phaseCreated(),     d.exposedType, &anyBean);
+        reg.listeners_.dispatch(detail::ListenerStore::phaseInitialized(), cold.exposedType, &anyBean);
+        reg.listeners_.dispatch(detail::ListenerStore::phaseCreated(),     cold.exposedType, &anyBean);
     }
     pendingRuntimeSessions_.clear();
     scopeStarted_ = true;

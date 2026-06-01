@@ -480,6 +480,161 @@ TEST(Factory, SessionProducerCreatesOneInstancePerScope) {
     ctx.stop();
 }
 
+namespace factory_session_product_fixture {
+
+struct ProductTag {};
+
+template<typename>
+struct Product {
+    int value = 42;
+};
+
+using SessionProduct = Product<ProductTag>;
+
+std::atomic<int> destroyedCount{0};
+
+struct [[=ctr::factory{}]] Factory {
+    [[=ctr::session{}]]
+    SessionProduct make() {
+        makeCallCount.fetch_add(1, std::memory_order_relaxed);
+        return SessionProduct{};
+    }
+
+    static inline std::atomic<int> makeCallCount{0};
+};
+
+} // namespace factory_session_product_fixture
+
+TEST(Factory, SessionFactoryProductResolveFromStartedScopeReturnsInstance) {
+    factory_session_product_fixture::Factory::makeCallCount.store(
+        0,
+        std::memory_order_relaxed);
+
+    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-resolve");
+    ctx.discover<^^factory_session_product_fixture>().start();
+    auto& scope = ctx.resolveScope("session-factory-product-resolve");
+    scope.start();
+
+    auto product = scope.resolve<factory_session_product_fixture::SessionProduct>();
+
+    EXPECT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(
+        factory_session_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        1);
+
+    ctx.stop();
+}
+
+TEST(Factory, SessionFactoryProductSameScopeReturnsSameInstance) {
+    factory_session_product_fixture::Factory::makeCallCount.store(
+        0,
+        std::memory_order_relaxed);
+
+    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-same-scope");
+    ctx.discover<^^factory_session_product_fixture>().start();
+    auto& scope = ctx.resolveScope("session-factory-product-same-scope");
+    scope.start();
+
+    auto first = scope.resolve<factory_session_product_fixture::SessionProduct>();
+    auto second = scope.resolve<factory_session_product_fixture::SessionProduct>();
+
+    ASSERT_NE(first.operator->(), nullptr);
+    EXPECT_EQ(first.operator->(), second.operator->());
+    EXPECT_EQ(
+        factory_session_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        1);
+
+    ctx.stop();
+}
+
+TEST(Factory, SessionFactoryProductDistinctScopesReturnDistinctInstances) {
+    factory_session_product_fixture::Factory::makeCallCount.store(
+        0,
+        std::memory_order_relaxed);
+
+    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-distinct-scopes");
+    ctx.discover<^^factory_session_product_fixture>().start();
+    auto& firstScope = ctx.resolveScope("session-factory-product-first");
+    auto& secondScope = ctx.resolveScope("session-factory-product-second");
+    firstScope.start();
+    secondScope.start();
+
+    auto first = firstScope.resolve<factory_session_product_fixture::SessionProduct>();
+    auto second = secondScope.resolve<factory_session_product_fixture::SessionProduct>();
+
+    ASSERT_NE(first.operator->(), nullptr);
+    ASSERT_NE(second.operator->(), nullptr);
+    EXPECT_NE(first.operator->(), second.operator->());
+    EXPECT_EQ(
+        factory_session_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        2);
+
+    ctx.stop();
+}
+
+TEST(Factory, SessionFactoryProductResolveFromRootRaisesContextStateError) {
+    factory_session_product_fixture::Factory::makeCallCount.store(
+        0,
+        std::memory_order_relaxed);
+
+    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-root-resolve");
+    ctx.discover<^^factory_session_product_fixture>().start();
+
+    EXPECT_THROW(
+        ctx.resolve<factory_session_product_fixture::SessionProduct>(),
+        ctr::ContextStateError);
+    EXPECT_EQ(
+        factory_session_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        0);
+
+    ctx.stop();
+}
+
+TEST(Factory, SessionFactoryProductScopeStopDestroysInstance) {
+    factory_session_product_fixture::Factory::makeCallCount.store(
+        0,
+        std::memory_order_relaxed);
+    factory_session_product_fixture::destroyedCount.store(
+        0,
+        std::memory_order_relaxed);
+
+    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-stop-destroys");
+    ctx.discover<^^factory_session_product_fixture>().start();
+    ctx.on<factory_session_product_fixture::SessionProduct>(
+        ctr::onDestroyed,
+        [&](const ctr::Bean<factory_session_product_fixture::SessionProduct>&) {
+            factory_session_product_fixture::destroyedCount.fetch_add(
+                1,
+                std::memory_order_relaxed);
+        });
+
+    auto& scope = ctx.resolveScope("session-factory-product-stop-destroys");
+    scope.start();
+
+    auto product = scope.resolve<factory_session_product_fixture::SessionProduct>();
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(
+        factory_session_product_fixture::destroyedCount.load(std::memory_order_relaxed),
+        0);
+
+    scope.stop();
+
+    EXPECT_EQ(product.operator->(), nullptr);
+    EXPECT_EQ(
+        factory_session_product_fixture::destroyedCount.load(std::memory_order_relaxed),
+        1);
+    EXPECT_EQ(
+        factory_session_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        1);
+
+    ctx.stop();
+}
+
 namespace factory_product_listener_fixture {
 
 struct ProductTag {};

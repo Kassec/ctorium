@@ -18,6 +18,15 @@ namespace ctr::detail {
                 reg->cleanupCurrentThread();
             }
         }
+        const std::uint32_t token = materializationThreadToken;
+        if (token != kNoMaterializationThreadToken) {
+            for (const auto &entry : registered) {
+                if (auto reg = entry.second.lock()) {
+                    reg->clearMaterializationWaitSlot(token);
+                }
+            }
+            Registry::recycleMaterializationThreadToken(token);
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────────

@@ -149,8 +149,20 @@ namespace ctr::detail {
     }
 
     inline std::uint32_t Registry::materializationThreadToken() noexcept {
-        thread_local const std::uint32_t token =
-            nextMaterializationThreadToken_.fetch_add(1, std::memory_order_relaxed) + 1;
+        TLCleanup& cleanup = tlCleanup();
+        std::uint32_t token = cleanup.materializationThreadToken;
+        if (token != kNoMaterializationThreadToken)
+            return token;
+
+        std::lock_guard lock(materializationThreadTokenMutex_);
+        if (!freeMaterializationThreadTokens_.empty()) {
+            token = freeMaterializationThreadTokens_.back();
+            freeMaterializationThreadTokens_.pop_back();
+        } else {
+            token =
+                nextMaterializationThreadToken_.fetch_add(1, std::memory_order_relaxed) + 1;
+        }
+        cleanup.materializationThreadToken = token;
         return token;
     }
 

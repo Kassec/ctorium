@@ -189,6 +189,7 @@ inline TLData& tlData() {
  */
 struct TLCleanup {
     std::unordered_map<std::uint32_t, std::weak_ptr<Registry>> registered;  ///< Registry ID → weak liveness handle.
+    std::uint32_t materializationThreadToken = 0;  ///< Recycled at thread exit when assigned.
     ~TLCleanup() noexcept;                     ///< Defined in BeanInlineImpl.hpp.
 };
 

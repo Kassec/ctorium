@@ -5,7 +5,11 @@ namespace ctr::detail {
     // Registry::executeDestructionLifecycle
     // ─────────────────────────────────────────────────────────────────────────────
 
-    inline void Registry::executeDestructionLifecycle(DescriptorId descId, void *mem) noexcept {
+    inline void Registry::executeDestructionLifecycle(
+        DescriptorId descId,
+        void *mem,
+        NameId emitterScope
+        ) noexcept {
         const DescriptorCold &cold = descriptors_.coldAt(descId);
         ResolutionContext ctx{*this};
 
@@ -24,7 +28,8 @@ namespace ctr::detail {
                 listeners_.dispatch(
                     ListenerStore::phasePreDestroy(),
                     cold.exposedType,
-                    &anyBean);
+                    &anyBean,
+                    emitterScope);
             }
 
             if (cold.preDestroy) {
@@ -38,7 +43,8 @@ namespace ctr::detail {
                 listeners_.dispatch(
                     ListenerStore::phaseDestroyed(),
                     cold.exposedType,
-                    &anyBean);
+                    &anyBean,
+                    emitterScope);
             }
         } else {
             if (cold.preDestroy) {
@@ -65,7 +71,7 @@ namespace ctr::detail {
         ) noexcept {
         const auto [mem, descId] = store->takeSlotMetaForDestruction(slot);
         if (mem != nullptr)
-            executeDestructionLifecycle(descId, mem);
+            executeDestructionLifecycle(descId, mem, ListenerStore::kNoScope);
         store->reclaimSlot(slot);
     }
 

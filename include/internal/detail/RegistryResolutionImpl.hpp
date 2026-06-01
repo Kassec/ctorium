@@ -453,7 +453,8 @@ namespace ctr::detail {
                             listeners_.dispatch(
                                 ListenerStore::phaseInitialized(),
                                 cold.exposedType,
-                                &anyBean
+                                &anyBean,
+                                ListenerStore::kNoScope
                                 );
                         }
                         if (primaryCold.postConstruct) {
@@ -463,7 +464,8 @@ namespace ctr::detail {
                             listeners_.dispatch(
                                 ListenerStore::phaseCreated(),
                                 cold.exposedType,
-                                &anyBean
+                                &anyBean,
+                                ListenerStore::kNoScope
                                 );
                         }
                     } else if (primaryCold.postConstruct) {
@@ -577,7 +579,8 @@ namespace ctr::detail {
                     listeners_.dispatch(
                         ListenerStore::phaseInitialized(),
                         cold.exposedType,
-                        &anyBean
+                        &anyBean,
+                        ListenerStore::kNoScope
                         );
                     if (cold.postConstruct) {
                         cold.postConstruct(instance, static_cast<void *>(&ctx));
@@ -585,7 +588,8 @@ namespace ctr::detail {
                     listeners_.dispatch(
                         ListenerStore::phaseCreated(),
                         cold.exposedType,
-                        &anyBean
+                        &anyBean,
+                        ListenerStore::kNoScope
                         );
                 }
             }
@@ -633,7 +637,8 @@ namespace ctr::detail {
                     listeners_.dispatch(
                         ListenerStore::phaseInitialized(),
                         cold.exposedType,
-                        &anyBean
+                        &anyBean,
+                        ListenerStore::kNoScope
                         );
                 }
                 if (cold.postConstruct) {
@@ -643,7 +648,8 @@ namespace ctr::detail {
                     listeners_.dispatch(
                         ListenerStore::phaseCreated(),
                         cold.exposedType,
-                        &anyBean
+                        &anyBean,
+                        ListenerStore::kNoScope
                         );
                 }
             } else if (cold.postConstruct) {

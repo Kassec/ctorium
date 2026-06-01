@@ -18,6 +18,7 @@
 #include <shared_mutex>
 #include <typeindex>
 #include "../../internal/detail/HashUtils.hpp"
+#include "../../internal/NameId.hpp"
 
 namespace ctr {
 
@@ -155,6 +156,10 @@ public:
      * @param callback Listener callback.
      * @param options Listener registration options.
      * @return Opaque handle that can be removed manually.
+     *
+     * A listener registered on a `ScopedContext` observes only beans emitted by
+     * that exact scope. A listener registered on the root context observes root
+     * beans and beans from every scope.
      */
     template <class T, class Callback, class PhaseTag>
     ListenerHandle on(PhaseTag phase, Callback&& callback, ListenerOptions options = {});
@@ -170,6 +175,10 @@ public:
      * @param callback Listener callback.
      * @param options Listener registration options.
      * @return Opaque handle that can be removed manually.
+     *
+     * A listener registered on a `ScopedContext` observes only beans emitted by
+     * that exact scope. A listener registered on the root context observes root
+     * beans and beans from every scope.
      */
     template <class Callback, class PhaseTag>
     ListenerHandle on(PhaseTag phase, Callback&& callback, ListenerOptions options = {});
@@ -217,6 +226,7 @@ private:
     struct DeferredListener {
         std::type_index                  typeIndex;
         std::size_t                      phaseIndex;
+        detail::NameId                   listenerScope;
         std::function<void(const void*)> callback;
         int                              priority;
     };

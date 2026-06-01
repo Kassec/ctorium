@@ -151,8 +151,16 @@ namespace ctr::detail {
                 anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
                 anyBean.bits_.f1.descId = descId;
                 anyBean.registry_ = this;
-                listeners_.dispatch(ListenerStore::phaseInitialized(), typeId, &anyBean);
-                listeners_.dispatch(ListenerStore::phaseCreated(), typeId, &anyBean);
+                listeners_.dispatch(
+                    ListenerStore::phaseInitialized(),
+                    typeId,
+                    &anyBean,
+                    ListenerStore::kNoScope);
+                listeners_.dispatch(
+                    ListenerStore::phaseCreated(),
+                    typeId,
+                    &anyBean,
+                    ListenerStore::kNoScope);
 
                 return ctr::Bean<T>::makeDirect(static_cast<T *>(rawPtr), kInvalidSlotId, descId, this);
             }
@@ -301,8 +309,16 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(detail::kInvalidSlotId);
     anyBean.bits_.f1.descId = descId;
     anyBean.registry_       = &reg;
-    reg.listeners_.dispatch(detail::ListenerStore::phaseInitialized(), typeId, &anyBean);
-    reg.listeners_.dispatch(detail::ListenerStore::phaseCreated(),     typeId, &anyBean);
+    reg.listeners_.dispatch(
+        detail::ListenerStore::phaseInitialized(),
+        typeId,
+        &anyBean,
+        scopeNameId_);
+    reg.listeners_.dispatch(
+        detail::ListenerStore::phaseCreated(),
+        typeId,
+        &anyBean,
+        scopeNameId_);
 
     return *this;
 

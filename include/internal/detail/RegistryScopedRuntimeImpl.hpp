@@ -154,11 +154,19 @@ namespace ctr::detail {
             anyBean.bits_.f1.descId = primaryDescId;
             anyBean.registry_ = this;
 
-            listeners_.dispatch(ListenerStore::phaseInitialized(), cold.exposedType, &anyBean);
+            listeners_.dispatch(
+                ListenerStore::phaseInitialized(),
+                cold.exposedType,
+                &anyBean,
+                scope->scopeNameId_);
             if (cold.postConstruct) {
                 cold.postConstruct(instance, static_cast<void *>(&ctx));
             }
-            listeners_.dispatch(ListenerStore::phaseCreated(), cold.exposedType, &anyBean);
+            listeners_.dispatch(
+                ListenerStore::phaseCreated(),
+                cold.exposedType,
+                &anyBean,
+                scope->scopeNameId_);
         }
 
         return instance;
@@ -192,7 +200,7 @@ namespace ctr::detail {
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
             void *mem = singletons_.find(*it);
             if (mem != nullptr)
-                executeDestructionLifecycle(*it, mem);
+                executeDestructionLifecycle(*it, mem, ListenerStore::kNoScope);
         }
         singletons_.releaseAll();
 
@@ -203,7 +211,7 @@ namespace ctr::detail {
             const auto [mem, descId] =
                 prototypes.takeSlotMetaForDestruction(static_cast<SlotId>(s - 1));
             if (mem != nullptr) {
-                executeDestructionLifecycle(descId, mem);
+                executeDestructionLifecycle(descId, mem, ListenerStore::kNoScope);
             }
         }
 
@@ -240,7 +248,7 @@ namespace ctr::detail {
             const SessionSlot slot = descriptors_.at(*it).sessionSlot;
             void *mem = scope.sessionStore_.find(slot); // lock-free acquire
             if (mem != nullptr)
-                executeDestructionLifecycle(*it, mem);
+                executeDestructionLifecycle(*it, mem, scope.scopeNameId_);
         }
 
         // Reacquire writeLock_ for the final store reset.

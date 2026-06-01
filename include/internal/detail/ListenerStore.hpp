@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../NameId.hpp"
 #include "../TypeId.hpp"
 #include "../../api/ctr/ListenerHandle.hpp"
 #include "TreiberFreelist.hpp"
@@ -83,24 +84,32 @@ public:
     /// Opaque callback type.  The void* points to a `const AnyBean` (never null).
     using Callback = std::function<void(const void*)>;
 
+    /** Listener scope sentinel for root listeners: matches every emitter scope. */
+    static constexpr NameId kAllScopes = kInvalidNameId - 2;
+
+    /** Emitter scope sentinel for root, singleton, prototype, and threadLocal beans. */
+    static constexpr NameId kNoScope = kInvalidNameId;
+
     /**
      * @brief Registers a listener callback for the given phase and type filter.
      *
      * @param phaseIndex   Phase index in `[0, kPhaseCount)`.
      * @param typeId       TypeId filter, or `kInvalidTypeId` for global (all-beans).
+     * @param listenerScope Scope filter, or `kAllScopes` for a root listener.
      * @param callback     Callback invoked with a `const AnyBean*`.  Must not be empty.
      * @param priority     Dispatch priority.  Higher values execute first.
      * @return `ListenerHandle` that can be used to remove this registration.
      */
     [[nodiscard]] ListenerHandle addListener(std::size_t phaseIndex,
                                              TypeId typeId,
+                                             NameId listenerScope,
                                              Callback callback,
                                              int priority) {
         assert(phaseIndex < kPhaseCount && "phase index out of range");
         assert(callback && "callback must not be empty");
 
         std::lock_guard lock(mutex_);
-        auto* entry = new Entry{typeId, std::move(callback), priority,
+        auto* entry = new Entry{typeId, listenerScope, std::move(callback), priority,
                                 nextToken_++, phaseIndex};
         auto& vec = phases_[phaseIndex];
         vec.push_back(entry);
@@ -127,13 +136,14 @@ public:
      */
     [[nodiscard]] ListenerHandle addListenerDeferred(std::size_t phaseIndex,
                                                      TypeId typeId,
+                                                     NameId listenerScope,
                                                      Callback callback,
                                                      int priority) {
         assert(phaseIndex < kPhaseCount && "phase index out of range");
         assert(callback && "callback must not be empty");
 
         std::lock_guard lock(mutex_);
-        auto* entry = new Entry{typeId, std::move(callback), priority,
+        auto* entry = new Entry{typeId, listenerScope, std::move(callback), priority,
                                 nextToken_++, phaseIndex};
         auto& vec = phases_[phaseIndex];
         vec.push_back(entry);
@@ -173,10 +183,12 @@ public:
      * @param phaseIndex  Phase index in `[0, kPhaseCount)`.
      * @param beanTypeId  TypeId of the bean being dispatched.
      * @param bean        Pointer to the `const AnyBean` (cast from void* by callers).
+     * @param emitterScope Scope of the bean being dispatched, or `kNoScope`.
      */
     void dispatch(std::size_t phaseIndex,
                   TypeId beanTypeId,
-                  const void* bean) const {
+                  const void* bean,
+                  NameId emitterScope = kNoScope) const {
         assert(phaseIndex < kPhaseCount);
 
         // Fast-exit: lock-free; avoids even the atomic load when idle.
@@ -184,7 +196,7 @@ public:
 
         std::atomic<const View*>* hazardSlot = dispatchHazardSlot_();
         if (hazardSlot == nullptr) {
-            dispatchLocked_(phaseIndex, beanTypeId, bean);
+            dispatchLocked_(phaseIndex, beanTypeId, bean, emitterScope);
             return;
         }
 
@@ -211,7 +223,7 @@ public:
         }
 
         try {
-            dispatchFromView_(*view, phaseIndex, beanTypeId, bean);
+            dispatchFromView_(*view, phaseIndex, beanTypeId, bean, emitterScope);
         } catch (...) {
             hazardSlot->store(nullptr, std::memory_order_release);
             throw;
@@ -290,6 +302,7 @@ private:
 
     struct Entry {
         TypeId      typeId;       ///< Filter: kInvalidTypeId = global (all beans).
+        NameId      listenerScope;
         Callback    callback;
         int         priority;
         std::size_t token;        ///< Unique monotone token: lower = earlier registration.
@@ -302,6 +315,7 @@ private:
 
     struct ViewEntry {
         Callback    callback;   ///< Copied from Entry on view construction.
+        NameId      listenerScope;
         int         priority;
         std::size_t token;
     };
@@ -325,7 +339,7 @@ private:
             pv.global.reserve(phases_[p].size());
             // phases_[p] is sorted by (priority desc, token asc) — preserved in split.
             for (const Entry* e : phases_[p]) {
-                ViewEntry ve{e->callback, e->priority, e->token};
+                ViewEntry ve{e->callback, e->listenerScope, e->priority, e->token};
                 if (e->typeId == kInvalidTypeId) {
                     pv.global.push_back(std::move(ve));
                 } else {
@@ -464,17 +478,19 @@ private:
      */
     void dispatchLocked_(std::size_t phaseIndex,
                          TypeId beanTypeId,
-                         const void* bean) const {
+                         const void* bean,
+                         NameId emitterScope) const {
         std::lock_guard lock(mutex_);
         if (currentView_ == nullptr)
             return;
-        dispatchFromView_(*currentView_, phaseIndex, beanTypeId, bean);
+        dispatchFromView_(*currentView_, phaseIndex, beanTypeId, bean, emitterScope);
     }
 
     static void dispatchFromView_(const View& view,
                                   std::size_t phaseIndex,
                                   TypeId beanTypeId,
-                                  const void* bean) {
+                                  const void* bean,
+                                  NameId emitterScope) {
         const PhaseView& pv = view[phaseIndex];
 
         static const std::vector<ViewEntry> kEmpty;
@@ -493,13 +509,29 @@ private:
             const auto& t = typeds[ti];
             if (g.priority > t.priority
                     || (g.priority == t.priority && g.token < t.token)) {
-                g.callback(bean); ++gi;
+                if (g.listenerScope == kAllScopes || g.listenerScope == emitterScope) {
+                    g.callback(bean);
+                }
+                ++gi;
             } else {
-                t.callback(bean); ++ti;
+                if (t.listenerScope == kAllScopes || t.listenerScope == emitterScope) {
+                    t.callback(bean);
+                }
+                ++ti;
             }
         }
-        while (gi < globals.size()) globals[gi++].callback(bean);
-        while (ti < typeds.size()) typeds[ti++].callback(bean);
+        while (gi < globals.size()) {
+            const auto& g = globals[gi++];
+            if (g.listenerScope == kAllScopes || g.listenerScope == emitterScope) {
+                g.callback(bean);
+            }
+        }
+        while (ti < typeds.size()) {
+            const auto& t = typeds[ti++];
+            if (t.listenerScope == kAllScopes || t.listenerScope == emitterScope) {
+                t.callback(bean);
+            }
+        }
     }
 
     // -------------------------------------------------------------------------

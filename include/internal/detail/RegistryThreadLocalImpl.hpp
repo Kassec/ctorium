@@ -97,10 +97,18 @@ namespace ctr::detail {
         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
         anyBean.bits_.f1.descId = primaryDescId;
         anyBean.registry_ = this;
-        listeners_.dispatch(ListenerStore::phaseInitialized(), cold.exposedType, &anyBean);
+        listeners_.dispatch(
+            ListenerStore::phaseInitialized(),
+            cold.exposedType,
+            &anyBean,
+            ListenerStore::kNoScope);
         if (cold.postConstruct)
             cold.postConstruct(mem, static_cast<void *>(&ctx));
-        listeners_.dispatch(ListenerStore::phaseCreated(), cold.exposedType, &anyBean);
+        listeners_.dispatch(
+            ListenerStore::phaseCreated(),
+            cold.exposedType,
+            &anyBean,
+            ListenerStore::kNoScope);
 
         return mem;
     }
@@ -125,7 +133,7 @@ namespace ctr::detail {
         }
         // Destroy in reverse insertion order (on the exiting thread — lifecycle compliant).
         for (auto it = toDestroy.rbegin(); it != toDestroy.rend(); ++it) {
-            executeDestructionLifecycle(it->first, it->second);
+            executeDestructionLifecycle(it->first, it->second, ListenerStore::kNoScope);
         }
     }
 

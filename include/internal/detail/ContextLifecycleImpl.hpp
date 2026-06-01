@@ -96,6 +96,18 @@ inline BeanContext& BeanContext::start() {
     try {
         core().start(this);
         flushDeferredListeners_();
+        std::vector<ScopedContext*> scopes;
+        {
+            std::shared_lock<std::shared_mutex> lock(scopesMutex_);
+            scopes.reserve(scopes_.size());
+            for (auto& [key, scope] : scopes_) {
+                (void)key;
+                scopes.push_back(scope.get());
+            }
+        }
+        for (ScopedContext* scope : scopes) {
+            scope->flushDeferredListeners_();
+        }
         // Dispatch lifecycle for pre-start bound singletons after deferred listeners
         // are flushed so that listeners registered before start() observe the events.
         core().dispatchBoundSingletonLifecycle();
@@ -117,7 +129,11 @@ inline void BeanContext::flushDeferredListeners_() {
     for (auto& entry : deferredListeners_) {
         const detail::TypeId typeId = core().lookupTypeId(entry.typeIndex);
         (void)core().listenerStore().addListenerDeferred(
-            entry.phaseIndex, typeId, std::move(entry.callback), entry.priority);
+            entry.phaseIndex,
+            typeId,
+            entry.listenerScope,
+            std::move(entry.callback),
+            entry.priority);
     }
     core().listenerStore().finalizeListeners();
     deferredListeners_.clear();
@@ -212,8 +228,16 @@ inline ScopedContext& ScopedContext::start() {
         anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(detail::kInvalidSlotId);
         anyBean.bits_.f1.descId = psb.descId;
         anyBean.registry_       = &reg;
-        reg.listeners_.dispatch(detail::ListenerStore::phaseInitialized(), cold.exposedType, &anyBean);
-        reg.listeners_.dispatch(detail::ListenerStore::phaseCreated(),     cold.exposedType, &anyBean);
+        reg.listeners_.dispatch(
+            detail::ListenerStore::phaseInitialized(),
+            cold.exposedType,
+            &anyBean,
+            scopeNameId_);
+        reg.listeners_.dispatch(
+            detail::ListenerStore::phaseCreated(),
+            cold.exposedType,
+            &anyBean,
+            scopeNameId_);
     }
     pendingRuntimeSessions_.clear();
     scopeStarted_ = true;
@@ -372,6 +396,8 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
 
         detail::Registry &reg = core();
         const std::size_t phaseIdx = detail::phaseIndexFor(phase);
+        const detail::NameId listenerScope =
+            asScope_ != nullptr ? asScope_->scopeNameId_ : detail::ListenerStore::kAllScopes;
 
         auto wrapper =
             [cb = std::forward<Callback>(callback)](const void *vBean) {
@@ -395,6 +421,7 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
                 {
                     std::type_index(typeid(T)),
                     phaseIdx,
+                    listenerScope,
                     std::move(wrapper),
                     options.priority
                 }
@@ -406,6 +433,7 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
         return reg.listenerStore().addListener(
             phaseIdx,
             typeId,
+            listenerScope,
             std::move(wrapper),
             options.priority
             );
@@ -429,6 +457,8 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
 
         detail::Registry &reg = core();
         const std::size_t phaseIdx = detail::phaseIndexFor(phase);
+        const detail::NameId listenerScope =
+            asScope_ != nullptr ? asScope_->scopeNameId_ : detail::ListenerStore::kAllScopes;
 
         auto wrapper =
             [cb = std::forward<Callback>(callback)](const void *vBean) {
@@ -440,6 +470,7 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
         return reg.listenerStore().addListener(
             phaseIdx,
             detail::kInvalidTypeId,
+            listenerScope,
             std::move(wrapper),
             options.priority
             );

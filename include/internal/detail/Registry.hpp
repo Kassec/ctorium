@@ -285,8 +285,16 @@ public:
             beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
             beanCtxBean.bits_.f1.descId = beanContextDescId_;
             beanCtxBean.registry_       = this;
-            listeners_.dispatch(ListenerStore::phaseInitialized(), beanCtxTypeId, &beanCtxBean);
-            listeners_.dispatch(ListenerStore::phaseCreated(),     beanCtxTypeId, &beanCtxBean);
+            listeners_.dispatch(
+                ListenerStore::phaseInitialized(),
+                beanCtxTypeId,
+                &beanCtxBean,
+                ListenerStore::kNoScope);
+            listeners_.dispatch(
+                ListenerStore::phaseCreated(),
+                beanCtxTypeId,
+                &beanCtxBean,
+                ListenerStore::kNoScope);
             return;
         }
 
@@ -559,8 +567,16 @@ public:
         beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
         beanCtxBean.bits_.f1.descId = beanContextDescId_;
         beanCtxBean.registry_       = this;
-        listeners_.dispatch(ListenerStore::phaseInitialized(), beanCtxTypeId, &beanCtxBean);
-        listeners_.dispatch(ListenerStore::phaseCreated(),     beanCtxTypeId, &beanCtxBean);
+        listeners_.dispatch(
+            ListenerStore::phaseInitialized(),
+            beanCtxTypeId,
+            &beanCtxBean,
+            ListenerStore::kNoScope);
+        listeners_.dispatch(
+            ListenerStore::phaseCreated(),
+            beanCtxTypeId,
+            &beanCtxBean,
+            ListenerStore::kNoScope);
     }
 
     /**
@@ -586,7 +602,7 @@ public:
             tlThreadStores_.clear();
         }
         for (auto it = tlToDestroy.rbegin(); it != tlToDestroy.rend(); ++it) {
-            executeDestructionLifecycle(it->first, it->second);
+            executeDestructionLifecycle(it->first, it->second, ListenerStore::kNoScope);
         }
 
         listeners_.clear();
@@ -1256,8 +1272,14 @@ private:
      * Sequence: onPreDestroy → preDestroy hook → C++ destructor → onDestroyed →
      * `::operator delete` (skipped when `DescriptorCold::size == 0` — externally owned memory).
      * Defined in RegistryRuntimeImpl.hpp on the model of `resolve<T>()`.
+     *
+     * @param emitterScope Scope of the bean being destroyed, or `ListenerStore::kNoScope`.
      */
-    void executeDestructionLifecycle(DescriptorId descId, void* mem) noexcept;
+    void executeDestructionLifecycle(
+        DescriptorId descId,
+        void* mem,
+        NameId emitterScope
+        ) noexcept;
 
     /**
      * @brief Destroys all session instances owned by `scope` in reverse construction

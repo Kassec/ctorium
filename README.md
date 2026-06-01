@@ -166,6 +166,7 @@ Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.
     - [x] scope `userData` association
     - [x] a bean can retrieve its owning context with `bean.context()`
     - [ ] expose their lifecycle state
+    - [ ] destroyBean() api
 
 - [x] Qualifier-based resolution
     - [x] named qualifiers

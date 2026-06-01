@@ -55,6 +55,10 @@ using ScopeChunk = std::array<
     std::atomic<ctr::ScopedContext*>,
     kScopeChunkSize>;
 
+inline constexpr std::size_t kTypeIdCacheChunkSize = 256;
+inline constexpr std::size_t kTypeIdCacheTopCapacity = 256;
+using TypeIdCacheChunk = std::array<std::atomic<TypeId>, kTypeIdCacheChunkSize>;
+
 /** @brief Key used to serialize singleton and session materialization. */
 struct MaterializationKey {
     DescriptorId descId = kInvalidDescriptorId;
@@ -676,8 +680,8 @@ public:
      * @brief Looks up the `TypeId` for a runtime type by its `std::type_index`.
      *
      * Returns `kInvalidTypeId` when the type was never registered.  Called by
-     * `typeIdFor<T>()` on the first resolution of T; the result is then cached
-     * in a per-type static atomic inside the thunk.
+     * `typeIdFor<T>()` on the first resolution of T in this registry; the result
+     * is then cached in this registry's per-type slot table.
      *
      * Lock-free after `start()`.
      */
@@ -789,13 +793,12 @@ public:
     // -------------------------------------------------------------------------
 
     /**
-     * @brief Returns the dense `TypeId` for T, populating a per-type static cache.
+     * @brief Returns the dense `TypeId` for T, populating this registry's cache.
      *
-     * The cache stores `(registryId << 32) | TypeId` in a single 64-bit atomic so
-     * that lookups are correct across multiple independent Registry instances.
-     * On a hit (high 32 bits match this registry's unique ID), only one relaxed
-     * atomic load is paid.  On a miss, performs `lookupTypeId` (lock-free) and
-     * updates the cache.
+     * Each T receives one process-wide slot, stored in a constant-initialized
+     * function-local atomic.  The slot indexes this Registry's chunked `TypeId`
+     * cache, so independent roots do not evict each other's cached value.
+     * On a cache miss, performs `lookupTypeId` and records the result locally.
      *
      * Returns `kInvalidTypeId` when T was never registered in this registry.
      * The caller (`resolve<T>()`) raises `ResolutionError` in that case.
@@ -805,19 +808,20 @@ public:
      */
     template <typename T>
     [[nodiscard]] TypeId typeIdFor() noexcept {
-        static std::atomic<std::uint64_t> cache{0};
-        const std::uint64_t e = cache.load(std::memory_order_relaxed);
-        if ((e >> 32) == static_cast<std::uint64_t>(registryId_)) {
-            return static_cast<TypeId>(e & 0xFFFF'FFFFu);
+        static std::atomic<std::uint32_t> slotCache{kInvalidTypeId};
+        std::uint32_t slot = slotCache.load(std::memory_order_relaxed);
+        if (slot == kInvalidTypeId) {
+            slot = claimTypeIdCacheSlot(slotCache);
+            if (slot == kInvalidTypeId) {
+                return lookupTypeId(std::type_index(typeid(T)));
+            }
         }
-        const TypeId id = lookupTypeId(std::type_index(typeid(T)));
-        if (id != kInvalidTypeId) {
-            const std::uint64_t packed =
-                (static_cast<std::uint64_t>(registryId_) << 32)
-                | static_cast<std::uint64_t>(id);
-            cache.store(packed, std::memory_order_relaxed);
+
+        const TypeId cached = cachedTypeIdForSlot(slot);
+        if (cached != kInvalidTypeId) {
+            return cached;
         }
-        return id;
+        return cacheTypeIdForSlot(slot, std::type_index(typeid(T)));
     }
 
     // -------------------------------------------------------------------------
@@ -1056,6 +1060,113 @@ private:
     [[nodiscard]] bool materializationWaitCycleDetected(
         std::uint32_t currentThreadToken,
         std::uint32_t ownerThreadToken) const noexcept;
+
+    /** @brief Lazily claims the process-wide cache slot for one T. */
+    [[nodiscard]] static std::uint32_t claimTypeIdCacheSlot(
+            std::atomic<std::uint32_t>& slotCache) noexcept {
+        std::uint32_t current = slotCache.load(std::memory_order_relaxed);
+        if (current != kInvalidTypeId) {
+            return current;
+        }
+
+        std::uint32_t next = nextTypeIdCacheSlot_.load(std::memory_order_relaxed);
+        for (;;) {
+            if (next == kInvalidTypeId) {
+                return kInvalidTypeId;
+            }
+            if (nextTypeIdCacheSlot_.compare_exchange_weak(
+                    next,
+                    next + 1u,
+                    std::memory_order_relaxed,
+                    std::memory_order_relaxed)) {
+                break;
+            }
+        }
+
+        current = kInvalidTypeId;
+        if (slotCache.compare_exchange_strong(
+                current,
+                next,
+                std::memory_order_relaxed,
+                std::memory_order_relaxed)) {
+            return next;
+        }
+        return current;
+    }
+
+    /** @brief Reads a cached TypeId for a process-wide slot in this registry. */
+    [[nodiscard]] TypeId cachedTypeIdForSlot(std::uint32_t slot) const noexcept {
+        const std::size_t chunkIndex = slot / kTypeIdCacheChunkSize;
+        if (chunkIndex >= kTypeIdCacheTopCapacity) {
+            return kInvalidTypeId;
+        }
+
+        const TypeIdCacheChunk* const chunk =
+            typeIdCacheChunks_[chunkIndex].load(std::memory_order_acquire);
+        if (!chunk) {
+            return kInvalidTypeId;
+        }
+        return (*chunk)[slot % kTypeIdCacheChunkSize].load(std::memory_order_relaxed);
+    }
+
+    /** @brief Creates an empty TypeId cache chunk without throwing. */
+    [[nodiscard]] static std::unique_ptr<TypeIdCacheChunk> makeTypeIdCacheChunk() noexcept {
+        TypeIdCacheChunk* const raw = new (std::nothrow) TypeIdCacheChunk{};
+        if (!raw) {
+            return {};
+        }
+        for (std::atomic<TypeId>& cached : *raw) {
+            cached.store(kInvalidTypeId, std::memory_order_relaxed);
+        }
+        return std::unique_ptr<TypeIdCacheChunk>{raw};
+    }
+
+    /** @brief Looks up and records a TypeId in this registry's cache miss path. */
+    [[nodiscard]] TypeId cacheTypeIdForSlot(
+            std::uint32_t slot,
+            std::type_index index) noexcept {
+        const std::size_t chunkIndex = slot / kTypeIdCacheChunkSize;
+        if (chunkIndex >= kTypeIdCacheTopCapacity) {
+            return lookupTypeId(index);
+        }
+
+        const std::size_t offset = slot % kTypeIdCacheChunkSize;
+        std::lock_guard<std::mutex> lock(typeIdCacheMutex_);
+
+        TypeIdCacheChunk* chunk =
+            typeIdCacheChunks_[chunkIndex].load(std::memory_order_relaxed);
+        if (chunk) {
+            const TypeId cached = (*chunk)[offset].load(std::memory_order_relaxed);
+            if (cached != kInvalidTypeId) {
+                return cached;
+            }
+        }
+
+        const TypeId id = lookupTypeId(index);
+        if (id == kInvalidTypeId) {
+            return id;
+        }
+
+        if (!chunk) {
+            std::unique_ptr<TypeIdCacheChunk> owned = makeTypeIdCacheChunk();
+            if (!owned) {
+                return id;
+            }
+            (*owned)[offset].store(id, std::memory_order_relaxed);
+            chunk = owned.get();
+            try {
+                ownedTypeIdCacheChunks_.push_back(std::move(owned));
+            } catch (...) {
+                return id;
+            }
+            typeIdCacheChunks_[chunkIndex].store(chunk, std::memory_order_release);
+            return id;
+        }
+
+        (*chunk)[offset].store(id, std::memory_order_relaxed);
+        return id;
+    }
+
     // -------------------------------------------------------------------------
     // Dependency cycle detection
     // -------------------------------------------------------------------------
@@ -1097,16 +1208,25 @@ private:
         return started_.load(std::memory_order_relaxed);
     }
 
-    /// Unique per-instance ID, used by the per-type static cache in typeIdFor<T>().
+    std::array<std::atomic<TypeIdCacheChunk*>, kTypeIdCacheTopCapacity>
+        typeIdCacheChunks_{};
+    std::vector<std::unique_ptr<TypeIdCacheChunk>> ownedTypeIdCacheChunks_;
+    std::mutex typeIdCacheMutex_;
+    inline static std::atomic<std::uint32_t> nextTypeIdCacheSlot_{0};
+
+    /// Unique per-instance ID, used by packed per-call-site caches.
     /// Never zero (nextRegistryId_ starts at 1).
     const std::uint32_t registryId_ =
         nextRegistryId_.fetch_add(1, std::memory_order_relaxed);
     inline static std::atomic<std::uint32_t> nextRegistryId_{1};
     inline static std::atomic<std::uint32_t> nextMaterializationThreadToken_{0};
+    inline static std::mutex materializationThreadTokenMutex_;
+    inline static std::vector<std::uint32_t> freeMaterializationThreadTokens_;
 
     template <class> friend class ctr::Bean;
     friend class ctr::AnyBean;
     friend class ctr::ScopedContext;
+    friend struct TLCleanup;
 
     /**
      * @brief Executes the full destruction lifecycle for one bean instance.

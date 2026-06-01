@@ -354,8 +354,9 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
     //
     // The TypeId of T is resolved at registration time via typeIdFor<T>().
     // If the context is not yet started (typeIdFor<T>() == kInvalidTypeId), the
-    // listener is stored with kInvalidTypeId and behaves as a global listener —
-    // a known deviation from specs-api §14.2; note in deviation report.
+    // listener is stored with kInvalidTypeId and observes all types, not only T.
+    // This is the deliberate consequence of typed-listener registration before
+    // T's TypeId has been interned.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <class T, class Callback, class PhaseTag>
@@ -455,7 +456,7 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
     }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ScopedContext::userData / userData  (specs-api §5.4)
+// ScopedContext::userData / userData
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <class T>

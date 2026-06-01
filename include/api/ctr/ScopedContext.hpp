@@ -37,7 +37,7 @@ public:
      * @brief Stops this scope: destroys all session instances in reverse construction
      * order, clears the session store, marks the scope stopped.
      *
-     * Preserves `scopeNameId_`, `userData`, and tracked handles (specs-api §5.3).
+     * Preserves `scopeNameId_`, `userData`, and tracked handles.
      * Idempotent: calling on an already-stopped scope is a no-op.
      */
     ScopedContext& stop();

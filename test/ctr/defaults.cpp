@@ -6,9 +6,8 @@
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 //
 // Named-bean annotations (ctr::named{.name=...}) work on GCC 16.1.0 when the name
-// is backed by std::define_static_string (the required provenance: a raw string
-// literal makes extract throw "reflect_constant failed" — see docs/specs-gcc.md
-// §3 / §4.3). The direct acceptance criterion
+// is backed by std::define_static_string (the required provenance); a raw string
+// literal makes extract throw "reflect_constant failed". The direct acceptance criterion
 //   defaultNamed<T>("console") then resolve<T>() selects the "console" candidate
 // is exercised below (NamedBeanDiscoversAndStarts / ResolveByNamedSelector /
 // DefaultNamedRedirectsUnnamedResolveToNamedCandidate).
@@ -25,7 +24,7 @@ struct [[=ctr::singleton{}]] Logger {};
 namespace defaults_named_fixture {
 
 // Named singleton bean. The name MUST be promoted with define_static_string:
-// a raw literal in the annotation is ill-formed on GCC 16.1.0 (docs/specs-gcc.md).
+// a raw literal in the annotation is ill-formed on GCC 16.1.0.
 struct [[=ctr::singleton{}]]
        [[=ctr::named{.name = std::define_static_string("console")}]]
        ConsoleSink {};
@@ -108,7 +107,7 @@ TEST(Defaults, DefaultNamedNullptrOnUnregisteredTypeIsNoOp) {
 // ─── Named beans: previously deferred, now exercised directly ─────────────────
 //
 // These replace the indirect validation described in the file header. They rely
-// on define_static_string-backed names (docs/specs-gcc.md §4.3).
+// on define_static_string-backed names.
 
 TEST(Defaults, NamedBeanDiscoversAndStarts) {
     // The path that was actually blocked: a [[=ctr::named{.name=...}]] bean must

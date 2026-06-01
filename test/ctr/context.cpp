@@ -11,7 +11,7 @@ namespace context_fixture {
 struct [[=ctr::singleton{}]] Svc {};
 
 // ContextAware: singleton whose constructor receives the root BeanContext via
-// standard constructor injection.  Validates §5.5: any bean whose constructor
+// standard constructor injection.  Validates that any bean whose constructor
 // declares ctr::Bean<ctr::BeanContext> receives the root context at construction
 // time, regardless of whether the resolution is issued from a scope.
 struct [[=ctr::singleton{}]] ContextAware {
@@ -46,7 +46,7 @@ TEST(BeanContextIdentity, StopAndReopenGivesFreshContext) {
     ctx2.stop();
 }
 
-// ─── Self-injectable BeanContext (§5.5) ───────────────────────────────────────
+// ─── Self-injectable BeanContext ──────────────────────────────────────────────
 
 TEST(BeanContextSelfInjectable, ResolvedHandleIsValid) {
     auto& ctx = ctr::BeanContext::resolveContext("ctx-self-valid");
@@ -57,7 +57,7 @@ TEST(BeanContextSelfInjectable, ResolvedHandleIsValid) {
 }
 
 TEST(BeanContextSelfInjectable, ResolveReturnsSelf) {
-    // resolve<ctr::BeanContext>() must return the context itself (§5.5).
+    // resolve<ctr::BeanContext>() must return the context itself.
     auto& ctx = ctr::BeanContext::resolveContext("ctx-self");
     ctx.discover<^^context_fixture>().start();
     auto bean = ctx.resolve<ctr::BeanContext>();
@@ -74,7 +74,7 @@ TEST(BeanContextSelfInjectable, ResolveBeforeStartRaisesContextStateError) {
 
 TEST(BeanContextSelfInjectable, ContextInjectableIntoBean) {
     // A bean whose constructor takes ctr::Bean<ctr::BeanContext> receives the
-    // root context, not the scope (§5.5).
+    // root context, not the scope.
     auto& ctx = ctr::BeanContext::resolveContext("ctx-inject");
     ctx.discover<^^context_fixture>().start();
     auto bean = ctx.resolve<context_fixture::ContextAware>();

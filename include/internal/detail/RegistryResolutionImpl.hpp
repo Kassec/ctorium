@@ -2,7 +2,7 @@
 
 namespace ctr::detail {
     // ─────────────────────────────────────────────────────────────────────────────
-    // Registry::resolve<T>  — hot-path resolution (specs-internal §9)
+    // Registry::resolve<T>  — hot-path resolution
     //
     // Lifetime coverage: Singleton, Prototype, Session, and ThreadLocal.
     // Hot handle exits stay here; construction paths are delegated to materializeOne<T>().
@@ -472,7 +472,7 @@ namespace ctr::detail {
                     instance = mem;
                 }
 
-                // Lifecycle dispatch outside the write lock (specs-api §13.1):
+                // Lifecycle dispatch outside the write lock:
                 //   C++ construction → onInitialized → postConstruct → onCreated
                 if (didMaterialize) {
                     ctr::AnyBean anyBean;
@@ -577,7 +577,7 @@ namespace ctr::detail {
         }
 
         case Lifetime::ThreadLocal: {
-            // Scope is transparent for threadLocal (specs-api §8): always resolve
+            // Scope is transparent for threadLocal: always resolve
             // as if from root — ctx.scope is ignored.
             (void)materializeThreadLocalInstance(materializationDescId, ctx);
             return MaterializedBeanHandle::threadLocal(descId);

@@ -81,8 +81,8 @@ struct ContributedParamDescriptor {
      * `MetaExtract` toolchain probe); the earlier claim that `reflect_constant`
      * could not do so was unverified and is contradicted by that probe and by
      * `BeanDescriptorGen::scanAnnotations`.  The remaining work for scoped beans is
-     * the session proxy-injection path (specs-internal §10.3, `Bean::makeDeferred`
-     * / `proxyResolve_`), not annotation extraction.  Until that path is wired this
+     * the session proxy-injection path (`Bean::makeDeferred` / `proxyResolve_`),
+     * not annotation extraction.  Until that path is wired this
      * field feeds graph-validation diagnostics that need to name the scope.
      */
     const char* scopeName;

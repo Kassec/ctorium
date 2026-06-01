@@ -24,7 +24,7 @@ inline constexpr SessionSlot kInvalidSessionSlot = std::numeric_limits<SessionSl
 // between this internal header and detail/ResolutionContext.hpp.
 
 /**
- * @brief Runtime descriptor stored in the registry descriptor table. See specs.md §28.1.
+ * @brief Runtime descriptor stored in the registry descriptor table.
  *
  * Built by start() from a ContributedDescriptor: the Identity is consumed for deduplication
  * and discarded; factoryMethodIdentity is resolved to factoryMethodDescriptor (DescriptorId).

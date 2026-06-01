@@ -26,7 +26,7 @@ class Registry;
  * All access is thread-private (read/write from the owning thread only),
  * except `collectFor` which is also called under `Registry::tlMutex_` from
  * `stop()` running on any thread — user code guarantees no concurrent bean
- * access at that point (specs-api §18).
+ * access at that point.
  */
 struct TLData {
     using Key = std::pair<std::uint32_t, DescriptorId>;

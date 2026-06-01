@@ -17,7 +17,7 @@ namespace ctr::detail {
  *
  * This is the data structure queried by `resolve<T>()` on the hot path.
  *
- * ### Structure  (specs-internal §8.2 — "dense flat", option B)
+ * ### Structure  (dense flat layout)
  * ```
  * vector<NameTable*>   typeIndex_         — TypeId → heap-allocated NameTable
  *                                           (pointer stable across outer-vector growth)

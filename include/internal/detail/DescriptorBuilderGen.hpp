@@ -20,7 +20,7 @@ consteval std::string_view compatibleConstructorConflictMessage(std::string_view
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §6.1  makeDescriptorForAnnotatedType
+// makeDescriptorForAnnotatedType
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<DiscoveredEntity entity, bool RetainMeta = false>
@@ -31,10 +31,9 @@ consteval ContributedDescriptor makeDescriptorForAnnotatedType() {
     // Single-pass annotation + member scans: 1 traversal each (D4+D5).
     constexpr auto ann     = scanAnnotations(entity.entity);
     static_assert(!ann.lifetimeConflict,
-        "Ctorium: multiple lifetime annotations on the same type are invalid "
-        "(specs-api §7 step 6 condition 1).");
+        "Ctorium: multiple lifetime annotations on the same type are invalid.");
     static_assert(!ann.emptyNameError,
-        "Ctorium: ctr::named annotation with an empty key is invalid (specs-api §4).");
+        "Ctorium: ctr::named annotation with an empty key is invalid.");
     constexpr auto members = scanMembers<entity.entity>();
     // qualifiedNameOf computed once and reused for identity + type names (D1).
     constexpr const char* typeName = qualifiedNameOf(entity.entity);
@@ -96,7 +95,7 @@ consteval ContributedDescriptor makeDescriptorForAnnotatedType() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §6.2  makeDescriptorForFactory
+// makeDescriptorForFactory
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<DiscoveredEntity entity>
@@ -152,7 +151,7 @@ consteval ContributedDescriptor makeDescriptorForFactory() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §6.3  makeDescriptorForProduct
+// makeDescriptorForProduct
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<DiscoveredEntity entity>
@@ -166,10 +165,9 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
     // Single-pass annotation scan on the producer method (D5).
     constexpr auto ann         = scanAnnotations(entity.entity);
     static_assert(!ann.lifetimeConflict,
-        "Ctorium: multiple lifetime annotations on the same factory product are invalid "
-        "(specs-api §7 step 6 condition 1).");
+        "Ctorium: multiple lifetime annotations on the same factory product are invalid.");
     static_assert(!ann.emptyNameError,
-        "Ctorium: ctr::named annotation with an empty key is invalid (specs-api §4).");
+        "Ctorium: ctr::named annotation with an empty key is invalid.");
     // Single-pass member scan on the product type for hooks (D4).
     constexpr auto members     = scanMembers<productType>();
     // qualifiedNameOf computed once per entity (D1).
@@ -225,7 +223,7 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §7  makeAllDescriptors
+// makeAllDescriptors
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<bool RetainMeta, auto... Roots>

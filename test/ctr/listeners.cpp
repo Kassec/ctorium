@@ -156,7 +156,7 @@ TEST(Listener, RemoveIsIdempotent) {
     ctx.stop();
 }
 
-// ─── Pre-start typed listener registration (specs-api §14.2) ─────────────────
+// ─── Pre-start typed listener registration ───────────────────────────────────
 
 TEST(Listener, PreStartTypedListenerFiresOnlyForTargetType) {
     auto& ctx = ctr::BeanContext::resolveContext("ls-prestart-typed-filter");

@@ -13,7 +13,7 @@
 
 namespace ctr::detail {
 // ─────────────────────────────────────────────────────────────────────────────
-// §3.1  FNV-1a 64-bit — consteval
+// FNV-1a 64-bit — consteval
 // ─────────────────────────────────────────────────────────────────────────────
 
 consteval Identity fnv1a64(
@@ -44,7 +44,7 @@ consteval Identity fnv1a64Byte(std::uint8_t b, Identity seed) {
 /// Counts the exact size first, then emits a transient character container to define_static_string.
 /// Returns true when `e` is a template specialization.
 /// GCC 16.1.0 P2996: template_arguments_of throws std::meta::exception for
-/// non-specializations (see docs/gcc-P2996R13.md §3).  try/catch is valid in
+/// non-specializations.  try/catch is valid in
 /// consteval since C++23.
 consteval bool isTemplateSpecialization(std::meta::info e) {
     try {
@@ -131,7 +131,7 @@ consteval const char* qualifiedNameOf(std::meta::info entity) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §3.3  Identity computation — consteval
+// Identity computation — consteval
 // ─────────────────────────────────────────────────────────────────────────────
 
 // typeName is passed pre-computed so callers need not call qualifiedNameOf twice.
@@ -166,7 +166,7 @@ consteval Identity computeIdentityForProduct(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §4  Annotation extraction — single-pass consteval scan (D5)
+// Annotation extraction — single-pass consteval scan (D5)
 //
 // Replaces the three separate lifetimeOf / priorityOf / namedKeyOf helpers.
 // One traversal of annotations_of per entity instead of up to three.

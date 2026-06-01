@@ -13,7 +13,7 @@ struct [[=ctr::prototype{}]] Proto {};
 
 // ─── Bean<T> handle semantics — singleton (Form 1, kInvalidSlotId) ───────────
 //
-// All tests in this file exercise the public handle contract (specs-api §7.1)
+// All tests in this file exercise the public handle contract
 // independently of bean lifetime semantics, which are covered in singleton.cpp
 // and prototype.cpp.
 //

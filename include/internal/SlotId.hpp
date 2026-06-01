@@ -10,7 +10,7 @@ namespace ctr::detail {
  *
  * Identifies a Bean<T> tracking slot. Carries no generation bits: the tracking
  * invariant guarantees a slot is freed only when all handles referencing it have
- * been destroyed, making ABA impossible (see specs-internal.md §2.2, ADR-O3).
+ * been destroyed, making ABA impossible.
  */
 using SlotId = std::uint32_t;
 

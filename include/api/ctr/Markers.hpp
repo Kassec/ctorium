@@ -47,8 +47,11 @@ struct threadLocal {
 //  - it is a structural type and can be used as an annotation value (P2996), and
 //  - GCC's reflect_constant can extract it from annotation info.
 // const char* is a structural type ([temp.param]); std::string_view is NOT structural
-// in GCC 16.1.0 (private internal members disqualify it). String literals and
-// define_static_string results both produce static-duration const char* values.
+// in GCC 16.1.0 (private internal members disqualify it). Static storage duration
+// is required but not sufficient: only define_static_string provenance is
+// template-argument-equivalent and extractible as an annotation value. A raw
+// literal has static storage duration but fails extraction. Use define_static_string
+// for every annotation value.
 struct named {
     /** Name key; nullptr or "" means the unnamed key. */
     const char* name = nullptr;
@@ -73,7 +76,7 @@ struct preDestroy {};
  * @brief Scope-injection qualifier. Valid at injection points only, never on bean declarations.
  *
  * Targets a session dependency against the named scope. Using scoped on a non-session
- * target raises ConfigurationError (see specs-api.md §3.6, §17).
+ * target raises ConfigurationError.
  */
 struct scoped {
     /** Name of the scope the session dependency is resolved against. */

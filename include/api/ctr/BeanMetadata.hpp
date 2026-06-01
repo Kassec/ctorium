@@ -65,10 +65,10 @@ struct BeanReflectiveData {
  * Construction is zero-allocation (reads directly from the runtime descriptor).
  * Usable from lifecycle-listener callbacks on the `onInitialized`/`onCreated` hot path.
  *
- * ### Noyau (always available)
+ * ### Core (always available)
  * `observedType()`, `exactType()`, `name()`, `lifetime()`, `origin()`.
  *
- * ### Réflexif (available only when `retainAllMetadata = true`)
+ * ### Reflective (available only when `retainAllMetadata = true`)
  * `methods()` — may be filtered with `annotatedWith<A>()`.
  * Empty when the bean was not discovered with `retainAllMetadata`, or is a
  * runtime-bound object (non-Ctorium type).
@@ -250,7 +250,7 @@ public:
                        lt, orig, reflective)
     {}
 
-    // ── Noyau ─────────────────────────────────────────────────────────────
+    // ── Core ──────────────────────────────────────────────────────────────
 
     /** Type_info of the exposed (observed) type (as in `bean.operator->()` return type). */
     [[nodiscard]] const std::type_info& observedType() const noexcept {
@@ -280,7 +280,7 @@ public:
     /** How this bean was contributed (annotated type, factory product, runtime binding). */
     [[nodiscard]] detail::Origin origin() const noexcept { return origin_; }
 
-    // ── Réflexif ──────────────────────────────────────────────────────────
+    // ── Reflective ────────────────────────────────────────────────────────
 
     /**
      * @brief Returns the retained method list.

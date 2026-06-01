@@ -171,9 +171,10 @@ private:
  *  - `ListenerStore`    — listener registrations and lifecycle dispatch.
  *
  * Session beans are owned by `ScopedContext` (each scope has its own `SessionStore`).
- * ThreadLocal beans are deferred to `ThreadLocalStore` (pending ADR).
+ * ThreadLocal beans live in `ThreadLocalStore`: one instance per owning thread,
+ * key, and registry.
  *
- * ### start() merge algorithm  (specs-internal §7)
+ * ### start() merge algorithm
  * 1. For each `ContributedDescriptor` in all submitted spans:
  *    a. Look up `identity` in a local `Identity → DescriptorId` map.
  *    b. If new: intern names and types, append to `DescriptorTable`, update maps.
@@ -428,7 +429,7 @@ public:
             [this](DescriptorId id) { return descriptors_.at(id).priority; });
 
         // --- Phase 3.5: graph validation ---
-        // Condition 4 (specs-internal §7 step 6): two producer methods on the same
+        // Condition 4 (start() graph-validation step): two producer methods on the same
         // factory returning the same type and named key → ConfigurationError.
         // factoryIds is declared outside the outer loop to reuse its capacity.
         std::vector<DescriptorId> factoryIds;
@@ -546,7 +547,7 @@ public:
      * @brief Permanently stops the registry and destroys all owned bean instances.
      *
      * Destroys singletons, prototypes, and thread-local instances of still-alive
-     * threads in order (specs-api §8).  Listeners are cleared last so lifecycle
+     * threads in order.  Listeners are cleared last so lifecycle
      * callbacks fire throughout the sweep.
      * After this call the registry must not be used; `BeanContext::stop()` handles
      * the lifecycle contract at the public API level.
@@ -554,7 +555,7 @@ public:
     void stop() noexcept {
         if (!stopRegistryOwnedBeans()) return;
 
-        // Thread-local instances on still-alive threads (specs-api §8 / §18).
+        // Thread-local instances on still-alive threads.
         // Collect+erase under tlMutex_ (brief critical section); destroy outside it.
         std::vector<std::pair<DescriptorId, void*>> tlToDestroy;
         {
@@ -575,7 +576,7 @@ public:
      * @brief Destroys all thread-local instances owned by the calling thread for
      * this registry.  Called by the per-thread TLCleanup sentinel on thread exit.
      *
-     * Executes the full destruction lifecycle (specs-api §13.1) on the exiting thread.
+     * Executes the full destruction lifecycle on the exiting thread.
      * Collect+erase under `tlMutex_`; destroy outside to avoid holding the lock
      * during user destructors.
      */
@@ -680,7 +681,7 @@ public:
      *
      * Delegates to `Bean<U>::makeDeferred` (private, accessible here because
      * `Registry` is a declared friend of `Bean<T>`).  Called from `injectParam`
-     * for `[[=ctr::scoped{...}]]` parameters (specs-internal §10.3).
+     * for `[[=ctr::scoped{...}]]` parameters.
      *
      * @tparam U       Session bean type.
      * @param scopeNameId     NameId of the target scope.
@@ -785,7 +786,7 @@ public:
     /**
      * @brief Resolves one bean compatible with T and the given named qualifier.
      *
-     * Implements the resolution algorithm of specs-internal §9 for singleton,
+     * Implements the hot-path resolution algorithm for singleton,
      * prototype, session, and threadLocal lifetimes.  Session and threadLocal
      * materialization is delegated to `materializeSessionInstance()` and
      * `materializeThreadLocalInstance()`.
@@ -837,7 +838,7 @@ public:
     /**
      * @brief Binds an externally constructed singleton to the registry.
      *
-     * Follows the specs-api §11.1 contract:
+     * Follows the runtime-binding contract:
      *  - Before `start()`: registers a pending descriptor; the instance enters the
      *    lifecycle during `start()`.
      *  - After `start()` for a known TypeId: allowed if not yet instantiated.
@@ -887,7 +888,7 @@ public:
      * Iterates the descriptor table for `Lifetime::Singleton`, `origin != RuntimeBinding`,
      * `lazy == false`, sorted by descending priority, and constructs each via the standard
      * two-phase lock pattern.  Exceptions from user constructors propagate to the caller
-     * (specs-api §17 pass-through policy).
+     * (user-exception pass-through policy).
      *
      * Called by `BeanContext::start()` after `dispatchBoundSingletonLifecycle()`, outside
      * the registry's internal write lock (`started_` is already published before this call).
@@ -1015,7 +1016,7 @@ private:
         std::uint32_t currentThreadToken,
         std::uint32_t ownerThreadToken) const noexcept;
     // -------------------------------------------------------------------------
-    // Dependency cycle detection  (specs-internal §13)
+    // Dependency cycle detection
     // -------------------------------------------------------------------------
 
     /**

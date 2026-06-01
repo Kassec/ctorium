@@ -39,7 +39,7 @@ void deallocBoundObjectThunk(void* p) noexcept {
 
 template <class T>
 Bean<T> BeanContext::bindSingleton(std::unique_ptr<T> object, BindOptions options) {
-    // Specs-api §11.1: invoked via ScopedContext → bind on the owning root.
+    // Invoked via ScopedContext → bind on the owning root.
     BeanContext* target = asScope_
         ? static_cast<ScopedContext*>(this)->root_
         : this;
@@ -65,8 +65,7 @@ namespace ctr::detail {
         if constexpr (std::is_same_v<T, ctr::BeanContext>) {
             throw ctr::ConfigurationError(
                 "Registry::bindSingleton: ctr::BeanContext is registered implicitly at "
-                "start(); explicit bindSingleton<ctr::BeanContext>() is forbidden "
-                "(specs-api §5.5)."
+                "start(); explicit bindSingleton<ctr::BeanContext>() is forbidden."
                 );
         } else {
 
@@ -106,7 +105,7 @@ namespace ctr::detail {
                         throw ctr::ConfigurationError(
                             std::string("Registry::bindSingleton: type '") + kTypeName
                             + "' is currently being materialized; binding conflicts with "
-                            "concurrent materialization (specs-api §11.3)."
+                            "concurrent materialization."
                             );
                     }
                 }

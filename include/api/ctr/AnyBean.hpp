@@ -19,14 +19,15 @@ namespace ctr {
      * @brief Type-erased tracked handle to a resolved bean.
      *
      * Used by global listeners and passed as `const AnyBean&` in lifecycle callbacks.
-     * Follows the same Form 1 / Form 2 ADR-O3 layout as `Bean<T>`, with `void*`
-     * instead of `T*` for the instance pointer.
+     * Follows the same internal layout as `Bean<T>` (Form 1 / 2 / 3), with
+     * `void*` instead of `T*` for the instance pointer.
      *
      * ### Relationship to Bean<T>
      * `AnyBean` and `Bean<T>` share the same internal layout so that `cast<T>()` and
      * `tryCast<T>()` can be implemented as cheap reinterpretation without an extra
-     * copy.  The concrete type is known via the `Descriptor` looked up through the
-     * Registry using `bits_.f1.slot` (Form 1) or the proxy resolution (Form 2).
+     * copy.  Form 1 gets the concrete type from the `Descriptor` resolved through
+     * the Registry; Form 2 uses scoped proxy resolution; Form 3 uses thread-local
+     * resolution.
      * Prototype Form 1 handles anchor to the surviving PrototypeStore block.
      *
      * ### Tracking semantics

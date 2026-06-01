@@ -46,7 +46,7 @@ namespace ctr::detail {
     //
     // Collects all Singleton, non-RuntimeBinding, lazy=false descriptors, sorts by
     // descending priority, and materializes each.  Exceptions propagate (pass-through
-    // policy per specs-api §17).
+    // policy).
     // NOTE: when polymorphic-exposure lands, add a guard to skip alias descriptors
     // (primaryDescriptor != self) to avoid double-triggering on exposed aliases.
     // ─────────────────────────────────────────────────────────────────────────────

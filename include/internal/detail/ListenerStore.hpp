@@ -29,10 +29,10 @@ namespace ctr::detail {
  * `BeanContext` to accept `const AnyBean&` and forward to the typed callback only
  * when the bean is compatible with T.  This keeps `ListenerStore` type-agnostic.
  *
- * ### Copy-on-write dispatch strategy (ADR-O4 revised)
+ * ### Copy-on-write dispatch strategy
  * A raw `const View*` is published via `std::atomic<const View*>` with
  * `acquire`/`release` ordering.  `dispatch()` loads the pointer without holding any
- * lock (no heap allocation, no spinlock), satisfying specs-api §14.5: a listener
+ * lock (no heap allocation, no spinlock): a listener
  * added or removed during dispatch does not affect the current event.
  *
  * When a listener is added or removed, a new `View` is built under `mutex_`, its
@@ -214,7 +214,7 @@ public:
         for (std::size_t i = 0; i < kPhaseCount; ++i)
             phaseSizes_[i].store(0, std::memory_order_relaxed);
         view_.store(nullptr, std::memory_order_release);
-        // clear() runs under exclusive ownership (§18): no concurrent dispatch()
+        // clear() runs under exclusive ownership: no concurrent dispatch()
         // holds a view pointer.  Freeing allViews_ here reclaims all accumulated
         // views (one per add/remove since last clear) at shutdown.
         allViews_.clear();

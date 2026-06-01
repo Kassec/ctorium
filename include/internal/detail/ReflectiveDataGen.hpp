@@ -2,7 +2,7 @@
 
 namespace ctr::detail {
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.8  makeReflectiveData — compile-time projection of method metadata
+// makeReflectiveData — compile-time projection of method metadata
 //
 // Generates a BeanReflectiveData struct (static lifetime) for the annotated type
 // when retainAllMetadata = true.  Scans all non-constructor, non-special-member,

@@ -22,7 +22,7 @@ struct ResolutionContext;
 /**
  * @brief Storage for prototype bean instances with per-slot atomic reference counting.
  *
- * ### Slot reuse  (Treiber stack — ADR-O6, ABA fix A3)
+ * ### Slot reuse  (lock-free Treiber stack)
  * The freelist head is a 64-bit value encoding `(generation << 32) | slotId`.
  * `reclaimSlot()` increments the per-slot generation counter before pushing;
  * `allocate()` CASes on the full 64-bit value → ABA impossible.

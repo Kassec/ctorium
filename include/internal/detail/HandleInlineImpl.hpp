@@ -114,11 +114,11 @@ namespace ctr {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // Bean<T>::proxyResolve_()  — Form 2 proxy path (specs-internal §2.3)
+    // Bean<T>::proxyResolve_()  — Form 2 proxy path
     //
     // Algorithm:
     //   1. Look up scope by f2.scopeNameId.
-    //   2. Scope absent or stopped → nullptr (no exception, specs-api §7.1).
+    //   2. Scope absent or stopped → nullptr (no exception).
     //   3. Find or materialize the primary descriptor's session slot.
     //   4. Return the pointer adjusted to f2.descId's exposed type.
     // ─────────────────────────────────────────────────────────────────────────────
@@ -451,7 +451,7 @@ namespace ctr {
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
-    // Bean<T>::threadLocalResolve_  (Form 3 — specs-internal §15.3 B1)
+    // Bean<T>::threadLocalResolve_  (Form 3 — thread-local resolution)
     //
     // Called by operator-> when scopeNameId == kThreadLocalSentinel.
     // Never caches the pointer — resolves against the calling thread's TL store

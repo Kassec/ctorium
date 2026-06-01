@@ -20,10 +20,10 @@ namespace ctr {
     } // namespace detail
 
     /**
-     * @brief Typed tracked handle to a resolved bean.  (ADR-O3 layout)
+     * @brief Typed tracked handle to a resolved bean.
      *
-     * `Bean<T>` exists in two mutually exclusive internal forms, discriminated by
-     * whether `object_` is null (specs-internal §2).
+     * `Bean<T>` exists in three mutually exclusive internal forms, discriminated by
+     * `object_` and, when `object_` is null, by `f2_.scopeNameId`.
      *
      * ### Form 1 — Direct  (`object_ != nullptr`)
      * Used for singleton and prototype beans whose resolved instance is stable.
@@ -40,15 +40,20 @@ namespace ctr {
      * Used for all session beans (directly resolved or injected via `[[=ctr::scoped]]`).
      * `operator->` resolves the current session object on every call; the result may
      * change across scope cycles.  If the target scope is stopped, `operator->` and
-     * `value()` return `nullptr` — no exception (specs-api §7.1).
+     * `value()` return `nullptr` — no exception.
      * Fields: `f2_.scopeNameId`, `f2_.descId`, `registry_` as `Registry*`.
      *
-     * Both forms share the same 24-byte layout on 64-bit:
+     * ### Form 3 — ThreadLocal  (`object_ == nullptr`, `f2_.scopeNameId == kThreadLocalSentinel`)
+     * Used for thread-local beans. `operator->` resolves the calling thread's
+     * instance from the thread-local store on every dereference and never caches
+     * the pointer. Field `f2_.descId` identifies the descriptor.
+     *
+     * All three forms share the same 24-byte layout on 64-bit:
      * `void*(8) + union{uint32_t,uint32_t}(8) + anchor(8)`.
      *
      * ### Empty / moved-from state
      * Both `object_` and `registry_` are null; the union fields are zero.
-     * Accessing an empty or moved-from handle is undefined behaviour (specs-api §7.1).
+     * Accessing an empty or moved-from handle is undefined behaviour.
      *
      * ### Tracking semantics
      * - Copy: retains the same logical bean (prototype: atomic refcount increment).
@@ -121,7 +126,7 @@ namespace ctr {
          *
          * Form 1 (direct): returns `object_` immediately — no registry call, O(1).
          * Form 2 (proxy):  resolves the current session object from the active scope.
-         *   Returns `nullptr` if the scope is stopped or missing (specs-api §7.1).
+         *   Returns `nullptr` if the scope is stopped or missing.
          *   The proxy path is implemented in `HandleInlineImpl.hpp` once `Registry` is
          *   complete; until then it returns `nullptr` with a TODO marker.
          *
@@ -190,7 +195,7 @@ namespace ctr {
          * @brief Returns a metadata view for this bean.
          *
          * Zero-allocation; safe to call from lifecycle-listener callbacks.
-         * The noyau (type, name, lifetime, origin) is always available.
+         * The core (type, name, lifetime, origin) is always available.
          * Reflective metadata (methods) is available only when the bean was
          * discovered with `DiscoverOptions{.retainAllMetadata = true}`.
          */
@@ -300,8 +305,8 @@ namespace ctr {
         /**
          * @brief Constructs a deferred Form 2 handle.  Alias of `makeProxy()`.
          *
-         * Intended callsite: specs-internal §10.3 (scoped-deferred injection via
-         * `[[=ctr::scoped{...}]]`).  Behaves identically to `makeProxy()`; the distinct
+         * Intended call site: scoped-deferred injection via a
+         * `[[=ctr::scoped{...}]]` parameter.  Behaves identically to `makeProxy()`; the distinct
          * name communicates intent at the injection site.
          *
          * @param scopeNameId     NameId of the target scope.
@@ -358,16 +363,17 @@ namespace ctr {
         // Layout  (24 bytes on 64-bit, overloaded anchor)
         // -------------------------------------------------------------------------
 
-        /** Non-null: Form 1 (direct).  Null: Form 2 (proxy) or empty. */
+        /** Non-null: Form 1 (direct).  Null: Form 2 (proxy), Form 3 (thread-local), or empty. */
         void *object_ = nullptr;
 
         /**
          * @brief Form-dependent 8-byte field sharing the same storage.
          *
-         * Form 1: `f1.slot` (4 bytes) + `f1.unused_` (4 bytes padding).
-         * Form 2: `f2.scopeNameId` (4 bytes) + `f2.descId` (4 bytes).
+         * Form 1: `f1.slot` (4 bytes) + `f1.descId` (4 bytes).
+         * Form 2/3: `f2.scopeNameId` (4 bytes) + `f2.descId` (4 bytes).
          *
-         * The active form is determined by `object_ != nullptr`.
+         * The active form is determined by `object_`, then by `f2.scopeNameId`
+         * when `object_` is null (`kThreadLocalSentinel` selects Form 3).
          * `u64` provides a single 64-bit value for identity comparison and zeroing.
          */
         union Bits {

@@ -47,7 +47,7 @@ struct [[=ctr::singleton{}]] Consumer {
 } // namespace singleton_fixture
 
 // Named-bean fixture.  Name MUST use define_static_string — raw literals are
-// ill-formed on GCC 16.1.0 (docs/gcc-P2996R13.md §3/§4.3).
+// ill-formed on GCC 16.1.0.
 namespace singleton_named_fixture {
 
 struct [[=ctr::singleton{}]]

@@ -13,7 +13,7 @@ struct [[=ctr::session{}]] SessionSvc { int id = 0; };
 struct [[=ctr::session{}]] SessionDep { int val = 99; };
 
 // Consumer whose constructor injects a session dep implicitly (no scoped).
-// Valid because the consumer itself is a session bean (specs-internal §10.4).
+// Valid because the consumer itself is a session bean.
 struct [[=ctr::session{}]] SessionConsumer {
     ctr::Bean<SessionDep> dep;
     explicit SessionConsumer(ctr::Bean<SessionDep> d) : dep(std::move(d)) {}
@@ -49,7 +49,7 @@ struct [[=ctr::singleton{}]] GvScopedOnSingleton {
 
 } // namespace session_graphval_a
 
-// ─── Critère : même scope → même instance; scopes distincts → instances distinctes ───
+// ─── Criterion: same scope → same instance; distinct scopes → distinct instances ───
 
 TEST(Session, SameScopeReturnsSameInstance) {
     auto& ctx = ctr::BeanContext::resolveContext("ss-same-scope");
@@ -75,7 +75,7 @@ TEST(Session, DistinctScopesTwoInstances) {
     ctx.stop();
 }
 
-// ─── Critère : resolve depuis racine → ContextStateError ──────────────────────
+// ─── Criterion: root resolve → ContextStateError ──────────────────────────────
 
 TEST(Session, ResolveFromRootRaisesContextStateError) {
     auto& ctx = ctr::BeanContext::resolveContext("ss-from-root");
@@ -84,7 +84,7 @@ TEST(Session, ResolveFromRootRaisesContextStateError) {
     ctx.stop();
 }
 
-// ─── Critère : restart() → nouvelle instance; stop() → ContextStateError ──────
+// ─── Criterion: restart() → new instance; stop() → ContextStateError ──────────
 
 TEST(Session, RestartReplacesInstance) {
     auto& ctx = ctr::BeanContext::resolveContext("ss-restart");
@@ -118,7 +118,7 @@ TEST(Session, ResolveOnStoppedScopeRaisesContextStateError) {
     ctx.stop();
 }
 
-// ─── Critère : Form 2 proxy → nullptr sur scope arrêté (sans exception) ────────
+// ─── Criterion: Form 2 proxy → nullptr on stopped scope (no exception) ─────────
 
 TEST(Session, ProxyHandleReturnNullptrOnStoppedScope) {
     auto& ctx = ctr::BeanContext::resolveContext("ss-proxy-stop");
@@ -137,7 +137,7 @@ TEST(Session, ProxyHandleReturnNullptrOnStoppedScope) {
     ctx.stop();
 }
 
-// ─── Critère : injection session implicite (consommateur session) ──────────────
+// ─── Criterion: implicit session injection (session consumer) ─────────────────
 
 TEST(Session, ImplicitSessionInjectionInSameScope) {
     auto& ctx = ctr::BeanContext::resolveContext("ss-implicit-inject");
@@ -155,7 +155,7 @@ TEST(Session, ImplicitSessionInjectionInSameScope) {
     ctx.stop();
 }
 
-// ─── Critère : bean.context() retourne le ScopedContext propriétaire ──────────
+// ─── Criterion: bean.context() returns the owning ScopedContext ───────────────
 
 TEST(Session, ContextReturnsScopedContext) {
     auto& ctx = ctr::BeanContext::resolveContext("ss-context");
@@ -169,7 +169,7 @@ TEST(Session, ContextReturnsScopedContext) {
     ctx.stop();
 }
 
-// ─── Critère : validation graphe condition (b) ────────────────────────────────
+// ─── Criterion: graph validation condition (b) ────────────────────────────────
 // Session dep injected into non-session consumer without [[=ctr::scoped]]
 // → ConfigurationError at start().
 //
@@ -207,7 +207,7 @@ TEST(Session, ScopeStopIsIdempotent) {
     ctx.stop();
 }
 
-// ─── Critère 7a : [[=ctr::scoped]] sur cible non-session → ConfigurationError ─
+// ─── Criterion 7a: [[=ctr::scoped]] on a non-session target → ConfigurationError
 // Uses [[=ctr::scoped{}]] (default null name) on a singleton dep.
 // Boolean hasScopedAnnotation detection is sufficient — no name extraction needed.
 
@@ -218,7 +218,7 @@ TEST(Session, GraphValidationScopedOnNonSessionTargetThrows) {
     ctx.stop();
 }
 
-// ─── Lifecycle sur stop/restart de scope ──────────────────────────────────────
+// ─── Lifecycle on scope stop/restart ──────────────────────────────────────────
 
 namespace session_lifecycle_fixture {
 struct [[=ctr::session{}]] LifecycleSvc {};
@@ -372,12 +372,12 @@ TEST(Session, ScopedNamedInjection_TargetsNamedBean) {
     ctx.stop();
 }
 
-// ─── Risque 1 : exposition polymorphe d'un bean session ───────────────────────
+// ─── Risk 1: polymorphic exposure of a session bean ───────────────────────────
 //
-// Résoudre le bean session via son type de base (alias exposé) doit retourner
-// un handle non nul sur l'instance primaire correctement construite.
-// Resteront rouges tant que la redirection alias→primaire Session n'est pas
-// implémentée dans materializeOne.
+// Resolving the session bean through its base type (exposed alias) must return
+// a non-null handle on the correctly constructed primary instance.
+// These remain red until Session alias→primary redirection is implemented in
+// materializeOne.
 
 namespace session_poly_fixture {
 
@@ -402,7 +402,7 @@ TEST(Session, PolymorphicExposureResolvesBase) {
     auto concreteBean = scope.resolve<session_poly_fixture::SessionPolyConcrete>();
     ASSERT_NE(concreteBean.operator->(), nullptr);
 
-    // Héritage simple public offset-0 : le pointeur brut base == pointeur brut concret.
+    // Simple public inheritance offset-0: raw base pointer == raw concrete pointer.
     EXPECT_EQ(
         static_cast<void*>(baseBean.operator->()),
         static_cast<void*>(concreteBean.operator->())

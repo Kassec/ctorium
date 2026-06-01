@@ -10,7 +10,7 @@
 namespace ctr {
 
 // -------------------------------------------------------------------------
-// detail::submitDiscoveryContribution — §8
+// detail::submitDiscoveryContribution
 // -------------------------------------------------------------------------
 
 namespace detail {

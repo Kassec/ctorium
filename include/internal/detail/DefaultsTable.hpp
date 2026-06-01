@@ -12,9 +12,9 @@ namespace ctr::detail {
     /**
      * @brief Per-type runtime default `NameId` store with thread-safe snapshot semantics.
      *
-     * Implements the `defaultNamed<T>("x")` contract from specs-api §4 and the
-     * threading guarantee from specs-api §18: "snapshot semantics: a resolution
-     * observes either the previous default or the new default."
+     * Implements the `defaultNamed<T>("x")` runtime-default contract with snapshot
+     * threading semantics: a resolution observes either the previous default or the
+     * new one.
      *
      * ### Storage model
      * One `std::atomic<NameId>` per TypeId known at `start()`, indexed by TypeId

@@ -2,7 +2,7 @@
 
 namespace ctr::detail {
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.0  Polymorphic-exposure helpers (SPEC-polymorphic-exposure)
+// Polymorphic-exposure helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
 // No-op thunks for alias descriptors (never called; alias → primary redirect).
@@ -98,7 +98,7 @@ consteval void makeExposedDescriptors(std::vector<ContributedDescriptor>& result
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.1  destroyThunk
+// destroyThunk
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<typename T>
@@ -107,7 +107,7 @@ void destroyThunk(void* mem) noexcept {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.2  constructThunkDefault
+// constructThunkDefault
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<typename T>
@@ -116,7 +116,7 @@ void constructThunkDefault(void* mem, void* /*vctx*/) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.3  injectParam — per-parameter injection helper
+// injectParam — per-parameter injection helper
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<typename T, std::meta::info Ctor, std::size_t ParamIndex>
@@ -154,7 +154,7 @@ auto injectParam(ResolutionContext& ctx) {
     }();
 
     if constexpr (kHasScoped) {
-        // Scoped injection (specs-internal §10.3): produce a deferred Form 2 handle
+        // Scoped injection: produce a deferred Form 2 handle
         // targeting the named scope.  No eager resolution at construction time.
 
         // Extract scope name at consteval time.
@@ -270,7 +270,7 @@ auto injectParam(ResolutionContext& ctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.3b  makeParamDescriptors<Ctor> — builds ContributedParamDescriptor array
+// makeParamDescriptors<Ctor> — builds ContributedParamDescriptor array
 //
 // Consteval helper: one entry per injectable constructor parameter, recording:
 //   - injectedTypeName/injectedTypeInfo: the U type in Bean<U>
@@ -321,14 +321,14 @@ consteval std::vector<ContributedParamDescriptor> makeParamDescriptors() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.3  constructThunkInjected — injectable constructor thunk
+// constructThunkInjected — injectable constructor thunk
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Pack-expansion helper: not a lambda, so P2564 §13b.1 cannot promote it.
 // GCC 16 aggressively promotes lambdas that contain calls to functions with
 // std::meta::info NTTPs (P3603R0 consteval-only type), even when 'constexpr'
 // is added to the call operator.  A named function template is not subject to
-// §13b.1 and therefore stays callable at runtime.
+// P2564 §13b.1 and therefore stays callable at runtime.
 template<typename T, std::meta::info Ctor, std::size_t... Is>
 void constructThunkInjectedImpl(void* mem, ResolutionContext& ctx,
                                  std::index_sequence<Is...>) {
@@ -345,7 +345,7 @@ void constructThunkInjected(void* mem, void* vctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.4  isBeanType — predicate used by scanMembers
+// isBeanType — predicate used by scanMembers
 // ─────────────────────────────────────────────────────────────────────────────
 
 consteval bool isBeanType(std::meta::info paramType) {
@@ -360,7 +360,7 @@ consteval bool isBeanType(std::meta::info paramType) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.5  postConstruct / preDestroy thunks
+// postConstruct / preDestroy thunks
 // ─────────────────────────────────────────────────────────────────────────────
 
 template<typename T, std::meta::info Method>
@@ -388,7 +388,7 @@ void preDestroyThunkImpl(void* instance, void* vctx) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §5.4+5.5  scanMembers<Type>() — single-pass member scan (D4)
+// scanMembers<Type>() — single-pass member scan (D4)
 //
 // Combines findCompatibleCtor<T>() and the two findHookMethod calls into one
 // members_of traversal per type, instead of three separate calls.
@@ -454,7 +454,7 @@ consteval MemberScan scanMembers() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// §6.3 helpers — factory product thunks
+// factory product thunks
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Detects unique_ptr specializations, including the defaulted deleter argument.

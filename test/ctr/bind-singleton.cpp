@@ -152,6 +152,38 @@ TEST(BindSingleton, PostStartAlreadyInstantiatedThrowsConfigurationError) {
     ctx.stop();
 }
 
+TEST(BindSingleton, PostStartMultipleDistinctNamesAllowed) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-distinct-names");
+    ctx.start();
+    EXPECT_NO_THROW(
+        ctx.bindSingleton<bind_singleton_fixture::Widget>(
+            std::make_unique<bind_singleton_fixture::Widget>(11),
+            CTORIUM_NAMESPACE::BindOptions{.name = "audit", .priority = 0}));
+    EXPECT_NO_THROW(
+        ctx.bindSingleton<bind_singleton_fixture::Widget>(
+            std::make_unique<bind_singleton_fixture::Widget>(22),
+            CTORIUM_NAMESPACE::BindOptions{.name = "metrics", .priority = 0}));
+    auto audit = ctx.resolve<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::named("audit"));
+    auto metrics = ctx.resolve<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::named("metrics"));
+    EXPECT_EQ(audit->value, 11);
+    EXPECT_EQ(metrics->value, 22);
+    ctx.stop();
+}
+
+TEST(BindSingleton, PostStartDoubleBindSameNameThrows) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-same-name");
+    ctx.start();
+    ctx.bindSingleton<bind_singleton_fixture::Widget>(
+        std::make_unique<bind_singleton_fixture::Widget>(11),
+        CTORIUM_NAMESPACE::BindOptions{.name = "audit", .priority = 0});
+    EXPECT_THROW(
+        ctx.bindSingleton<bind_singleton_fixture::Widget>(
+            std::make_unique<bind_singleton_fixture::Widget>(22),
+            CTORIUM_NAMESPACE::BindOptions{.name = "audit", .priority = 0}),
+        CTORIUM_NAMESPACE::ConfigurationError);
+    ctx.stop();
+}
+
 TEST(BindSingleton, ExplicitBeanContextBindingThrowsConfigurationError) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-beancontext");
     EXPECT_THROW(

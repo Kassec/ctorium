@@ -86,15 +86,27 @@ namespace CTORIUM_NAMESPACE::detail {
                 TypeId typeId = lookupTypeId(std::type_index(typeid(T)));
                 if (typeId == kInvalidTypeId)
                     typeId = typeInterning_.internByName(kTypeName, &TypeInfoGetter<T>::get);
-                // Check already instantiated (any name key).
+                // Check already instantiated for this exact name key.
                 const NameTable *table = typeIndex_.tableFor(typeId);
                 if (table) {
-                    for (const auto &[nid, entry] : table->entries) {
+                    const auto it = table->entries.find(nameId);
+                    if (it != table->entries.end()) {
+                        const auto& entry = it->second;
                         for (DescriptorId did : entry.candidates) {
                             if (singletons_.find(did) != nullptr) {
+                                std::string message =
+                                    std::string("Registry::bindSingleton: type '") + kTypeName;
+                                const std::string_view name = nameInterning_.nameOf(nameId);
+                                if (name.empty()) {
+                                    message += "' unnamed binding is already instantiated "
+                                               "in this context.";
+                                } else {
+                                    message += "' named binding '";
+                                    message += name;
+                                    message += "' is already instantiated in this context.";
+                                }
                                 throw CTORIUM_NAMESPACE::ConfigurationError(
-                                    std::string("Registry::bindSingleton: type '") + kTypeName
-                                    + "' is already instantiated in this context."
+                                    message
                                     );
                             }
                         }

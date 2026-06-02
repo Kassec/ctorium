@@ -906,29 +906,10 @@ public:
     /**
      * @brief Binds an externally constructed singleton to the registry.
      *
-     * Follows the runtime-binding contract:
-     *  - Before `start()`: registers a pending descriptor; the instance enters the
-     *    lifecycle during `start()`.
-     *  - After `start()` for a known TypeId: allowed if not yet instantiated.
-     *  - After `start()` for an unknown TypeId: raises `ConfigurationError`.
-     *  - After `start()` for an already-instantiated TypeId: raises `ConfigurationError`.
-     *
-     * `postConstruct` is never called (the object is already constructed).
-     * `preDestroy` is called at root shutdown if the type carries that hook.
-     * All listener phases fire in the standard order for bound objects.
-     *
-     * @tparam T Bound type.
-     * @param object  Ownership of the singleton instance.  Transferred to the registry.
-     * @param nameId  Named qualifier for the binding; `kUnnamed` for unnamed.
-     * @param priority Candidate priority; default 0.
-     * @throws ctr::ConfigurationError on post-`start()` unknown type or double-bind.
-     */
-    /**
-     * @brief Binds an externally constructed singleton to the registry.
-     *
      * Pre-`start()`: enqueues a pending descriptor; the instance enters the lifecycle
-     * during `start()`.  Post-`start()`: type must be known, must not be instantiated,
-     * must not be concurrently materializing.
+     * during `start()`.  Post-`start()`: an unknown TypeId is interned and adopted;
+     * the exact `(TypeId, NameId)` pair must not be instantiated and the type must
+     * not be concurrently materializing.
      *
      * @tparam T Bound type.
      * @param object   Ownership of the instance.  Transferred to the registry.

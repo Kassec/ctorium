@@ -40,7 +40,7 @@ void deallocBoundObjectThunk(void* p) noexcept {
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <class T>
-Bean<T> BeanContext::bindSingleton(std::unique_ptr<T> object, BindOptions options) {
+BeanContext& BeanContext::bindSingleton(std::unique_ptr<T> object, BindOptions options) {
     // Invoked via ScopedContext → bind on the owning root.
     BeanContext* target = asScope_
         ? static_cast<ScopedContext*>(this)->root_
@@ -48,7 +48,8 @@ Bean<T> BeanContext::bindSingleton(std::unique_ptr<T> object, BindOptions option
     detail::Registry& reg = target->core();
     const detail::NameId nameId = reg.internNameSafe(
         options.name ? std::string_view{options.name} : std::string_view{});
-    return reg.bindSingleton<T>(std::move(object), nameId, options.priority);
+    reg.bindSingleton<T>(std::move(object), nameId, options.priority);
+    return *this;
 }
 
 } // namespace CTORIUM_NAMESPACE

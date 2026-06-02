@@ -137,10 +137,10 @@ public:
      * @tparam T Bound type.
      * @param object Ownership of the singleton object.
      * @param options Binding options.
-     * @return Typed tracked handle.
+     * @return Current context for chaining.
      */
     template <class T>
-    Bean<T> bindSingleton(std::unique_ptr<T> object, BindOptions options = {});
+    BeanContext& bindSingleton(std::unique_ptr<T> object, BindOptions options = {});
 
     /**
      * @brief Resolves or creates a scoped context by stable key.

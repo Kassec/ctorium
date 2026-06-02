@@ -207,15 +207,7 @@ TEST(BindSingleton, ViaScopedContextDelegatesToRoot) {
     ctx.stop();
 }
 
-// ─── Pre-start handle contract ────────────────────────────────────────────────
-
-TEST(BindSingleton, PreStartBindReturnsEmptyHandle) {
-    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-pre-start-handle");
-    auto handle = ctx.bindSingleton<bind_singleton_fixture::Widget>(
-        std::make_unique<bind_singleton_fixture::Widget>(0));
-    EXPECT_EQ(handle.operator->(), nullptr);
-    ctx.stop();
-}
+// ─── Pre-start lifecycle ──────────────────────────────────────────────────────
 
 TEST(BindSingleton, PreStartLifecycleFiresAfterStartWithDeferredListeners) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-pre-start-lifecycle");

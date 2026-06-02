@@ -262,6 +262,21 @@ listeners, or destructors pass through unchanged.
 The rule is simple: **Ctorium** manages what you declare, in the context where you declare it, and keeps errors visible
 instead of sweeping your dependency graph under the rug.
 
+## Building Ctorium into your project
+
+`ctorium` is an INTERFACE (header-only) CMake target. Pull it in with `add_subdirectory(...)` or `FetchContent`, then
+`target_link_libraries(your_target PRIVATE ctorium)`. Consumed this way it adds only that one target: its own tests and
+benchmarks stay out of your build, and it fetches neither GoogleTest nor Google Benchmark.
+
+Two options govern that. Both default to `ON` only when Ctorium is the top-level project — that is, when you build
+Ctorium itself — and to `OFF` otherwise, so a consuming build pays for neither by default:
+
+- `CTORIUM_BUILD_TESTS` — build the test suite (fetches GoogleTest when enabled);
+- `CTORIUM_BUILD_BENCHMARKS` — build the benchmarks (fetches Google Benchmark when enabled).
+
+Enable either explicitly with `-DCTORIUM_BUILD_TESTS=ON` or `-DCTORIUM_BUILD_BENCHMARKS=ON` to run them from a consuming
+build. Build flags and toolchain setup get their own treatment in [Guide 14 — Compilation](guide-14-compilation.md).
+
 ## Guide map
 
 A **qualifier** is information used during resolution to choose between compatible beans; named keys and priority are

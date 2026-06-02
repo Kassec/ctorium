@@ -95,6 +95,21 @@ TEST(ContractContexts, ResolveScope_SameKeyDifferentRoots_ReturnsDifferent) {
     secondRoot.stop();
 }
 
+TEST(ContractContexts, Scope_StartBeforeRoot_Throws) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-scope-start-before-root");
+    auto& scope = root.resolveScope("cc-start-before-root-scope");
+    EXPECT_THROW(scope.start(), CTORIUM_NAMESPACE::ContextStateError);
+    root.stop();
+}
+
+TEST(ContractContexts, Scope_StartAfterRoot_DoesNotThrow) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-scope-start-after-root");
+    auto& scope = root.resolveScope("cc-start-after-root-scope");
+    root.start();
+    EXPECT_NO_THROW(scope.start());
+    root.stop();
+}
+
 TEST(ContractContexts, ResolveScope_FromScope_DelegatesToRoot) {
     auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-scope-delegate-root");
     auto& first = root.resolveScope("cc-scope-first");

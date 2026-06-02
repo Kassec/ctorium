@@ -244,3 +244,46 @@ TEST(ExceptionPolicy, PreDestroyThrowDuringStopTerminates) {
         },
         "");
 }
+
+namespace exception_listener_shutdown_fixture {
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ShutdownService {};
+
+} // namespace exception_listener_shutdown_fixture
+
+#if GTEST_HAS_DEATH_TEST
+TEST(ExceptionPolicy, OnPreDestroyListenerThrowDuringStopTerminates) {
+    EXPECT_DEATH(
+        {
+            auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-listener-predestroy-terminate");
+            ctx.discover<^^exception_listener_shutdown_fixture>().start();
+            (void)ctx.resolve<exception_listener_shutdown_fixture::ShutdownService>();
+            ctx.on<exception_listener_shutdown_fixture::ShutdownService>(
+                CTORIUM_NAMESPACE::onPreDestroy,
+                [](const CTORIUM_NAMESPACE::Bean<exception_listener_shutdown_fixture::ShutdownService>&) {
+                    throw std::runtime_error("onPreDestroy listener failure");
+                });
+            ctx.stop();
+        },
+        "");
+}
+
+TEST(ExceptionPolicy, OnDestroyedListenerThrowDuringStopTerminates) {
+    EXPECT_DEATH(
+        {
+            auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-listener-destroyed-terminate");
+            ctx.discover<^^exception_listener_shutdown_fixture>().start();
+            (void)ctx.resolve<exception_listener_shutdown_fixture::ShutdownService>();
+            ctx.on<exception_listener_shutdown_fixture::ShutdownService>(
+                CTORIUM_NAMESPACE::onDestroyed,
+                [](const CTORIUM_NAMESPACE::Bean<exception_listener_shutdown_fixture::ShutdownService>&) {
+                    throw std::runtime_error("onDestroyed listener failure");
+                });
+            ctx.stop();
+        },
+        "");
+}
+#else
+TEST(ExceptionPolicy, DISABLED_OnPreDestroyListenerThrowDuringStopTerminates) {}
+TEST(ExceptionPolicy, DISABLED_OnDestroyedListenerThrowDuringStopTerminates) {}
+#endif

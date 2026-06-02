@@ -304,3 +304,21 @@ TEST(ContractResolution, Resolve_DependencyCycle_Throws) {
     EXPECT_THROW(context.resolve<contract_resolution_cycle_fixture::A>(), CTORIUM_NAMESPACE::ResolutionError);
     context.stop();
 }
+
+namespace contract_resolution_never_started_scope_fixture {
+
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionType {};
+
+} // namespace contract_resolution_never_started_scope_fixture
+
+TEST(ContractResolution, Resolve_FromNeverStartedScope_Throws) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cr-never-started-scope-root");
+    context.discover<^^contract_resolution_never_started_scope_fixture>().start();
+    auto& scope = context.resolveScope("cr-never-started-scope-owner");
+
+    EXPECT_THROW(
+        scope.resolve<contract_resolution_never_started_scope_fixture::SessionType>(),
+        CTORIUM_NAMESPACE::ContextStateError);
+
+    context.stop();
+}

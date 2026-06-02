@@ -31,6 +31,25 @@ struct BoundObject {};
 
 } // namespace contract_metadata_fixture
 
+namespace contract_metadata_named_factory_product_fixture {
+
+struct ProductTag {};
+
+template<typename>
+struct Product {};
+
+using NamedProduct = Product<ProductTag>;
+
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("alpha")}]]
+    NamedProduct makeAlpha() {
+        return NamedProduct{};
+    }
+};
+
+} // namespace contract_metadata_named_factory_product_fixture
+
 TEST(ContractMetadata, Metadata_ObservedType_ReturnsExposedType) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cm-observed-type");
     context.discover<^^contract_metadata_fixture>().start();
@@ -54,6 +73,17 @@ TEST(ContractMetadata, Metadata_Name_ReturnsKey) {
     auto unnamed = context.resolve<contract_metadata_fixture::Concrete>();
     EXPECT_EQ(named.metadata().name(), std::string_view{"named"});
     EXPECT_TRUE(unnamed.metadata().name().empty());
+    context.stop();
+}
+
+TEST(ContractMetadata, Metadata_FactoryProduct_NamedKey) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cm-factory-product-named-key");
+    context.discover<^^contract_metadata_named_factory_product_fixture>().start();
+    auto product = context.resolve<contract_metadata_named_factory_product_fixture::NamedProduct>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("alpha")});
+    EXPECT_EQ(product.metadata().name(), std::string_view{"alpha"});
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::Origin::FactoryProduct);
+    EXPECT_FALSE(product.metadata().factoryMethod().empty());
     context.stop();
 }
 

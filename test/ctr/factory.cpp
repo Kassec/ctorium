@@ -2,6 +2,7 @@
 #include <memory>
 #include <meta>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -522,6 +523,85 @@ TEST(Factory, SessionProducerCreatesOneInstancePerScope) {
     EXPECT_NE(firstA.operator->(), nullptr);
     EXPECT_EQ(firstA.operator->(), firstB.operator->());
     EXPECT_NE(firstA.operator->(), second.operator->());
+
+    ctx.stop();
+}
+
+namespace factory_threadlocal_product_fixture {
+
+struct ProductTag {};
+
+template<typename>
+struct Product {
+    std::thread::id createdOnThread;
+};
+
+using ThreadLocalProduct = Product<ProductTag>;
+
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::threadLocal{}]]
+    ThreadLocalProduct make() {
+        makeCallCount.fetch_add(1, std::memory_order_relaxed);
+        return ThreadLocalProduct{.createdOnThread = std::this_thread::get_id()};
+    }
+
+    static inline std::atomic<int> makeCallCount{0};
+};
+
+} // namespace factory_threadlocal_product_fixture
+
+TEST(Factory, ThreadLocalProducerCreatesDistinctInstancesPerThread) {
+    using Product = factory_threadlocal_product_fixture::ThreadLocalProduct;
+
+    factory_threadlocal_product_fixture::Factory::makeCallCount.store(
+        0,
+        std::memory_order_relaxed);
+
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-threadlocal-product");
+    ctx.discover<^^factory_threadlocal_product_fixture>().start();
+
+    auto first = ctx.resolve<Product>();
+    auto second = ctx.resolve<Product>();
+
+    ASSERT_NE(first.operator->(), nullptr);
+    ASSERT_NE(second.operator->(), nullptr);
+    EXPECT_EQ(first.operator->(), second.operator->());
+    EXPECT_EQ(first->createdOnThread, std::this_thread::get_id());
+    EXPECT_EQ(
+        factory_threadlocal_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        1);
+
+    Product* workerPtr = nullptr;
+    std::thread::id workerThreadId;
+    std::thread::id workerCreatedOnThread;
+    std::thread worker([&ctx, &workerPtr, &workerThreadId, &workerCreatedOnThread] {
+        workerThreadId = std::this_thread::get_id();
+        auto workerProduct = ctx.resolve<Product>();
+        workerPtr = workerProduct.operator->();
+        workerCreatedOnThread = workerPtr->createdOnThread;
+    });
+    worker.join();
+
+    ASSERT_NE(workerPtr, nullptr);
+    EXPECT_NE(first.operator->(), workerPtr);
+    EXPECT_EQ(workerCreatedOnThread, workerThreadId);
+    EXPECT_EQ(
+        factory_threadlocal_product_fixture::Factory::makeCallCount.load(
+            std::memory_order_relaxed),
+        2);
+
+    ctx.stop();
+}
+
+TEST(Factory, ThreadLocalProducerMetadataReportsThreadLocalLifetime) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-threadlocal-product-metadata");
+    ctx.discover<^^factory_threadlocal_product_fixture>().start();
+
+    auto product = ctx.resolve<factory_threadlocal_product_fixture::ThreadLocalProduct>();
+
+    EXPECT_EQ(product.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::ThreadLocal);
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::Origin::FactoryProduct);
 
     ctx.stop();
 }

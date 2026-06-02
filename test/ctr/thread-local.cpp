@@ -25,6 +25,21 @@ struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLSimple {
 
 } // namespace thread_local_fixture
 
+namespace tl_form3_cross_thread_fixture {
+
+std::atomic<int> constructionCount{0};
+
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] ThreadLocalService {
+    std::thread::id createdOnThread;
+
+    ThreadLocalService()
+        : createdOnThread(std::this_thread::get_id()) {
+        constructionCount.fetch_add(1, std::memory_order_relaxed);
+    }
+};
+
+} // namespace tl_form3_cross_thread_fixture
+
 // ─── Criterion 1: distinct instances per thread, same per same thread ─────────
 
 TEST(ThreadLocal, DistinctInstancesPerThread) {
@@ -46,6 +61,46 @@ TEST(ThreadLocal, DistinctInstancesPerThread) {
     t.join();
 
     EXPECT_NE(mainPtr, otherPtr);
+    ctx.stop();
+}
+
+// ─── Form 3 handle passed across threads ──────────────────────────────────────
+
+TEST(ThreadLocal, Form3HandlePassedToOtherThreadMaterializesOnReceivingThread) {
+    using Service = tl_form3_cross_thread_fixture::ThreadLocalService;
+
+    tl_form3_cross_thread_fixture::constructionCount.store(0, std::memory_order_relaxed);
+
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-form3-cross-thread-materialize");
+    ctx.discover<^^tl_form3_cross_thread_fixture>();
+    ctx.start();
+
+    auto handle = ctx.resolve<Service>();
+    Service* mainPtr = handle.operator->();
+
+    ASSERT_NE(mainPtr, nullptr);
+    EXPECT_EQ(mainPtr->createdOnThread, std::this_thread::get_id());
+    EXPECT_EQ(
+        tl_form3_cross_thread_fixture::constructionCount.load(std::memory_order_relaxed),
+        1);
+
+    Service* workerPtr = nullptr;
+    std::thread::id workerCreatedOnThread;
+    std::thread::id workerThreadId;
+    std::thread worker([&handle, &workerPtr, &workerThreadId, &workerCreatedOnThread] {
+        workerThreadId = std::this_thread::get_id();
+        workerPtr = handle.operator->();
+        workerCreatedOnThread = workerPtr->createdOnThread;
+    });
+    worker.join();
+
+    ASSERT_NE(workerPtr, nullptr);
+    EXPECT_NE(mainPtr, workerPtr);
+    EXPECT_EQ(workerCreatedOnThread, workerThreadId);
+    EXPECT_EQ(
+        tl_form3_cross_thread_fixture::constructionCount.load(std::memory_order_relaxed),
+        2);
+
     ctx.stop();
 }
 

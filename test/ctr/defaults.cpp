@@ -199,6 +199,65 @@ struct Product {
 
 } // namespace defaults_future_resolution_fixture
 
+namespace defaults_scope_priority_fixture {
+
+struct Product {
+    int value = 0;
+};
+
+} // namespace defaults_scope_priority_fixture
+
+TEST(Defaults, ScopeLocalDefaultNamedTakesPrecedenceOverRootDefault) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-scope-default-precedence");
+    root.bindSingleton<defaults_scope_priority_fixture::Product>(
+        std::make_unique<defaults_scope_priority_fixture::Product>(
+            defaults_scope_priority_fixture::Product{.value = 1}),
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("root-default")});
+    root.bindSingleton<defaults_scope_priority_fixture::Product>(
+        std::make_unique<defaults_scope_priority_fixture::Product>(
+            defaults_scope_priority_fixture::Product{.value = 2}),
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("scope-default")});
+    root.start();
+    root.defaultNamed<defaults_scope_priority_fixture::Product>(
+        std::define_static_string("root-default"));
+
+    auto& scope = root.resolveScope("dn-scope-default-precedence-owner");
+    scope.start();
+    scope.defaultNamed<defaults_scope_priority_fixture::Product>(
+        std::define_static_string("scope-default"));
+
+    auto scopedDefault = scope.resolve<defaults_scope_priority_fixture::Product>();
+    auto rootDefault = root.resolve<defaults_scope_priority_fixture::Product>();
+
+    ASSERT_NE(scopedDefault.operator->(), nullptr);
+    ASSERT_NE(rootDefault.operator->(), nullptr);
+    EXPECT_EQ(scopedDefault->value, 2);
+    EXPECT_EQ(rootDefault->value, 1);
+
+    root.stop();
+}
+
+TEST(Defaults, ScopeLocalDefaultNamedFallsBackToRootDefaultWhenNotSet) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-scope-default-root-fallback");
+    root.bindSingleton<defaults_scope_priority_fixture::Product>(
+        std::make_unique<defaults_scope_priority_fixture::Product>(
+            defaults_scope_priority_fixture::Product{.value = 10}),
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("global")});
+    root.start();
+    root.defaultNamed<defaults_scope_priority_fixture::Product>(
+        std::define_static_string("global"));
+
+    auto& scope = root.resolveScope("dn-scope-default-root-fallback-owner");
+    scope.start();
+
+    auto scopedDefault = scope.resolve<defaults_scope_priority_fixture::Product>();
+
+    ASSERT_NE(scopedDefault.operator->(), nullptr);
+    EXPECT_EQ(scopedDefault->value, 10);
+
+    root.stop();
+}
+
 TEST(Defaults, ChangingDefaultAffectsOnlyFutureResolutions) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-future-only");
     ctx.bindSingleton<defaults_future_resolution_fixture::Product>(

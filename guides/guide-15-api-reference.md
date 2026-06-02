@@ -12,11 +12,11 @@ Root DI context. Not publicly constructible — obtained only through `resolveCo
 
 | Method | Returns | Contract |
 |---|---|---|
-| `resolveContext()` | `BeanContext&` | Creates or retrieves the default root context. Same call = same instance. ([§5.1](guide-03-contexts.md)) |
-| `resolveContext(key)` | `BeanContext&` | Creates or retrieves the root for `key`. Same key = same root; distinct keys = fully isolated roots. ([§5.1](guide-03-contexts.md)) |
+| `resolveContext()` | `BeanContext&` | Creates or retrieves the default root context. Same call = same instance. **Valid until `stop()` is called — dangling after.** ([§5.1](guide-03-contexts.md)) |
+| `resolveContext(key)` | `BeanContext&` | Creates or retrieves the root for `key`. Same key = same root; distinct keys = fully isolated roots. **Valid until `stop()` is called — dangling after.** ([§5.1](guide-03-contexts.md)) |
 | `discover<^^Roots...>(options)` | `BeanContext&` | Registers compile-time reflection roots. Pre-`start()` only; post-`start()` → `ContextStateError`. Idempotent (deduplicates). ([§6](guide-02-discovery.md)) |
 | `start()` | `BeanContext&` | Activates the context runtime. Merges contributions, validates, indexes, materializes eager singletons. Idempotent after success. ([§5.3](guide-03-contexts.md)) |
-| `stop()` | `void` | **Terminal.** Destroys all scopes, singletons, thread-locals, releases the global-table entry. Reference becomes dangling. ([§5.1](guide-03-contexts.md)) |
+| `stop()` | `void` | **Terminal.** Destroys all scopes, singletons, thread-locals, releases the global-table entry. **The context reference becomes dangling; all `Bean<T>` handles and `ListenerHandle`s issued from this context must not be used after this call — undefined behavior.** ([§10](guide-03-contexts.md)) |
 | `resolve<T>()` | `Bean<T>` | Resolves one bean compatible with `T` from the unnamed space. Materializes if needed. ([§10](guide-04-qualifiers.md)) |
 | `resolve<T>(named("x"))` | `Bean<T>` | Resolves `T` from the named space `"x"`. ([§10](guide-04-qualifiers.md)) |
 | `defaultNamed<T>("x")` | `BeanContext&` | Sets the runtime default named key for `T`. Affects future resolutions, not existing beans. Requires started context. ([§4](guide-04-qualifiers.md)) |
@@ -31,6 +31,8 @@ Root DI context. Not publicly constructible — obtained only through `resolveCo
 - `ContextStateError` — `discover` after `start()`; `defaultNamed` before `start()`; `resolve` on a stopped context; `resolve<session>` from root.
 - `ResolutionError` — no candidate; ambiguity; cycle; no compatible constructor; incompatible factory.
 - `ConfigurationError` — duplicate `(T, name, priority)` binding; `bindSingleton<BeanContext>`; marker conflicts.
+
+**Lifetime rule:** the `BeanContext&` returned by `resolveContext()` is valid only while the context is alive. `stop()` removes the context from the live table: the reference becomes dangling, and all `Bean<T>` handles and `ListenerHandle`s issued from that context must not be used afterward — doing so is undefined behavior. Release handles before calling `stop()`. ([§10](guide-03-contexts.md))
 
 ---
 
@@ -161,11 +163,11 @@ Declared as C++26 attributes on bean types or factory producer methods.
 
 | Marker | Attribute | Fields | Contract |
 |---|---|---|---|
-| `ctr::named` | `[[=ctr::named{.name = "x"}]]` | `name` | Named qualifier. Empty → `ConfigurationError`. Runtime selector: `ctr::named("x")`. ([§4](guide-04-qualifiers.md)) |
+| `ctr::named` | `[[=ctr::named{.name = std::define_static_string("x")}]]` | `name` | Named qualifier. Empty → `ConfigurationError`. Runtime selector: `ctr::named("x")`. ([§4](guide-04-qualifiers.md)) |
 | `ctr::factory` | `[[=ctr::factory{}]]` | — | Marks a factory. The factory itself is a singleton. ([§12](guide-09-factories.md)) |
 | `ctr::postConstruct` | `[[=ctr::postConstruct{}]]` | — | Post-construction hook. ([§13](guide-06-hooks.md)) |
 | `ctr::preDestroy` | `[[=ctr::preDestroy{}]]` | — | Pre-destruction hook. ([§13](guide-06-hooks.md)) |
-| `ctr::scoped` | `[[=ctr::scoped{.name = "x"}]]` | `name` | Scope injection qualifier. Valid at injection points only. Targets a `session` bean against scope `"x"`. Non-session target → `ConfigurationError`. ([§9](guide-08-sessions.md)) |
+| `ctr::scoped` | `[[=ctr::scoped{.name = std::define_static_string("x")}]]` | `name` | Scope injection qualifier. Valid at injection points only. Targets a `session` bean against scope `"x"`. Non-session target → `ConfigurationError`. ([§9](guide-08-sessions.md)) |
 
 ---
 

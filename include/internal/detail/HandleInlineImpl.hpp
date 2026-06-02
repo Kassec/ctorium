@@ -379,7 +379,13 @@ namespace CTORIUM_NAMESPACE {
     }
 
     inline BeanContext &AnyBean::context() const noexcept {
-        return *registry()->rootContext();
+        detail::Registry* reg = registry();
+        if (object_ == nullptr) {
+            CTORIUM_NAMESPACE::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
+            if (scope != nullptr)
+                return *scope;
+        }
+        return *reg->rootContext();
     }
 
     template <class U>

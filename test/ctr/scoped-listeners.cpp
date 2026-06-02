@@ -246,6 +246,44 @@ TEST(ScopedListener, ScopeListenerBindSessionPendingAtStartDispatchIsScoped) {
     ctx.stop();
 }
 
+TEST(ScopedListenerContext, TypedBeanContextReturnsScope) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-typed-context-scope");
+    ctx.discover<^^scoped_listener_fixture>().start();
+    auto& scope = ctx.resolveScope("scope");
+    scope.start();
+
+    bool observed = false;
+    ctx.on<scoped_listener_fixture::ScopedSvc>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>& bean) {
+            observed = true;
+            EXPECT_EQ(&bean.context(), &scope);
+        });
+
+    scope.resolve<scoped_listener_fixture::ScopedSvc>();
+
+    EXPECT_TRUE(observed);
+    ctx.stop();
+}
+
+TEST(ScopedListenerContext, AnyBeanContextReturnsScope) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-any-context-scope");
+    ctx.discover<^^scoped_listener_fixture>().start();
+    auto& scope = ctx.resolveScope("scope");
+    scope.start();
+
+    bool observed = false;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& anyBean) {
+        observed = true;
+        EXPECT_EQ(&anyBean.context(), &scope);
+    });
+
+    scope.resolve<scoped_listener_fixture::ScopedSvc>();
+
+    EXPECT_TRUE(observed);
+    ctx.stop();
+}
+
 // --- RootListenerScope: root behavior remains broad -------------------------
 
 TEST(RootListenerScope, RootListenerFiresForSingletonAndAllScopes) {

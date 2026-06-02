@@ -151,9 +151,9 @@ namespace CTORIUM_NAMESPACE::detail {
 
             // Lifecycle dispatch outside lock: onInitialized → postConstruct → onCreated.
             CTORIUM_NAMESPACE::AnyBean anyBean;
-            anyBean.object_ = instance;
-            anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-            anyBean.bits_.f1.descId = primaryDescId;
+            anyBean.object_ = nullptr;
+            anyBean.bits_.f2.scopeNameId = scope->scopeNameId_;
+            anyBean.bits_.f2.descId = primaryDescId;
             anyBean.registry_ = this;
 
             listeners_.dispatch(

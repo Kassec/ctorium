@@ -405,16 +405,20 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
             [cb = std::forward<Callback>(callback)](const void *vBean) {
             const CTORIUM_NAMESPACE::AnyBean &anyBean =
                 *static_cast<const CTORIUM_NAMESPACE::AnyBean *>(vBean);
-            // Non-tracking view: kInvalidSlotId prevents releaseIfPrototype
-            // on the temporary, avoiding a double-release for prototype beans.
-            // Prototype tracking in listener callbacks is deferred (AnyBean
-            // tracking TODO).
-            CTORIUM_NAMESPACE::Bean<T> view = CTORIUM_NAMESPACE::Bean<T>::makeDirect(
-                static_cast<T *>(anyBean.object_),
-                detail::kInvalidSlotId,
-                anyBean.bits_.f1.descId,
-                anyBean.registry()
-                );
+            // Direct views stay non-tracking; session lifecycle handles keep
+            // their Form 2 proxy so context() returns the owning ScopedContext.
+            CTORIUM_NAMESPACE::Bean<T> view = anyBean.object_ == nullptr
+                ? CTORIUM_NAMESPACE::Bean<T>::makeProxy(
+                    anyBean.bits_.f2.scopeNameId,
+                    anyBean.bits_.f2.descId,
+                    anyBean.registry()
+                    )
+                : CTORIUM_NAMESPACE::Bean<T>::makeDirect(
+                    static_cast<T *>(anyBean.object_),
+                    detail::kInvalidSlotId,
+                    anyBean.bits_.f1.descId,
+                    anyBean.registry()
+                    );
             cb(static_cast<const CTORIUM_NAMESPACE::Bean<T> &>(view));
         };
 

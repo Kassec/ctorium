@@ -229,6 +229,68 @@ TEST(ContractHandles, Bean_Equality_SameSingleton) {
     context.stop();
 }
 
+TEST(ContractHandles, Bean_SessionHandle_EqualitySameScope) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-session-eq-same-scope");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+    auto& scope = root.resolveScope("ch-session-eq-same-scope-owner");
+    scope.start();
+
+    auto first = scope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    auto second = scope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    EXPECT_EQ(first, second);
+    EXPECT_FALSE(first != second);
+
+    root.stop();
+}
+
+TEST(ContractHandles, Bean_SessionHandle_EqualityDistinctScopes) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-session-eq-distinct-scopes");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+    auto& firstScope = root.resolveScope("ch-session-eq-scope-a");
+    auto& secondScope = root.resolveScope("ch-session-eq-scope-b");
+    firstScope.start();
+    secondScope.start();
+
+    auto first = firstScope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    auto second = secondScope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    EXPECT_NE(first, second);
+    EXPECT_TRUE(first != second);
+
+    root.stop();
+}
+
+TEST(ContractHandles, Bean_SessionHandle_EqualityAfterScopeStopDoesNotDereference) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-session-eq-stopped-scope");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+    auto& scope = root.resolveScope("ch-session-eq-stopped-scope-owner");
+    scope.start();
+
+    auto first = scope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    auto second = scope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    ASSERT_NE(first.operator->(), nullptr);
+
+    scope.stop();
+
+    EXPECT_NO_THROW({
+        const bool equal = first == second;
+        EXPECT_TRUE(equal);
+    });
+
+    root.stop();
+}
+
+TEST(ContractHandles, Bean_ThreadLocalHandle_EqualitySameThread) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-thread-local-eq-same-thread");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+
+    auto first = root.resolve<contract_handles_cast_forms_fixture::ThreadLocalObject>();
+    auto second = root.resolve<contract_handles_cast_forms_fixture::ThreadLocalObject>();
+    EXPECT_EQ(first, second);
+    EXPECT_FALSE(first != second);
+
+    root.stop();
+}
+
 TEST(ContractHandles, Bean_Equality_DifferentPrototypes) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-eq-prototype");
     context.discover<^^contract_handles_fixture>().start();

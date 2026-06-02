@@ -109,6 +109,16 @@ struct [[=CTORIUM_NAMESPACE::singleton{}]] UnnamedOnly {};
 
 } // namespace contract_resolution_missing_named_fixture
 
+namespace contract_resolution_empty_named_fixture {
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] UnnamedOnly {};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]]
+       [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("named-only")}]]
+NamedOnly {};
+
+} // namespace contract_resolution_empty_named_fixture
+
 TEST(ContractResolution, Resolve_Unnamed_ReturnsCompatibleBean) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cr-unnamed-compatible");
     context.discover<^^contract_resolution_fixture>().start();
@@ -162,6 +172,32 @@ TEST(ContractResolution, Resolve_NoCandidateNamed_Throws) {
     EXPECT_THROW(
         context.resolve<contract_resolution_missing_named_fixture::UnnamedOnly>(CTORIUM_NAMESPACE::named{"missing"}),
         CTORIUM_NAMESPACE::ResolutionError);
+    context.stop();
+}
+
+TEST(ContractResolution, Resolve_EmptyNamedKey_UsesUnnamedCandidate) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cr-empty-named-unnamed");
+    context.discover<^^contract_resolution_empty_named_fixture>().start();
+
+    auto unnamed = context.resolve<contract_resolution_empty_named_fixture::UnnamedOnly>();
+    auto emptyNamed = context.resolve<contract_resolution_empty_named_fixture::UnnamedOnly>(
+        CTORIUM_NAMESPACE::named{""});
+    EXPECT_EQ(unnamed.operator->(), emptyNamed.operator->());
+
+    context.stop();
+}
+
+TEST(ContractResolution, Resolve_EmptyNamedKey_ThrowsWhenUnnamedSpaceIsEmpty) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cr-empty-named-no-unnamed");
+    context.discover<^^contract_resolution_empty_named_fixture>().start();
+
+    EXPECT_THROW(
+        context.resolve<contract_resolution_empty_named_fixture::NamedOnly>(),
+        CTORIUM_NAMESPACE::ResolutionError);
+    EXPECT_THROW(
+        context.resolve<contract_resolution_empty_named_fixture::NamedOnly>(CTORIUM_NAMESPACE::named{""}),
+        CTORIUM_NAMESPACE::ResolutionError);
+
     context.stop();
 }
 

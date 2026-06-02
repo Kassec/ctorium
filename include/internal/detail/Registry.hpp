@@ -1268,9 +1268,19 @@ private:
     /**
      * @brief Destroys all session instances owned by `scope` in reverse construction
      * order.  Marks the scope stopped, clears its SessionStore.
-     * Called by `ScopedContext::stop()`.  Defined in RegistryRuntimeImpl.hpp.
+     *
+     * `deferDeallocation` is used only by `ScopedContext::restart()`: destruction
+     * still runs now, but memory blocks are released only after the next cycle has
+     * stored a replacement for the same descriptor, preventing allocator address
+     * reuse across consecutive scope cycles.
+     *
+     * Called by `ScopedContext::stop()` and `ScopedContext::restart()`.
+     * Defined in RegistryRuntimeImpl.hpp.
      */
-    void stopScope(CTORIUM_NAMESPACE::ScopedContext& scope) noexcept;
+    void stopScope(
+        CTORIUM_NAMESPACE::ScopedContext& scope,
+        bool deferDeallocation = false
+        ) noexcept;
 
     /**
      * @brief Registers the owning `BeanContext` as a self-injectable singleton.

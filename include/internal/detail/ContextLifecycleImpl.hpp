@@ -129,10 +129,9 @@ inline void BeanContext::flushDeferredListeners_() {
     // Insert all deferred entries without rebuilding the view on each call,
     // then finalize with a single rebuild.
     for (auto& entry : deferredListeners_) {
-        const detail::TypeId typeId = core().lookupTypeId(entry.typeIndex);
         (void)core().listenerStore().addListenerDeferred(
             entry.phaseIndex,
-            typeId,
+            detail::kInvalidTypeId,
             entry.listenerScope,
             std::move(entry.callback),
             entry.priority,
@@ -257,7 +256,11 @@ inline ScopedContext& ScopedContext::stop() {
 }
 
 inline ScopedContext& ScopedContext::restart() {
-    stop();
+    if (scopeState_ == ScopeState::Running) {
+        core().stopScope(*this, true);
+    } else {
+        stop();
+    }
     start();
     return *this;
 }
@@ -384,14 +387,9 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
     // BeanContext::on<T>(phase, callback, options)  — typed listener
     //
     // Wraps the typed callback in a void(const void*) closure that receives the
-    // AnyBean*, builds a non-tracking Bean<T> view (kInvalidSlotId prevents
-    // releaseIfPrototype on the temporary), and invokes the callback.
-    //
-    // The TypeId of T is resolved at registration time via typeIdFor<T>().
-    // If the context is not yet started (typeIdFor<T>() == kInvalidTypeId), the
-    // listener is stored with kInvalidTypeId and observes all types, not only T.
-    // This is the deliberate consequence of typed-listener registration before
-    // T's TypeId has been interned.
+    // AnyBean*, filters by compatible<T>(), builds a non-tracking Bean<T> view
+    // (kInvalidSlotId prevents releaseIfPrototype on the temporary), and invokes
+    // the callback.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <class T, class Callback, class PhaseTag>
@@ -413,6 +411,8 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
             [cb = std::forward<Callback>(callback)](const void *vBean) {
             const CTORIUM_NAMESPACE::AnyBean &anyBean =
                 *static_cast<const CTORIUM_NAMESPACE::AnyBean *>(vBean);
+            if (!anyBean.template compatible<T>())
+                return;
             // Direct views stay non-tracking; session lifecycle handles keep
             // their Form 2 proxy so context() returns the owning ScopedContext.
             CTORIUM_NAMESPACE::Bean<T> view = anyBean.object_ == nullptr
@@ -446,10 +446,9 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
             return store.makeHandle(token);
         }
 
-        const detail::TypeId typeId = reg.typeIdFor<T>();
         return reg.listenerStore().addListener(
             phaseIdx,
-            typeId,
+            detail::kInvalidTypeId,
             listenerScope,
             std::move(wrapper),
             options.priority

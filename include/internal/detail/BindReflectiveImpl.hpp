@@ -4,6 +4,7 @@
 #include <mutex>
 #include <new>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <typeindex>
 
@@ -87,14 +88,15 @@ namespace CTORIUM_NAMESPACE::detail {
                 TypeId typeId = lookupTypeId(std::type_index(typeid(T)));
                 if (typeId == kInvalidTypeId)
                     typeId = typeInterning_.internByName(kTypeName, &TypeInfoGetter<T>::get);
-                // Check already instantiated for this exact name key.
+                // Check already instantiated for this exact name and priority key.
                 const NameTable *table = typeIndex_.tableFor(typeId);
                 if (table) {
                     const auto it = table->entries.find(nameId);
                     if (it != table->entries.end()) {
                         const auto& entry = it->second;
                         for (DescriptorId did : entry.candidates) {
-                            if (singletons_.find(did) != nullptr) {
+                            if (descriptors_.at(did).priority == priority
+                                    && singletons_.find(did) != nullptr) {
                                 std::string message =
                                     std::string("Registry::bindSingleton: type '") + kTypeName;
                                 const std::string_view name = nameInterning_.nameOf(nameId);
@@ -155,6 +157,8 @@ namespace CTORIUM_NAMESPACE::detail {
                 // finds the pre-stored pointer on any path.
                 singletons_.growAndStore(descId, rawPtr);
                 typeIndex_.insertCandidate(typeId, nameId, descId);
+                typeIndex_.sortAllCandidates(
+                    [this](DescriptorId id) { return descriptors_.at(id).priority; });
                 typeIndex_.updateSingleUnnamed(typeId);
 
                 // A5: release writeLock_ before dispatching so listener callbacks can call
@@ -178,6 +182,17 @@ namespace CTORIUM_NAMESPACE::detail {
                     ListenerStore::kNoScope);
 
                 return CTORIUM_NAMESPACE::Bean<T>::makeDirect(static_cast<T *>(rawPtr), kInvalidSlotId, descId, this);
+            }
+
+            for (const PendingRuntimeSingleton& pending : pendingRuntimeSingletons_) {
+                if (std::string_view{pending.typeName} == std::string_view{kTypeName}
+                        && pending.nameId == nameId
+                        && pending.priority == priority) {
+                    throw CTORIUM_NAMESPACE::ConfigurationError(
+                        std::string("Registry::bindSingleton: type '") + kTypeName
+                        + "' binding already exists for the same name and priority."
+                        );
+                }
             }
 
             // Pre-start: enqueue for processing in start() Phase 1.5.
@@ -236,6 +251,19 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
             typeId = reg.typeInterning_.internByName(kTypeName, &detail::TypeInfoGetter<T>::get);
     }
 
+    for (const auto& psb : pendingRuntimeSessions_) {
+        const detail::Descriptor& pendingDesc = reg.descriptors_.at(psb.descId);
+        const detail::DescriptorCold& pendingCold = reg.descriptors_.coldAt(psb.descId);
+        if (pendingCold.exposedType == typeId
+                && pendingCold.name == nameId
+                && pendingDesc.priority == options.priority) {
+            throw ConfigurationError(
+                "ScopedContext::bindSession: binding already exists for this "
+                "session key in the current scope cycle."
+                );
+        }
+    }
+
     // Reuse an existing RuntimeBinding session descriptor for (typeId, nameId)
     // to avoid accumulating duplicate candidates across scope cycles.
     detail::DescriptorId descId = detail::kInvalidDescriptorId;
@@ -289,21 +317,19 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         }
     }
 
-    // Take ownership.
-    void* rawPtr = object.release();
-
-    // If a previous pending instance exists for this descId, replace it.
+    // If a previous pending instance exists for this descId, reject it before
+    // taking ownership so the incoming unique_ptr releases its memory on throw.
     for (auto& psb : pendingRuntimeSessions_) {
         if (psb.descId == descId) {
-            const detail::DescriptorCold& cold = reg.descriptors_.coldAt(psb.descId);
-            cold.destroy(psb.instance);
-            if (cold.dealloc) cold.dealloc(psb.instance);
-            else if (cold.size != 0)
-                ::operator delete(psb.instance, cold.size, std::align_val_t{cold.align});
-            psb.instance = rawPtr;
-            return *this;
+            throw ConfigurationError(
+                "ScopedContext::bindSession: binding already exists for this "
+                "session key in the current scope cycle."
+                );
         }
     }
+
+    // Take ownership.
+    void* rawPtr = object.release();
 
     if (scopeState_ != ScopeState::Running) {
         // Scope not yet started (or stopped): queue for next start().

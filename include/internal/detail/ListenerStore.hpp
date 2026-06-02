@@ -34,7 +34,8 @@ namespace CTORIUM_NAMESPACE::detail {
  * is a pointer to a `const AnyBean` (erased to avoid a circular include with
  * AnyBean.hpp).  Typed listeners (`context.on<T>(...)`) are pre-wrapped by
  * `BeanContext` to accept `const AnyBean&` and forward to the typed callback only
- * when the bean is compatible with T.  This keeps `ListenerStore` type-agnostic.
+ * when the bean is compatible with T.  This keeps public typed-listener
+ * compatibility filtering outside `ListenerStore`.
  *
  * ### Copy-on-write dispatch strategy
  * A raw `const View*` is published via `std::atomic<const View*>` with
@@ -47,8 +48,9 @@ namespace CTORIUM_NAMESPACE::detail {
  * is a retired-list reclaimed opportunistically after scanning dispatch hazard
  * slots. A retired view is freed only when no published hazard slot references it.
  *
- * Dispatch visits only global listeners (`kInvalidTypeId`) and typed listeners whose
- * filter matches `beanTypeId`, using a two-pointer merge — no scan of all listeners.
+ * Dispatch visits global/type-agnostic listeners (`kInvalidTypeId`) and any
+ * explicitly TypeId-filtered listeners whose filter matches `beanTypeId`, using
+ * a two-pointer merge — no scan of all listeners.
  *
  * ### Thread safety
  * `addListener()` and `removeListener()` acquire `mutex_` (exclusive).
@@ -114,7 +116,7 @@ public:
      * @brief Registers a listener callback for the given phase and type filter.
      *
      * @param phaseIndex   Phase index in `[0, kPhaseCount)`.
-     * @param typeId       TypeId filter, or `kInvalidTypeId` for global (all-beans).
+     * @param typeId       TypeId filter, or `kInvalidTypeId` for type-agnostic callbacks.
      * @param listenerScope Scope filter, or `kAllScopes` for a root listener.
      * @param callback     Callback invoked with a `const AnyBean*`.  Must not be empty.
      * @param priority     Dispatch priority.  Higher values execute first.
@@ -134,7 +136,7 @@ public:
         auto& vec = phases_[phaseIndex];
         vec.push_back(entry);
         // Insert into already-sorted [begin, end-1) prefix: O(log N + N), no alloc.
-        const auto pos = std::lower_bound(
+        const auto pos = std::upper_bound(
             vec.begin(), vec.end() - 1, vec.back(),
             [](const Entry* a, const Entry* b) { return a->priority > b->priority; });
         std::rotate(pos, vec.end() - 1, vec.end());
@@ -168,7 +170,7 @@ public:
                                 token, phaseIndex};
         auto& vec = phases_[phaseIndex];
         vec.push_back(entry);
-        const auto pos = std::lower_bound(
+        const auto pos = std::upper_bound(
             vec.begin(), vec.end() - 1, vec.back(),
             [](const Entry* a, const Entry* b) { return a->priority > b->priority; });
         std::rotate(pos, vec.end() - 1, vec.end());
@@ -322,7 +324,7 @@ private:
     // -------------------------------------------------------------------------
 
     struct Entry {
-        TypeId      typeId;       ///< Filter: kInvalidTypeId = global (all beans).
+        TypeId      typeId;       ///< Filter: kInvalidTypeId = type-agnostic.
         NameId      listenerScope;
         Callback    callback;
         int         priority;
@@ -342,7 +344,7 @@ private:
     };
 
     struct PhaseView {
-        std::vector<ViewEntry>                          global;  ///< kInvalidTypeId listeners.
+        std::vector<ViewEntry>                          global;  ///< Type-agnostic listeners.
         std::unordered_map<TypeId, std::vector<ViewEntry>> typed; ///< Per-TypeId listeners.
     };
 

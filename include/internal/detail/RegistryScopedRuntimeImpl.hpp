@@ -236,14 +236,15 @@ namespace CTORIUM_NAMESPACE::detail {
     // Destroys all session instances owned by `scope` in reverse construction order,
     // then clears the session store.  Marks the scope Stopping before sweeping so
     // lifecycle callbacks can still resolve live session handles.
-    // Called from ScopedContext::stop().
+    // Called from ScopedContext::stop() and from restart() with deferred deallocation.
     // ─────────────────────────────────────────────────────────────────────────────
 
-    inline void Registry::stopScope(CTORIUM_NAMESPACE::ScopedContext &scope) noexcept {
+    inline void Registry::stopScope(
+            CTORIUM_NAMESPACE::ScopedContext &scope,
+            bool deferDeallocation) noexcept {
         // A5: mark scope Stopping and capture insertion order under writeLock_, then
-        // release the lock before calling executeDestructionLifecycle so that listener
-        // callbacks triggered during destruction can call registry operations without
-        // deadlocking on writeLock_.
+        // release the lock before running destruction lifecycle so that listener
+        // callbacks can call registry operations without deadlocking on writeLock_.
         std::vector<DescriptorId> order;
         {
             std::lock_guard lock(writeLock_);
@@ -251,19 +252,77 @@ namespace CTORIUM_NAMESPACE::detail {
             order = scope.sessionStore_.insertionOrder(); // copy under lock
         }
 
+        const auto destroyWithoutDeallocation =
+            [this, &scope](
+                    DescriptorId descId,
+                    void* mem,
+                    const DescriptorCold& cold) noexcept {
+                ResolutionContext ctx{*this};
+                const bool dispatchPreDestroy =
+                    listeners_.hasListeners(ListenerStore::phasePreDestroy());
+                const bool dispatchDestroyed =
+                    listeners_.hasListeners(ListenerStore::phaseDestroyed());
+                if (dispatchPreDestroy || dispatchDestroyed) {
+                    CTORIUM_NAMESPACE::AnyBean anyBean;
+                    anyBean.object_ = nullptr;
+                    anyBean.bits_.f2.scopeNameId = scope.scopeNameId_;
+                    anyBean.bits_.f2.descId = descId;
+                    anyBean.registry_ = this;
+
+                    if (dispatchPreDestroy) {
+                        listeners_.dispatch(
+                            ListenerStore::phasePreDestroy(),
+                            cold.exposedType,
+                            &anyBean,
+                            scope.scopeNameId_);
+                    }
+
+                    if (cold.preDestroy) {
+                        cold.preDestroy(mem, static_cast<void *>(&ctx));
+                    }
+
+                    if (dispatchDestroyed) {
+                        listeners_.dispatch(
+                            ListenerStore::phaseDestroyed(),
+                            cold.exposedType,
+                            &anyBean,
+                            scope.scopeNameId_);
+                    }
+
+                    cold.destroy(mem);
+                } else {
+                    if (cold.preDestroy) {
+                        cold.preDestroy(mem, static_cast<void *>(&ctx));
+                    }
+
+                    cold.destroy(mem);
+                }
+            };
+
         // Destructions outside writeLock_.
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
             const SessionSlot slot = descriptors_.at(*it).sessionSlot;
             void *mem = scope.sessionStore_.find(slot); // lock-free acquire
             if (mem != nullptr) {
-                executeDestructionLifecycle(*it, mem, scope.scopeNameId_);
+                if (deferDeallocation) {
+                    const DescriptorCold& cold = descriptors_.coldAt(*it);
+                    destroyWithoutDeallocation(*it, mem, cold);
+                    scope.sessionStore_.retireDeallocation(
+                        *it,
+                        mem,
+                        cold.dealloc,
+                        cold.size,
+                        cold.align);
+                } else {
+                    executeDestructionLifecycle(*it, mem, scope.scopeNameId_);
+                }
                 scope.sessionStore_.nullSlot(slot);
             }
         }
 
         // Reacquire writeLock_ for the final store reset.
         std::lock_guard lock(writeLock_);
-        scope.sessionStore_.releaseAll();
+        scope.sessionStore_.releaseAll(!deferDeallocation);
         scope.scopeState_ = CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopped;
     }
 

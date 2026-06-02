@@ -19,8 +19,8 @@ Root DI context. Not publicly constructible — obtained only through `resolveCo
 | `stop()` | `void` | **Terminal.** Destroys all scopes, singletons, thread-locals, releases the global-table entry. **The context reference becomes dangling; all `Bean<T>` handles and `ListenerHandle`s issued from this context must not be used after this call — undefined behavior.** ([§10](guide-03-contexts.md)) |
 | `resolve<T>()` | `Bean<T>` | Resolves one bean compatible with `T` from the unnamed space. Materializes if needed. ([§10](guide-04-qualifiers.md)) |
 | `resolve<T>(named("x"))` | `Bean<T>` | Resolves `T` from the named space `"x"`. ([§10](guide-04-qualifiers.md)) |
-| `defaultNamed<T>("x")` | `BeanContext&` | Sets the runtime default named key for `T`. Affects future resolutions, not existing beans. Requires started context. ([§4](guide-04-qualifiers.md)) |
-| `defaultNamed<T>("")` / `defaultNamed<T>(nullptr)` | `BeanContext&` | Clears the default for `T`. ([§4](guide-04-qualifiers.md)) |
+| `defaultNamed<T>("x")` | `BeanContext&` | Sets the runtime default named key for `T`. `x` must be non-empty — empty string → `ConfigurationError`. Affects future resolutions, not existing beans. Requires started context. ([§4](guide-04-qualifiers.md)) |
+| `defaultNamed<T>(nullptr)` | `BeanContext&` | Clears the default for `T`. ([§4](guide-04-qualifiers.md)) |
 | `bindSingleton<T>(object, options)` | `BeanContext&` | Transfers ownership of `object` as a root singleton. Returns the context for chaining. Duplicate `(T, name, priority)` → `ConfigurationError`. ([§11.1](guide-05-bindSingleton.md)) |
 | `resolveScope(key)` | `ScopedContext&` | Creates or retrieves the scope for `key` under this root. ([§5.2](guide-08-sessions.md)) |
 | `on<T>(phase, callback, options)` | `ListenerHandle` | Registers a typed listener for a lifecycle phase. Root listener observes all beans (root + all scopes). ([§14](guide-07-listeners.md)) |
@@ -30,7 +30,7 @@ Root DI context. Not publicly constructible — obtained only through `resolveCo
 **Errors raised by `BeanContext`:**
 - `ContextStateError` — `discover` after `start()`; `defaultNamed` before `start()`; `resolve` on a stopped context; `resolve<session>` from root.
 - `ResolutionError` — no candidate; ambiguity; cycle; no compatible constructor; incompatible factory.
-- `ConfigurationError` — duplicate `(T, name, priority)` binding; `bindSingleton<BeanContext>`; marker conflicts.
+- `ConfigurationError` — duplicate `(T, name, priority)` binding; `bindSingleton<BeanContext>`; marker conflicts; `defaultNamed<T>("")` (empty string is not a valid qualifier).
 
 **Lifetime rule:** the `BeanContext&` returned by `resolveContext()` is valid only while the context is alive. `stop()` removes the context from the live table: the reference becomes dangling, and all `Bean<T>` handles and `ListenerHandle`s issued from that context must not be used afterward — doing so is undefined behavior. Release handles before calling `stop()`. ([§10](guide-03-contexts.md))
 

@@ -74,7 +74,7 @@ surprise bootloaders.
 
 ---
 
-## 3. One of each, on the bean type
+## 3. Hooks found by the scan
 
 Hooks live on scanned bean types — a type in the context's discovery
 surface ([Guide 02 — Discovery](guide-02-discovery.md)) — and the hook metadata comes from that scan:
@@ -92,11 +92,12 @@ context.discover<^^app>();
 context.start();
 ```
 
-A bean has **at most one** `postConstruct` and **at most one** `preDestroy`, declared on the bean type itself. **Ctorium
-** records a single hook of each kind and calls it once; it does not collect several methods carrying the same
-attribute, and it does not gather hooks from base classes. So if ordered initialization steps exist, put them in
-sequence inside one hook rather than spreading them across several — there is no defined order between separate hook
-methods because only one is used:
+Every method carrying `[[=ctr::postConstruct{}]]` or `[[=ctr::preDestroy{}]]` that the scan finds — including inherited
+ones — gets its turn. `postConstruct` walks base hooks first, then concrete hooks, preserving definition order inside
+each type; `preDestroy` unwinds the same stack in reverse, concrete hooks first and base hooks last. In a virtual
+diamond, the shared virtual base gets one invitation, not two; **Ctorium** is polite, but it does not shake the same
+hand twice. If ordered initialization steps read better as one story, keep them inside one hook; spreading them across
+several hooks is supported, but that is a readability choice, not a technical requirement:
 
 ```cpp
 struct [[=ctr::singleton{}]] OrderedStartup {
@@ -273,13 +274,12 @@ int main() {
 
 ## 9. Mental model
 
-When **Ctorium** materializes a scanned bean with hooks: C++ constructs the object, the `postConstruct` hook runs, the
-bean is alive, the `preDestroy` hook runs, then C++ destroys it. When writing hooks, hold onto a short list — hooks
-belong to the bean type; their parameters are `ctr::Bean<U>` dependencies; their return values are ignored; there is at
-most one `postConstruct` and one `preDestroy` per bean, declared on that type (no base-class hooks, no multiple hooks of
-one kind); hook metadata comes from scanning; runtime-bound instances skip `postConstruct` and run `preDestroy` only
-when it was scanned. The hook is not a constructor and not a listener — it is the bean's own lifecycle appointment with
-the container.
+When **Ctorium** materializes a scanned bean with hooks: C++ constructs the object, the `postConstruct` hooks run, the
+bean is alive, the `preDestroy` hooks run, then C++ destroys it. When writing hooks, hold onto a short list — hooks
+belong to scanned metadata, including inherited metadata; their parameters are `ctr::Bean<U>` dependencies; their return
+values are ignored; multiple hooks of one kind run in the scan-defined order; runtime-bound instances skip
+`postConstruct` and run `preDestroy` only when it was scanned. A hook is not a constructor and not a listener — it is
+the bean's own lifecycle appointment with the container.
 
 ---
 
@@ -288,10 +288,9 @@ the container.
 Before moving on to listeners, check that:
 
 - `postConstruct` is used for initialization after C++ construction, `preDestroy` for cleanup before C++ destruction;
-- each hook is declared on a scanned **Ctorium** bean type, with at most one `postConstruct` and one `preDestroy` per
-  type;
-- ordered steps are placed inside a single hook, since separate hooks have no guaranteed order and only one of each kind
-  is used;
+- hook metadata comes from scanned **Ctorium** bean types, including inherited hooks found by that scan;
+- multiple hooks of the same kind are expected to run in the documented order; keep ordered steps inside one hook only
+  when that reads better;
 - hook parameters are `ctr::Bean<U>` (anything else fails to compile), and return values are not relied on;
 - factory hooks are understood to apply to the factory object, and produced-type hooks only when the produced type is
   also scanned;

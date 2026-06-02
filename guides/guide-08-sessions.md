@@ -174,13 +174,11 @@ demand after `scope.start()` and destroyed at `scope.stop()` (and so cycled by `
 Stopping the root stops its scopes too. Release session handles, or accept that they will resolve to `nullptr`, once
 their scope is stopped.
 
-Listeners observe session beans like any other bean, but with one caveat worth stating plainly: **scope-targeted
-listeners are not functional yet.** Registering a listener and expecting it to fire for one scope's beans only is, for
-now, wishful thinking dressed as configuration. The mechanism is being reworked, and the current API surface for it is
-on its way out, so do not build on `scope.on<T>(...)` as a per-scope filter today. If you need to react to a specific
-scope's beans in the meantime, observe at the root and sort it out inside the callback (for example, by checking
-`bean.context()` against the scope you care about). Treat this section as a "coming soon" sign on a door that is, at
-present, painted onto the wall.
+Listeners observe session beans like any other bean, and scope-targeted listeners mean exactly what they say on the
+tin. `scope.on<T>(phase, callback, options)` observes only beans produced or owned by that scope; the global scoped form
+`scope.on(phase, callback, options)` does the same with `AnyBean`. A root listener, registered with `ctx.on(...)`,
+keeps the wide-angle lens: root beans plus beans from every scope. Priority and registration order still decide dispatch
+order for scoped listeners, so the usual listener rules apply; the only thing narrower is the audience.
 
 ---
 
@@ -262,8 +260,9 @@ own. Read the moving parts as: the root discovers session bean *types* and owns 
 scope; `scope.start()` makes its session beans resolvable; resolving a session bean returns a *proxy* handle that
 re-resolves the scope's current instance on every access (and yields `nullptr` while stopped); session-to-session and
 session-to-singleton wiring is plain injection, while a root bean reaching a session bean must name the scope with
-`[[=ctr::scoped{.name=...}]]`; and `scope.stop()` destroys that scope's instances, with `restart()` giving a clean set.
-The session is not a singleton with a shorter temper — it is a bean whose lifetime is owned by a scope you control.
+`[[=ctr::scoped{.name=...}]]`; `scope.on(...)` observes only that scope's beans while `ctx.on(...)` observes root and
+scope beans; and `scope.stop()` destroys that scope's instances, with `restart()` giving a clean set. The session is not
+a singleton with a shorter temper — it is a bean whose lifetime is owned by a scope you control.
 
 ---
 
@@ -280,8 +279,8 @@ Before moving on to factories, check that:
 - `[[=ctr::scoped]]` is used only at injection points and only against session targets (both contradictions are rejected
   at `start()`);
 - `bindSession(...)`, `userData(...)`, and scope-local `defaultNamed(...)` are used per scope as needed;
-- listeners are understood to be context-wide, not scope-local — filter inside the callback when only one scope's beans
-  should be handled;
+- `scope.on<T>(...)` and `scope.on(...)` listeners are scope-local, while root `ctx.on(...)` listeners observe root and
+  all scopes;
 - session handles are released, or expected to resolve to `nullptr`, once their scope stops.
 
 Next guide: [Guide 09 — Factories](guide-09-factories.md).

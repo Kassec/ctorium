@@ -110,7 +110,7 @@ taken care of by **Ctorium**.
 
 Boiler plate vanished and tedious wiring is now a simple declaration.
 
-Want to find out more? Dive into our [guide](../docs/public/docs/guide-00-intro.md).
+Want to find out more? Dive into our [guide](guides/guide-00-intro.md).
 
 ## **Ctorium** Capabilities
 

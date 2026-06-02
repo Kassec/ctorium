@@ -71,6 +71,25 @@ TEST(ScopedListener, ScopeListenerDoesNotFireForPrototype) {
     ctx.stop();
 }
 
+TEST(ScopedListener, ScopeListenerFiresForPrototypeResolvedFromScope) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-scope-root-prototype");
+    ctx.discover<^^scoped_listener_fixture>().start();
+    auto& scope = ctx.resolveScope("scope");
+    scope.start();
+
+    int count = 0;
+    scope.on<scoped_listener_fixture::RootProto>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::RootProto>&) { ++count; });
+
+    scope.resolve<scoped_listener_fixture::RootProto>();
+    EXPECT_EQ(count, 1);
+
+    ctx.resolve<scoped_listener_fixture::RootProto>();
+    EXPECT_EQ(count, 1);
+    ctx.stop();
+}
+
 TEST(ScopedListener, ScopeListenerFiresForAllFourPhasesOfItsScope) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-four-phases");
     ctx.discover<^^scoped_listener_fixture>().start();

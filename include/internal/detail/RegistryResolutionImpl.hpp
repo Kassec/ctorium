@@ -456,7 +456,7 @@ namespace CTORIUM_NAMESPACE::detail {
                                 ListenerStore::phaseInitialized(),
                                 cold.exposedType,
                                 &anyBean,
-                                ListenerStore::kNoScope
+                                ctx.scope != nullptr ? ctx.scope->scopeNameId_ : ListenerStore::kNoScope
                                 );
                         }
                         if (primaryCold.postConstruct) {
@@ -467,7 +467,7 @@ namespace CTORIUM_NAMESPACE::detail {
                                 ListenerStore::phaseCreated(),
                                 cold.exposedType,
                                 &anyBean,
-                                ListenerStore::kNoScope
+                                ctx.scope != nullptr ? ctx.scope->scopeNameId_ : ListenerStore::kNoScope
                                 );
                         }
                     } else if (primaryCold.postConstruct) {
@@ -582,7 +582,7 @@ namespace CTORIUM_NAMESPACE::detail {
                         ListenerStore::phaseInitialized(),
                         cold.exposedType,
                         &anyBean,
-                        ListenerStore::kNoScope
+                        ctx.scope != nullptr ? ctx.scope->scopeNameId_ : ListenerStore::kNoScope
                         );
                     if (cold.postConstruct) {
                         cold.postConstruct(instance, static_cast<void *>(&ctx));
@@ -591,7 +591,7 @@ namespace CTORIUM_NAMESPACE::detail {
                         ListenerStore::phaseCreated(),
                         cold.exposedType,
                         &anyBean,
-                        ListenerStore::kNoScope
+                        ctx.scope != nullptr ? ctx.scope->scopeNameId_ : ListenerStore::kNoScope
                         );
                 }
             }
@@ -640,7 +640,7 @@ namespace CTORIUM_NAMESPACE::detail {
                         ListenerStore::phaseInitialized(),
                         cold.exposedType,
                         &anyBean,
-                        ListenerStore::kNoScope
+                        ctx.scope != nullptr ? ctx.scope->scopeNameId_ : ListenerStore::kNoScope
                         );
                 }
                 if (cold.postConstruct) {
@@ -651,7 +651,7 @@ namespace CTORIUM_NAMESPACE::detail {
                         ListenerStore::phaseCreated(),
                         cold.exposedType,
                         &anyBean,
-                        ListenerStore::kNoScope
+                        ctx.scope != nullptr ? ctx.scope->scopeNameId_ : ListenerStore::kNoScope
                         );
                 }
             } else if (cold.postConstruct) {

@@ -302,9 +302,9 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
     // ─────────────────────────────────────────────────────────────────────────────
     // BeanContext::defaultNamed<T>(std::string_view)
     //
-    // Interns the name and sets the runtime default NameId for T on this context.
+    // Sets or clears the runtime default NameId for T on this context.
     // Throws ContextStateError if called before start() (TypeId not yet assigned).
-    // Throws ConfigurationError if T was never registered in this context.
+    // Throws ConfigurationError on SET if T has no defaults slot in this context.
     // Empty string clears the default (equivalent to nullptr).
     // ─────────────────────────────────────────────────────────────────────────────
 
@@ -318,13 +318,11 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
                 );
         }
         const detail::TypeId typeId = reg.typeIdFor<T>();
-        if (typeId == detail::kInvalidTypeId) {
-            throw ConfigurationError(
-                "BeanContext::defaultNamed: type T is not registered in this context."
-                );
-        }
         CTORIUM_NAMESPACE::ScopedContext* scope = asScope_;
         if (name.empty()) {
+            if (static_cast<std::size_t>(typeId) >= reg.defaultsTable().size()) {
+                return *this;
+            }
             if (scope != nullptr) {
                 if (scope->scopedDefaults_.size() != 0) {
                     scope->scopedDefaults_.setDefault(typeId, detail::kUnnamed);
@@ -333,6 +331,12 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
                 reg.setDefault(typeId, detail::kUnnamed);
             }
             return *this;
+        }
+        if (static_cast<std::size_t>(typeId) >= reg.defaultsTable().size()) {
+            throw ConfigurationError(
+                "BeanContext::defaultNamed: type T has no defaults slot in this context; "
+                "defaults can only be set for types registered before start()."
+                );
         }
         const detail::NameId nameId = reg.internNameSafe(name);
         if (scope != nullptr) {
@@ -363,8 +367,8 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
                 );
         }
         const detail::TypeId typeId = reg.typeIdFor<T>();
-        if (typeId == detail::kInvalidTypeId)
-            return *this; // T not registered — no-op
+        if (static_cast<std::size_t>(typeId) >= reg.defaultsTable().size())
+            return *this; // T has no defaults slot - no-op
         CTORIUM_NAMESPACE::ScopedContext* scope = asScope_;
         if (scope != nullptr) {
             if (scope->scopedDefaults_.size() != 0) {

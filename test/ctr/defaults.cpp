@@ -56,6 +56,34 @@ TEST(Defaults, DefaultNamedUnknownTypeRaisesConfigurationError) {
     ctx.stop();
 }
 
+TEST(Defaults, ClearDefaultWithEmptyStringOnUnregisteredTypeIsNoOp) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-clear-empty-no-op");
+    ctx.start();
+    EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(""));
+    ctx.stop();
+}
+
+TEST(Defaults, SetDefaultOnPostStartBindSingletonTypeThrowsConfigurationError) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-post-start-set-overflow");
+    ctx.start();
+    ctx.bindSingleton<DefaultsNotRegistered>(
+        std::make_unique<DefaultsNotRegistered>());
+    EXPECT_THROW(
+        ctx.defaultNamed<DefaultsNotRegistered>("x"),
+        CTORIUM_NAMESPACE::ConfigurationError);
+    ctx.stop();
+}
+
+TEST(Defaults, ClearDefaultOnPostStartBindSingletonTypeIsNoOp) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-post-start-clear-overflow");
+    ctx.start();
+    ctx.bindSingleton<DefaultsNotRegistered>(
+        std::make_unique<DefaultsNotRegistered>());
+    EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(nullptr));
+    EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(""));
+    ctx.stop();
+}
+
 // ─── Default mechanism ────────────────────────────────────────────────────────
 
 TEST(Defaults, SetDefaultRedirectsUnnamedResolveToNamedKey) {

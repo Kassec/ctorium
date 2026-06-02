@@ -48,6 +48,12 @@ struct [[=CTORIUM_NAMESPACE::session{}]] B {
 
 } // namespace contract_contexts_session_destroy_order_fixture
 
+namespace contract_contexts_multi_context_fixture {
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Object {};
+
+} // namespace contract_contexts_multi_context_fixture
+
 TEST(ContractContexts, ResolveContext_Default_ReturnsSame) {
     auto& first = CTORIUM_NAMESPACE::BeanContext::resolveContext();
     auto& second = CTORIUM_NAMESPACE::BeanContext::resolveContext();
@@ -103,6 +109,42 @@ TEST(ContractContexts, ResolveScope_SameKeyDifferentRoots_ReturnsDifferent) {
     auto& second = secondRoot.resolveScope("cc-shared-scope");
     EXPECT_NE(&first, &second);
     firstRoot.stop();
+    secondRoot.stop();
+}
+
+TEST(ContractContexts, MultiContext_ListenersAreIndependent) {
+    auto& firstRoot = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-multi-listener-a");
+    auto& secondRoot = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-multi-listener-b");
+    firstRoot.discover<^^contract_contexts_multi_context_fixture>().start();
+    secondRoot.discover<^^contract_contexts_multi_context_fixture>().start();
+
+    int firstCreated = 0;
+    firstRoot.on<contract_contexts_multi_context_fixture::Object>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<contract_contexts_multi_context_fixture::Object>&) {
+            ++firstCreated;
+        });
+
+    auto secondBean = secondRoot.resolve<contract_contexts_multi_context_fixture::Object>();
+    ASSERT_NE(secondBean.operator->(), nullptr);
+    EXPECT_EQ(firstCreated, 0);
+
+    firstRoot.stop();
+    secondRoot.stop();
+}
+
+TEST(ContractContexts, MultiContext_StopDoesNotAffectPeer) {
+    auto& firstRoot = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-multi-stop-a");
+    auto& secondRoot = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-multi-stop-b");
+    firstRoot.discover<^^contract_contexts_multi_context_fixture>().start();
+    secondRoot.discover<^^contract_contexts_multi_context_fixture>().start();
+
+    firstRoot.stop();
+
+    EXPECT_NO_THROW({
+        auto bean = secondRoot.resolve<contract_contexts_multi_context_fixture::Object>();
+        EXPECT_NE(bean.operator->(), nullptr);
+    });
     secondRoot.stop();
 }
 

@@ -68,7 +68,7 @@ Typed tracked handle. Does not own the object.
 
 | Method | Returns | Contract |
 |---|---|---|
-| `operator->()` | `T*` | Returns the current object. For session/scoped beans, re-resolves per access. Returns `nullptr` for a deferred handle whose scope is stopped. ([§7.1](guide-10-handles.md)) |
+| `operator->()` | `T*` | Returns the current object. For session/scoped beans, re-resolves per access. Returns `nullptr` for a deferred handle whose scope is stopped. Propagates constructor exceptions for Form 2/3 during lazy materialization. ([§7.1](guide-10-handles.md)) |
 | `operator*()` | `T&` | Dereferences the current object. ([§7.1](guide-10-handles.md)) |
 | `value()` | `T&` | Returns a reference to the current object. ([§7.1](guide-10-handles.md)) |
 | `context()` | `BeanContext&` | Returns the real owner: root for root-owned beans, `ScopedContext` for scoped beans. ([§5.5](guide-03-contexts.md)) |

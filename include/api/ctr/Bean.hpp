@@ -41,8 +41,9 @@ namespace CTORIUM_NAMESPACE {
      * ### Form 2 — Proxy  (`object_ == nullptr`)
      * Used for all session beans (directly resolved or injected via `[[=ctr::scoped]]`).
      * `operator->` resolves the current session object on every call; the result may
-     * change across scope cycles.  If the target scope is stopped, `operator->` and
-     * `value()` return `nullptr` — no exception.
+     * change across scope cycles.  If the target scope is stopped, `operator->`
+     * returns `nullptr`. Constructor exceptions during lazy materialization
+     * propagate unchanged.
      * Fields: `f2_.scopeNameId`, `f2_.descId`, `registry_` as `Registry*`.
      *
      * ### Form 3 — ThreadLocal  (`object_ == nullptr`, `f2_.scopeNameId == kThreadLocalSentinel`)
@@ -129,12 +130,12 @@ namespace CTORIUM_NAMESPACE {
          * Form 1 (direct): returns `object_` immediately — no registry call, O(1).
          * Form 2 (proxy):  resolves the current session object from the active scope.
          *   Returns `nullptr` if the scope is stopped or missing.
-         *   The proxy path is implemented in `HandleInlineImpl.hpp` once `Registry` is
-         *   complete; until then it returns `nullptr` with a TODO marker.
+         * Form 3 (thread-local): resolves the calling thread's instance.
+         * Constructor exceptions during lazy materialization propagate unchanged.
          *
          * @return Pointer to the managed object, or `nullptr` for a stopped scope (Form 2).
          */
-        [[nodiscard]] T *operator->() const noexcept {
+        [[nodiscard]] T *operator->() const {
             if (object_ != nullptr) [[likely]] {
                 // Form 1 fast path: stable pointer, no registry interaction.
                 return static_cast<T *>(object_);
@@ -161,7 +162,7 @@ namespace CTORIUM_NAMESPACE {
          *
          * @return Reference to the managed object.
          */
-        [[nodiscard]] T &operator*() const noexcept {
+        [[nodiscard]] T &operator*() const {
             return *operator->();
         }
 
@@ -175,7 +176,7 @@ namespace CTORIUM_NAMESPACE {
          *
          * @return Reference to the managed object.
          */
-        [[nodiscard]] T &value() const noexcept {
+        [[nodiscard]] T &value() const {
             return *operator->();
         }
 
@@ -358,8 +359,8 @@ namespace CTORIUM_NAMESPACE {
         void retainIfPrototype() noexcept;
         void releaseIfPrototype() noexcept;
         [[nodiscard]] detail::Registry* registry() const noexcept;
-        T *proxyResolve_() const noexcept; // Form 2 proxy — defined in HandleInlineImpl.hpp
-        T *threadLocalResolve_() const noexcept; // Form 3 TL — defined in HandleInlineImpl.hpp
+        T *proxyResolve_() const; // Form 2 proxy — defined in HandleInlineImpl.hpp
+        T *threadLocalResolve_() const; // Form 3 TL — defined in HandleInlineImpl.hpp
 
         // -------------------------------------------------------------------------
         // Layout  (24 bytes on 64-bit, overloaded anchor)

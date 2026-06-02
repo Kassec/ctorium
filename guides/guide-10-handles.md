@@ -12,7 +12,7 @@ This guide assumes beans and lifetimes ([Guide 01 — Beans](guide-01-beans.md))
 
 **Form 1 — Direct.** Used for singleton and prototype beans, whose resolved instance is stable. The handle holds the object pointer directly, so `operator->` returns it immediately with no registry interaction. This is the common case and the fast one.
 
-**Form 2 — Proxy.** Used for all session beans, whether resolved directly or injected through `[[=ctr::scoped]]` ([Guide 08 — Sessions](guide-08-sessions.md)). The handle holds no object pointer; `operator->` resolves the scope's *current* session instance on every call, which is why a session handle tracks across a scope `restart()` and returns `nullptr` — never throws — while the scope is stopped.
+**Form 2 — Proxy.** Used for all session beans, whether resolved directly or injected through `[[=ctr::scoped]]` ([Guide 08 — Sessions](guide-08-sessions.md)). The handle holds no object pointer; `operator->` resolves the scope's *current* session instance on every call, which is why a session handle tracks across a scope `restart()`, returns `nullptr` while the scope is stopped, and propagates any exception thrown by the session bean's constructor during lazy materialization.
 
 **Form 3 — ThreadLocal.** Used for thread-local beans. `operator->` resolves the calling thread's instance from the thread-local store on every dereference and never caches the pointer, so two threads holding "the same" handle reach their own instances. This makes a thread-local handle *thread-portable but thread-relative*: passing it to another thread is allowed, and dereferencing it there resolves **that** thread's instance. Crucially, if the receiving thread has no instance yet, **the dereference materializes one on the spot** — it runs the bean's full construction lifecycle (constructor, `postConstruct`, `onCreated`) on the receiving thread, right there in the `operator->` call. So handing a thread-local handle to a new thread is not a cheap read: the first access on each thread is a *creation*. The handle never points back to the originating thread's object; it always follows — and lazily populates — the thread that dereferences it.
 
@@ -40,7 +40,7 @@ if (sessionHandle.operator->() != nullptr) {
 }
 ```
 
-`operator*` and `value()` have a precondition: `operator->()` must be non-null. Dereferencing an empty handle, or a Form 2 handle whose scope is inactive, is undefined behaviour — check first. The container will not throw to protect you here; this is the one spot where a handle expects you to look before you leap.
+`operator*` and `value()` have a precondition: `operator->()` must be non-null. Dereferencing an empty handle, or a Form 2 handle whose scope is inactive, is undefined behaviour — check first. The container does not throw to protect an invalid dereference of a stopped-scope target; constructor exceptions during lazy materialization still propagate unchanged under the pass-through exception policy.
 
 ---
 

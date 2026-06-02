@@ -122,11 +122,12 @@ namespace CTORIUM_NAMESPACE {
     //   1. Look up scope by f2.scopeNameId.
     //   2. Scope absent or stopped → nullptr (no exception).
     //   3. Find or materialize the primary descriptor's session slot.
+    //      Constructor exceptions propagate unchanged.
     //   4. Return the pointer adjusted to f2.descId's exposed type.
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <class T>
-    T *Bean<T>::proxyResolve_() const noexcept {
+    T *Bean<T>::proxyResolve_() const {
         auto* reg = static_cast<detail::Registry*>(registry_);
         CTORIUM_NAMESPACE::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
         if (scope == nullptr
@@ -154,11 +155,7 @@ namespace CTORIUM_NAMESPACE {
             return nullptr;
 
         detail::ResolutionContext ctx{*reg, scope};
-        try {
-            instance = reg->materializeSessionInstance(descId, scope, ctx);
-        } catch (...) {
-            return nullptr;
-        }
+        instance = reg->materializeSessionInstance(descId, scope, ctx);
         if (desc.adjustToExposed != nullptr)
             instance = desc.adjustToExposed(instance);
         return static_cast<T *>(instance);
@@ -503,7 +500,7 @@ namespace CTORIUM_NAMESPACE {
     // ─────────────────────────────────────────────────────────────────────────────
 
     template <typename T>
-    T *Bean<T>::threadLocalResolve_() const noexcept {
+    T *Bean<T>::threadLocalResolve_() const {
         auto* reg = static_cast<detail::Registry*>(registry_);
         const detail::DescriptorId descId = bits_.f2.descId;
         const detail::Descriptor &desc = reg->descriptorTable().at(descId);
@@ -520,11 +517,7 @@ namespace CTORIUM_NAMESPACE {
         }
 
         detail::ResolutionContext ctx{*reg, nullptr};
-        try {
-            instance = reg->materializeThreadLocalInstance(descId, ctx);
-        } catch (...) {
-            return nullptr;
-        }
+        instance = reg->materializeThreadLocalInstance(descId, ctx);
         if (desc.adjustToExposed != nullptr)
             instance = desc.adjustToExposed(instance);
         return static_cast<T *>(instance);

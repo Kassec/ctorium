@@ -1,6 +1,9 @@
 #include <atomic>
+#include <exception>
 #include <stdexcept>
 #include <string_view>
+#include <thread>
+#include <utility>
 
 #include <gtest/gtest.h>
 
@@ -27,6 +30,88 @@ TEST(ExceptionPolicy, LazyConstructorPropagatesRuntimeErrorUnwrapped) {
         EXPECT_STREQ(ex.what(), "lazy constructor failure");
     }
 
+    ctx.stop();
+}
+
+namespace exception_form2_fixture {
+
+struct [[=CTORIUM_NAMESPACE::session{}]] ThrowingSessionSvc {
+    ThrowingSessionSvc() { throw std::runtime_error("form2 constructor failure"); }
+};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<ThrowingSessionSvc> session;
+
+    explicit Consumer(
+        [[=CTORIUM_NAMESPACE::scoped{.name = std::define_static_string("ex-form2-scope")}]]
+        CTORIUM_NAMESPACE::Bean<ThrowingSessionSvc> injected)
+        : session(std::move(injected)) {}
+};
+
+} // namespace exception_form2_fixture
+
+TEST(ExceptionPolicy, Form2LazyConstructorPropagatesRuntimeErrorUnwrapped) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-form2-constructor");
+    ctx.discover<^^exception_form2_fixture>().start();
+    auto& scope = ctx.resolveScope("ex-form2-scope");
+    auto consumer = ctx.resolve<exception_form2_fixture::Consumer>();
+    scope.start();
+
+    try {
+        (void)consumer->session.operator->();
+        FAIL() << "Expected std::runtime_error";
+    } catch (const CTORIUM_NAMESPACE::CtoriumError& ex) {
+        FAIL() << "Expected user std::runtime_error, got CtoriumError: " << ex.what();
+    } catch (const std::runtime_error& ex) {
+        EXPECT_STREQ(ex.what(), "form2 constructor failure");
+    }
+
+    ctx.stop();
+}
+
+namespace exception_form3_fixture {
+
+std::atomic<bool> throwOnConstruct{false};
+
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] ThrowingThreadLocalSvc {
+    ThrowingThreadLocalSvc() {
+        if (throwOnConstruct.load(std::memory_order_relaxed)) {
+            throw std::runtime_error("form3 constructor failure");
+        }
+    }
+};
+
+} // namespace exception_form3_fixture
+
+TEST(ExceptionPolicy, Form3LazyConstructorPropagatesRuntimeErrorUnwrapped) {
+    exception_form3_fixture::throwOnConstruct.store(false, std::memory_order_relaxed);
+
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-form3-constructor");
+    ctx.discover<^^exception_form3_fixture>().start();
+    auto bean = ctx.resolve<exception_form3_fixture::ThrowingThreadLocalSvc>();
+
+    exception_form3_fixture::throwOnConstruct.store(true, std::memory_order_relaxed);
+    std::exception_ptr caught;
+    std::thread worker([&] {
+        try {
+            (void)bean.operator->();
+        } catch (...) {
+            caught = std::current_exception();
+        }
+    });
+    worker.join();
+
+    ASSERT_NE(caught, nullptr);
+    try {
+        std::rethrow_exception(caught);
+        FAIL() << "Expected std::runtime_error";
+    } catch (const CTORIUM_NAMESPACE::CtoriumError& ex) {
+        FAIL() << "Expected user std::runtime_error, got CtoriumError: " << ex.what();
+    } catch (const std::runtime_error& ex) {
+        EXPECT_STREQ(ex.what(), "form3 constructor failure");
+    }
+
+    exception_form3_fixture::throwOnConstruct.store(false, std::memory_order_relaxed);
     ctx.stop();
 }
 

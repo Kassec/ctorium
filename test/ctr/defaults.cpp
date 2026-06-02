@@ -56,10 +56,12 @@ TEST(Defaults, DefaultNamedUnknownTypeRaisesConfigurationError) {
     ctx.stop();
 }
 
-TEST(Defaults, ClearDefaultWithEmptyStringOnUnregisteredTypeIsNoOp) {
-    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-clear-empty-no-op");
+TEST(Defaults, EmptyStringDefaultNamedThrowsConfigurationError) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-empty-string-unregistered");
     ctx.start();
-    EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(""));
+    EXPECT_THROW(
+        ctx.defaultNamed<DefaultsNotRegistered>(""),
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
@@ -80,7 +82,9 @@ TEST(Defaults, ClearDefaultOnPostStartBindSingletonTypeIsNoOp) {
     ctx.bindSingleton<DefaultsNotRegistered>(
         std::make_unique<DefaultsNotRegistered>());
     EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(nullptr));
-    EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(""));
+    EXPECT_THROW(
+        ctx.defaultNamed<DefaultsNotRegistered>(""),
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
@@ -112,15 +116,12 @@ TEST(Defaults, ClearDefaultWithNullptrRestoresUnnamedResolve) {
     ctx.stop();
 }
 
-TEST(Defaults, ClearDefaultWithEmptyStringRestoresUnnamedResolve) {
-    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-clear-empty");
+TEST(Defaults, EmptyStringDefaultNamedThrowsConfigurationErrorForRegisteredType) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-empty-string-registered");
     ctx.discover<^^defaults_fixture>().start();
-
-    ctx.defaultNamed<defaults_fixture::Logger>("console");
-    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), CTORIUM_NAMESPACE::ResolutionError);
-
-    ctx.defaultNamed<defaults_fixture::Logger>("");
-    EXPECT_NO_THROW(ctx.resolve<defaults_fixture::Logger>());
+    EXPECT_THROW(
+        ctx.defaultNamed<defaults_fixture::Logger>(""),
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 

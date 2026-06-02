@@ -117,8 +117,10 @@ public:
     /**
      * @brief Sets the default named qualifier for type T.
      * @tparam T Target type.
-     * @param name Default name.
+     * @param name Default name. Must not be empty; use defaultNamed(nullptr) to clear.
      * @return Current context for chaining.
+     * @throws ConfigurationError If name is empty or T has no defaults slot in this context.
+     * @throws ContextStateError If called before start().
      */
     template <class T>
     BeanContext& defaultNamed(std::string_view name);

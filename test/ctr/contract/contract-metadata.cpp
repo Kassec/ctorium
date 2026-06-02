@@ -62,8 +62,8 @@ TEST(ContractMetadata, Metadata_Lifetime_MatchesMarker) {
     context.discover<^^contract_metadata_fixture>().start();
     auto singleton = context.resolve<contract_metadata_fixture::Concrete>();
     auto prototype = context.resolve<contract_metadata_fixture::PrototypeObject>();
-    EXPECT_EQ(singleton.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Singleton);
-    EXPECT_EQ(prototype.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Prototype);
+    EXPECT_EQ(singleton.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::Singleton);
+    EXPECT_EQ(prototype.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::Prototype);
     context.stop();
 }
 
@@ -71,7 +71,7 @@ TEST(ContractMetadata, Metadata_Origin_Annotated) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cm-origin-annotated");
     context.discover<^^contract_metadata_fixture>().start();
     auto bean = context.resolve<contract_metadata_fixture::Concrete>();
-    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::AnnotatedType);
+    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::Origin::AnnotatedType);
     context.stop();
 }
 
@@ -79,7 +79,7 @@ TEST(ContractMetadata, Metadata_Origin_Factory) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cm-origin-factory");
     context.discover<^^contract_metadata_fixture>().start();
     auto bean = context.resolve<contract_metadata_fixture::Product>();
-    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::FactoryProduct);
+    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::Origin::FactoryProduct);
     context.stop();
 }
 
@@ -88,7 +88,7 @@ TEST(ContractMetadata, Metadata_Origin_RuntimeBinding) {
     context.bindSingleton<contract_metadata_fixture::BoundObject>(std::make_unique<contract_metadata_fixture::BoundObject>());
     context.start();
     auto bean = context.resolve<contract_metadata_fixture::BoundObject>();
-    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::RuntimeBinding);
+    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::Origin::RuntimeBinding);
     context.stop();
 }
 

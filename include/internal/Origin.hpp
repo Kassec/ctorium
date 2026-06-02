@@ -1,18 +1,9 @@
 #pragma once
 
-#include <cstdint>
-
-#include "../api/ctr/Config.hpp"
+#include "../api/ctr/Origin.hpp"
 
 namespace CTORIUM_NAMESPACE::detail {
 
-/**
- * @brief Source of a descriptor contribution.
- */
-enum class Origin : std::uint8_t {
-    AnnotatedType,
-    FactoryProduct,
-    RuntimeBinding,
-};
+using Origin = ::CTORIUM_NAMESPACE::Origin;
 
 } // namespace CTORIUM_NAMESPACE::detail

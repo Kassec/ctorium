@@ -769,7 +769,7 @@ TEST(Factory, FactoryProductMetadataOriginIsFactoryProduct) {
 
     auto product = ctx.resolve<factory_product_metadata_fixture::MetadataProduct>();
 
-    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::FactoryProduct);
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::Origin::FactoryProduct);
 
     ctx.stop();
 }
@@ -781,9 +781,9 @@ TEST(Factory, FactoryProductMetadataFactoryMethodIsNotInPublicApi) {
     auto product = ctx.resolve<factory_product_metadata_fixture::MetadataProduct>();
     auto ordinary = ctx.resolve<factory_product_metadata_fixture::OrdinaryBean>();
 
-    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::FactoryProduct);
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::Origin::FactoryProduct);
     EXPECT_EQ(product.metadata().factoryMethod(), std::string_view{"make"});
-    EXPECT_EQ(ordinary.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::AnnotatedType);
+    EXPECT_EQ(ordinary.metadata().origin(), CTORIUM_NAMESPACE::Origin::AnnotatedType);
     EXPECT_TRUE(ordinary.metadata().factoryMethod().empty());
 
     ctx.stop();

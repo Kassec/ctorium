@@ -16,6 +16,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -443,6 +444,22 @@ namespace api_surface_contract {
     static_assert(CTORIUM_NAMESPACE::named{}.name == nullptr);
     static_assert(CTORIUM_NAMESPACE::scoped{}.name == nullptr);
 
+    static_assert(std::is_enum_v<CTORIUM_NAMESPACE::Lifetime>);
+    static_assert(std::is_enum_v<CTORIUM_NAMESPACE::Origin>);
+    static_assert(std::same_as<std::underlying_type_t<CTORIUM_NAMESPACE::Lifetime>, std::uint8_t>);
+    static_assert(std::same_as<std::underlying_type_t<CTORIUM_NAMESPACE::Origin>, std::uint8_t>);
+    static_assert(
+        requires {
+            CTORIUM_NAMESPACE::Lifetime::Prototype;
+            CTORIUM_NAMESPACE::Lifetime::Singleton;
+            CTORIUM_NAMESPACE::Lifetime::Session;
+            CTORIUM_NAMESPACE::Lifetime::ThreadLocal;
+            CTORIUM_NAMESPACE::Origin::AnnotatedType;
+            CTORIUM_NAMESPACE::Origin::FactoryProduct;
+            CTORIUM_NAMESPACE::Origin::RuntimeBinding;
+        }
+        );
+
     static_assert(std::is_aggregate_v<CTORIUM_NAMESPACE::DiscoverOptions>);
     static_assert(std::is_aggregate_v<CTORIUM_NAMESPACE::BindOptions>);
     static_assert(std::is_aggregate_v<CTORIUM_NAMESPACE::ListenerOptions>);
@@ -546,6 +563,8 @@ namespace api_surface_contract {
         );
     static_assert(std::is_enum_v<MetadataLifetime>);
     static_assert(std::is_enum_v<MetadataOrigin>);
+    static_assert(std::same_as<MetadataLifetime, CTORIUM_NAMESPACE::Lifetime>);
+    static_assert(std::same_as<MetadataOrigin, CTORIUM_NAMESPACE::Origin>);
 
     static_assert(
         requires(const CTORIUM_NAMESPACE::BeanMetadata &metadata) {

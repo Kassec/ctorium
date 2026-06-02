@@ -8,9 +8,9 @@
 
 #include "Config.hpp"
 
-#include "../../internal/Lifetime.hpp"
-#include "../../internal/Origin.hpp"
+#include "Lifetime.hpp"
 #include "Markers.hpp"
+#include "Origin.hpp"
 
 namespace CTORIUM_NAMESPACE {
 
@@ -227,8 +227,8 @@ public:
                  const std::type_info& (*exactTypeGetter)(),
                  const char*            nameStr,
                  const char*            factoryMethodName,
-                 detail::Lifetime       lt,
-                 detail::Origin         orig,
+                 Lifetime               lt,
+                 Origin                 orig,
                  const BeanReflectiveData* reflective) noexcept
         : observedTypeGetter_(observedTypeGetter)
         , exactTypeGetter_   (exactTypeGetter)
@@ -245,8 +245,8 @@ public:
     BeanMetadata(const std::type_info& (*observedTypeGetter)(),
                  const std::type_info& (*exactTypeGetter)(),
                  const char*            nameStr,
-                 detail::Lifetime       lt,
-                 detail::Origin         orig,
+                 Lifetime               lt,
+                 Origin                 orig,
                  const BeanReflectiveData* reflective) noexcept
         : BeanMetadata(observedTypeGetter, exactTypeGetter, nameStr, "",
                        lt, orig, reflective)
@@ -277,10 +277,10 @@ public:
     }
 
     /** Scope lifetime governing instance sharing and destruction. */
-    [[nodiscard]] detail::Lifetime lifetime() const noexcept { return lifetime_; }
+    [[nodiscard]] Lifetime lifetime() const noexcept { return lifetime_; }
 
     /** How this bean was contributed (annotated type, factory product, runtime binding). */
-    [[nodiscard]] detail::Origin origin() const noexcept { return origin_; }
+    [[nodiscard]] Origin origin() const noexcept { return origin_; }
 
     // ── Reflective ────────────────────────────────────────────────────────
 
@@ -300,8 +300,8 @@ private:
     const std::type_info& (*exactTypeGetter_)();
     const char*            nameStr_;
     const char*            factoryMethodName_;
-    detail::Lifetime       lifetime_;
-    detail::Origin         origin_;
+    Lifetime               lifetime_;
+    Origin                 origin_;
     const BeanReflectiveData* reflective_;
 };
 

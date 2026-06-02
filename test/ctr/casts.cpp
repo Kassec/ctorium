@@ -370,7 +370,7 @@ TEST(BeanMetadata, Lifetime_Singleton) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-lt-singleton");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
-    EXPECT_EQ(b.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Singleton);
+    EXPECT_EQ(b.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::Singleton);
     ctx.stop();
 }
 
@@ -378,7 +378,7 @@ TEST(BeanMetadata, Lifetime_Prototype) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-lt-proto");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MyProto>();
-    EXPECT_EQ(b.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Prototype);
+    EXPECT_EQ(b.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::Prototype);
     ctx.stop();
 }
 
@@ -386,7 +386,7 @@ TEST(BeanMetadata, Origin_AnnotatedType) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-origin");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
-    EXPECT_EQ(b.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::AnnotatedType);
+    EXPECT_EQ(b.metadata().origin(), CTORIUM_NAMESPACE::Origin::AnnotatedType);
     ctx.stop();
 }
 
@@ -447,7 +447,7 @@ TEST(BeanMetadata, Lifetime_Session_Form2) {
     scope.start();
     // Session handle is Form 2; metadata must still report Lifetime::Session.
     auto s = scope.resolve<metadata_fixture::MySession>();
-    EXPECT_EQ(s.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Session);
+    EXPECT_EQ(s.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::Session);
     ctx.stop();
 }
 
@@ -461,7 +461,7 @@ TEST(BeanMetadata, BoundSingleton_NoyauAvailable) {
     ctx.start();
     auto bean = ctx.resolve<bound_fixture::BoundSvc>();
     EXPECT_EQ(bean.metadata().exactType(), typeid(bound_fixture::BoundSvc));
-    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::RuntimeBinding);
+    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::Origin::RuntimeBinding);
     EXPECT_TRUE(bean.metadata().methods().empty()); // no reflective data for runtime bindings
     ctx.stop();
 }

@@ -158,6 +158,23 @@ TEST(Listener, RemoveIsIdempotent) {
 
 // ─── Pre-start typed listener registration ───────────────────────────────────
 
+TEST(Listener, PreStartTypedListenerHandleCanBeRemovedAfterStart) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-prestart-remove-after-start");
+    ctx.discover<^^listener_fixture>();
+
+    int count = 0;
+    auto handle = ctx.on<listener_fixture::ServiceA>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count; });
+
+    ctx.start();
+    handle.remove();
+    ctx.resolve<listener_fixture::ServiceA>();
+
+    EXPECT_EQ(count, 0);
+    ctx.stop();
+}
+
 TEST(Listener, PreStartTypedListenerFiresOnlyForTargetType) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-prestart-typed-filter");
     ctx.discover<^^listener_fixture>();

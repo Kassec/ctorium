@@ -93,6 +93,24 @@ public:
     static constexpr NameId kNoScope = kInvalidNameId;
 
     /**
+     * @brief Reserves a listener token before deferred insertion.
+     * @return Token that remains valid for a later `addListenerDeferred()` call.
+     */
+    [[nodiscard]] std::size_t reserveToken() {
+        std::lock_guard lock(mutex_);
+        return nextToken_++;
+    }
+
+    /**
+     * @brief Builds a handle for a previously reserved listener token.
+     * @param token Token reserved by `reserveToken()`.
+     * @return Handle bound to this store and token.
+     */
+    [[nodiscard]] ListenerHandle makeHandle(std::size_t token) noexcept {
+        return ListenerHandle{this, token};
+    }
+
+    /**
      * @brief Registers a listener callback for the given phase and type filter.
      *
      * @param phaseIndex   Phase index in `[0, kPhaseCount)`.
@@ -140,13 +158,14 @@ public:
                                                      TypeId typeId,
                                                      NameId listenerScope,
                                                      Callback callback,
-                                                     int priority) {
+                                                     int priority,
+                                                     std::size_t token) {
         assert(phaseIndex < kPhaseCount && "phase index out of range");
         assert(callback && "callback must not be empty");
 
         std::lock_guard lock(mutex_);
         auto* entry = new Entry{typeId, listenerScope, std::move(callback), priority,
-                                nextToken_++, phaseIndex};
+                                token, phaseIndex};
         auto& vec = phases_[phaseIndex];
         vec.push_back(entry);
         const auto pos = std::lower_bound(

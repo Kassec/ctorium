@@ -231,6 +231,7 @@ private:
         detail::NameId                   listenerScope;
         std::function<void(const void*)> callback;
         int                              priority;
+        std::size_t                      token;
     };
     std::vector<DeferredListener> deferredListeners_;
     void flushDeferredListeners_();

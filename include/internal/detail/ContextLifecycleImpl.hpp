@@ -135,7 +135,8 @@ inline void BeanContext::flushDeferredListeners_() {
             typeId,
             entry.listenerScope,
             std::move(entry.callback),
-            entry.priority);
+            entry.priority,
+            entry.token);
     }
     core().listenerStore().finalizeListeners();
     deferredListeners_.clear();
@@ -423,16 +424,19 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
         };
 
         if (!reg.started()) {
+            detail::ListenerStore& store = reg.listenerStore();
+            const std::size_t token = store.reserveToken();
             deferredListeners_.push_back(
                 {
                     std::type_index(typeid(T)),
                     phaseIdx,
                     listenerScope,
                     std::move(wrapper),
-                    options.priority
+                    options.priority,
+                    token
                 }
                 );
-            return ListenerHandle{};
+            return store.makeHandle(token);
         }
 
         const detail::TypeId typeId = reg.typeIdFor<T>();

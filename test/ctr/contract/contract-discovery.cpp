@@ -25,6 +25,16 @@ struct BoundOnly {
 
 } // namespace contract_discovery_binding_fixture
 
+namespace contract_discovery_two_roots_fixture {
+
+namespace inner {
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Discovered {};
+
+} // namespace inner
+
+} // namespace contract_discovery_two_roots_fixture
+
 TEST(ContractDiscovery, Discover_AfterStart_Throws) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cd-after-start");
     context.start();
@@ -45,6 +55,18 @@ TEST(ContractDiscovery, Discover_Deduplication) {
     context.discover<^^contract_discovery_fixture>();
     context.start();
     EXPECT_NO_THROW(context.resolve<contract_discovery_fixture::Discovered>());
+    context.stop();
+}
+
+TEST(ContractDiscovery, Discover_DeduplicatesSameTypeFromOverlappingRoots) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cd-dedup-two-roots");
+    context.discover<^^contract_discovery_two_roots_fixture>();
+    context.discover<^^contract_discovery_two_roots_fixture::inner>();
+    context.start();
+
+    auto bean = context.resolve<contract_discovery_two_roots_fixture::inner::Discovered>();
+    EXPECT_NE(bean.operator->(), nullptr);
+
     context.stop();
 }
 

@@ -37,6 +37,17 @@ struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] ThrowingOnFirstStart {
 
 } // namespace contract_contexts_fixture
 
+namespace contract_contexts_session_destroy_order_fixture {
+
+struct [[=CTORIUM_NAMESPACE::session{}]] A {};
+
+struct [[=CTORIUM_NAMESPACE::session{}]] B {
+    CTORIUM_NAMESPACE::Bean<A> a;
+    explicit B(CTORIUM_NAMESPACE::Bean<A> injected) : a(std::move(injected)) {}
+};
+
+} // namespace contract_contexts_session_destroy_order_fixture
+
 TEST(ContractContexts, ResolveContext_Default_ReturnsSame) {
     auto& first = CTORIUM_NAMESPACE::BeanContext::resolveContext();
     auto& second = CTORIUM_NAMESPACE::BeanContext::resolveContext();
@@ -163,6 +174,39 @@ TEST(ContractContexts, Scope_Stop_Idempotent) {
     auto& scope = root.resolveScope("cc-stop-idempotent-scope");
     scope.start();
     EXPECT_NO_THROW(scope.stop().stop());
+    root.stop();
+}
+
+TEST(ContractContexts, Scope_Stop_DestroysSessionsInReverseConstructionOrder) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-session-destroy-reverse");
+    root.discover<^^contract_contexts_session_destroy_order_fixture>().start();
+    auto& scope = root.resolveScope("cc-session-destroy-reverse-scope");
+    scope.start();
+
+    auto bean = scope.resolve<contract_contexts_session_destroy_order_fixture::B>();
+    ASSERT_NE(bean.operator->(), nullptr);
+
+    int nextOrder = 0;
+    int aOrder = 0;
+    int bOrder = 0;
+    int aCount = 0;
+    int bCount = 0;
+    root.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean& destroyed) {
+        if (destroyed.compatible<contract_contexts_session_destroy_order_fixture::A>()) {
+            aOrder = ++nextOrder;
+            ++aCount;
+        }
+        if (destroyed.compatible<contract_contexts_session_destroy_order_fixture::B>()) {
+            bOrder = ++nextOrder;
+            ++bCount;
+        }
+    });
+
+    scope.stop();
+
+    EXPECT_EQ(aCount, 1);
+    EXPECT_EQ(bCount, 1);
+    EXPECT_LT(bOrder, aOrder);
     root.stop();
 }
 

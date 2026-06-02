@@ -32,6 +32,7 @@ The public API never guarantees:
 - handle layout, size, or field order,
 - iteration or dispatch order beyond what is documented (descending priority, then registration order for listeners),
 - in-memory layout or addresses of managed instances,
+- ownership of a context: `resolveContext()` and `ctr::Bean<T>::context()` hand back a non-owning `BeanContext&`, never an owning handle, and a context's lifetime is never extended to outlive its `stop()` to match a caller,
 - diagnostic message text (messages identify the type, key, and operation involved, but their exact wording may change),
 - timing of lazy materialization beyond "on first resolution."
 

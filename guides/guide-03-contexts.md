@@ -249,6 +249,13 @@ context.stop();
 
 Boring and correct, which wins a shocking number of engineering arguments.
 
+This is a deliberate design choice, not an oversight: Ctorium exposes the context as a `BeanContext&`, never as an
+owning RAII handle. The runtime owns the context; user code owns only the responsibility to stop using the context and
+its emitted handles before `stop()`. The payoff lands on the common path — a `ctr::Bean<T>` carries no extra context
+owner, and direct singleton/prototype access pays nothing for ownership tracking
+(see [Guide 10 — Handles](guide-10-handles.md) and [Guide 13 — Performance](guide-13-performance.md)). The trade-off is
+exactly the discipline above: explicit lifecycle order instead of automatic lifetime extension.
+
 ---
 
 ## 11. Full example

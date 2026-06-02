@@ -106,7 +106,7 @@ Any handle can produce the context that emitted it, in every form:
 ctr::BeanContext& owner = config.context();
 ```
 
-For root-owned beans (singleton, prototype) this is the root `BeanContext`; for a session bean it is the owning `ScopedContext`. The handle stores no extra context pointer — it recovers the context through its registry anchor — which keeps the handle small (24 bytes on 64-bit) while preserving access. Treat that access deliberately, as [Guide 03 — Contexts](guide-03-contexts.md) notes: a handle that reaches its context can reach the whole container.
+For root-owned beans (singleton, prototype) this is the root `BeanContext`; for a session bean it is the owning `ScopedContext`. The handle stores no extra context pointer — it recovers the context through its registry anchor — which keeps the handle small (24 bytes on 64-bit) while preserving access. That omission is deliberate, not a micro-optimization stumbled into: a context owner on every handle would enlarge `ctr::Bean<T>` and add ownership work to the common singleton/prototype path for a relationship the registry already encodes. `context()` accordingly returns a non-owning `BeanContext&` — it does not extend the context's lifetime, so the shutdown rule from [Guide 03 — Contexts](guide-03-contexts.md) still applies: do not use a recovered context, or the handle it came from, after `stop()`. Treat that access deliberately, as [Guide 03 — Contexts](guide-03-contexts.md) notes: a handle that reaches its context can reach the whole container.
 
 ---
 

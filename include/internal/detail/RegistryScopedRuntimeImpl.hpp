@@ -67,6 +67,12 @@ namespace CTORIUM_NAMESPACE::detail {
         if (instance != nullptr)
             return instance;
 
+        if (scope->scopeState_ == CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopping) {
+            throw CTORIUM_NAMESPACE::ContextStateError(
+                "Registry::materializeSessionInstance: cannot materialize a new session bean during scope teardown."
+                );
+        }
+
         bool didMaterialize = false;
 
         // RuntimeBinding session beans must be pre-stored in sessionStore_ at
@@ -228,20 +234,20 @@ namespace CTORIUM_NAMESPACE::detail {
     // Registry::stopScope
     //
     // Destroys all session instances owned by `scope` in reverse construction order,
-    // then clears the session store.  Marks the scope stopped before sweeping so
-    // that preDestroy hooks see an already-stopped scope.
+    // then clears the session store.  Marks the scope Stopping before sweeping so
+    // lifecycle callbacks can still resolve live session handles.
     // Called from ScopedContext::stop().
     // ─────────────────────────────────────────────────────────────────────────────
 
     inline void Registry::stopScope(CTORIUM_NAMESPACE::ScopedContext &scope) noexcept {
-        // A5: mark scope stopped and capture insertion order under writeLock_, then
+        // A5: mark scope Stopping and capture insertion order under writeLock_, then
         // release the lock before calling executeDestructionLifecycle so that listener
         // callbacks triggered during destruction can call registry operations without
         // deadlocking on writeLock_.
         std::vector<DescriptorId> order;
         {
             std::lock_guard lock(writeLock_);
-            scope.scopeStarted_ = false;
+            scope.scopeState_ = CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopping;
             order = scope.sessionStore_.insertionOrder(); // copy under lock
         }
 
@@ -249,13 +255,16 @@ namespace CTORIUM_NAMESPACE::detail {
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
             const SessionSlot slot = descriptors_.at(*it).sessionSlot;
             void *mem = scope.sessionStore_.find(slot); // lock-free acquire
-            if (mem != nullptr)
+            if (mem != nullptr) {
                 executeDestructionLifecycle(*it, mem, scope.scopeNameId_);
+                scope.sessionStore_.nullSlot(slot);
+            }
         }
 
         // Reacquire writeLock_ for the final store reset.
         std::lock_guard lock(writeLock_);
         scope.sessionStore_.releaseAll();
+        scope.scopeState_ = CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopped;
     }
 
 } // namespace CTORIUM_NAMESPACE::detail

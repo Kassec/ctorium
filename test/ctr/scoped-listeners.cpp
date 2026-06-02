@@ -136,6 +136,50 @@ TEST(ScopedListener, ScopeListenerFiresForAllFourPhasesOfItsScope) {
     ctx.stop();
 }
 
+TEST(ScopedListener, ScopeListenerOnPreDestroyReceivesLiveBean) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-predestroy-live-bean");
+    ctx.discover<^^scoped_listener_fixture>().start();
+    auto& scope = ctx.resolveScope("scope");
+    scope.start();
+
+    bool observed = false;
+    scope.on<scoped_listener_fixture::ScopedSvc>(
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>& bean) {
+            observed = true;
+            EXPECT_NE(bean.operator->(), nullptr);
+            EXPECT_EQ(&bean.context(), &scope);
+        });
+
+    scope.resolve<scoped_listener_fixture::ScopedSvc>();
+    scope.stop();
+
+    EXPECT_TRUE(observed);
+    ctx.stop();
+}
+
+TEST(ScopedListener, ScopeListenerOnDestroyedReceivesLiveBean) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-destroyed-live-bean");
+    ctx.discover<^^scoped_listener_fixture>().start();
+    auto& scope = ctx.resolveScope("scope");
+    scope.start();
+
+    bool observed = false;
+    scope.on<scoped_listener_fixture::ScopedSvc>(
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>& bean) {
+            observed = true;
+            EXPECT_NE(bean.operator->(), nullptr);
+            EXPECT_EQ(&bean.context(), &scope);
+        });
+
+    scope.resolve<scoped_listener_fixture::ScopedSvc>();
+    scope.stop();
+
+    EXPECT_TRUE(observed);
+    ctx.stop();
+}
+
 TEST(ScopedListener, ScopeListenerDoesNotFireOnDestructionOfOtherScope) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-other-scope-destruction");
     ctx.discover<^^scoped_listener_fixture>().start();

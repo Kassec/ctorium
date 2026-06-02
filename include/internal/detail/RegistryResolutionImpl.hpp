@@ -124,7 +124,7 @@ namespace CTORIUM_NAMESPACE::detail {
                     "scoped context, not directly from a root context."
                     );
             }
-            if (!ctx.scope->scopeStarted_) {
+            if (ctx.scope->scopeState_ == CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopped) {
                 throw CTORIUM_NAMESPACE::ContextStateError(
                     "Registry::resolve: the scope is stopped; start the scope before resolving."
                     );
@@ -668,7 +668,7 @@ namespace CTORIUM_NAMESPACE::detail {
                     "scoped context, not directly from a root context."
                     );
             }
-            if (!ctx.scope->scopeStarted_) {
+            if (ctx.scope->scopeState_ == CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopped) {
                 throw CTORIUM_NAMESPACE::ContextStateError(
                     "Registry::resolve: the scope is stopped; start the scope before resolving."
                     );

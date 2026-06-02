@@ -1253,7 +1253,7 @@ private:
     /**
      * @brief Executes the full destruction lifecycle for one bean instance.
      *
-     * Sequence: onPreDestroy → preDestroy hook → C++ destructor → onDestroyed →
+     * Sequence: onPreDestroy → preDestroy hook → onDestroyed → C++ destructor →
      * `::operator delete` (skipped when `DescriptorCold::size == 0` — externally owned memory).
      * Defined in RegistryRuntimeImpl.hpp on the model of `resolve<T>()`.
      *

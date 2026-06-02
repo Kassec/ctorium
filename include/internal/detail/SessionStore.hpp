@@ -89,6 +89,16 @@ public:
         return base[static_cast<std::size_t>(slot)].load(std::memory_order_acquire);
     }
 
+    /**
+     * @brief Clears an existing session slot after its instance has been destroyed.
+     *
+     * Precondition: `slot` is within the current store size.
+     */
+    void nullSlot(SessionSlot slot) noexcept {
+        instancesBase_.load(std::memory_order_relaxed)
+            [static_cast<std::size_t>(slot)].store(nullptr, std::memory_order_release);
+    }
+
     /** @brief Insertion-order vector for reverse-order destruction at `stop()`. */
     [[nodiscard]] const std::vector<DescriptorId>& insertionOrder() const noexcept {
         return insertionOrder_;

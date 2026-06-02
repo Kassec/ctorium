@@ -21,10 +21,17 @@ namespace CTORIUM_NAMESPACE::detail {
             listeners_.hasListeners(ListenerStore::phaseDestroyed());
         if (dispatchPreDestroy || dispatchDestroyed) {
             CTORIUM_NAMESPACE::AnyBean anyBean;
-            anyBean.object_ = mem;
-            anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
-            anyBean.bits_.f1.descId = descId;
-            anyBean.registry_ = this;
+            if (emitterScope != ListenerStore::kNoScope) {
+                anyBean.object_ = nullptr;
+                anyBean.bits_.f2.scopeNameId = emitterScope;
+                anyBean.bits_.f2.descId = descId;
+                anyBean.registry_ = this;
+            } else {
+                anyBean.object_ = mem;
+                anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
+                anyBean.bits_.f1.descId = descId;
+                anyBean.registry_ = this;
+            }
 
             if (dispatchPreDestroy) {
                 listeners_.dispatch(
@@ -38,16 +45,15 @@ namespace CTORIUM_NAMESPACE::detail {
                 cold.preDestroy(mem, static_cast<void *>(&ctx));
             }
 
-            cold.destroy(mem);
-
             if (dispatchDestroyed) {
-                // anyBean.object_ points to destroyed memory; listeners must not dereference it.
                 listeners_.dispatch(
                     ListenerStore::phaseDestroyed(),
                     cold.exposedType,
                     &anyBean,
                     emitterScope);
             }
+
+            cold.destroy(mem);
         } else {
             if (cold.preDestroy) {
                 cold.preDestroy(mem, static_cast<void *>(&ctx));

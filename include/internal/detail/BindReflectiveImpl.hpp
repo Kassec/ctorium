@@ -304,7 +304,7 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         }
     }
 
-    if (!scopeStarted_) {
+    if (scopeState_ != ScopeState::Running) {
         // Scope not yet started (or stopped): queue for next start().
         pendingRuntimeSessions_.push_back({descId, rawPtr});
         return *this;

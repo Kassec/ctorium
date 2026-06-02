@@ -129,7 +129,8 @@ namespace CTORIUM_NAMESPACE {
     T *Bean<T>::proxyResolve_() const noexcept {
         auto* reg = static_cast<detail::Registry*>(registry_);
         CTORIUM_NAMESPACE::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
-        if (scope == nullptr || !scope->scopeStarted_)
+        if (scope == nullptr
+                || scope->scopeState_ == CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopped)
             return nullptr;
 
         const detail::DescriptorId descId = bits_.f2.descId;
@@ -148,6 +149,9 @@ namespace CTORIUM_NAMESPACE {
                 instance = desc.adjustToExposed(instance);
             return static_cast<T *>(instance);
         }
+
+        if (scope->scopeState_ == CTORIUM_NAMESPACE::ScopedContext::ScopeState::Stopping)
+            return nullptr;
 
         detail::ResolutionContext ctx{*reg, scope};
         try {

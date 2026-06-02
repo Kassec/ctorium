@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <typeindex>
@@ -27,9 +28,9 @@ namespace CTORIUM_NAMESPACE {
 class ScopedContext : public BeanContext {
 public:
     /**
-     * @brief Starts this scope: sizes the session store, marks the scope started.
+     * @brief Starts this scope: transitions from Stopped to Running.
      *
-     * Idempotent: calling after a successful `start()` is a no-op.
+     * Idempotent if already Running.
      * Does NOT call `Registry::start`; the root must already be started.
      * @throws ContextStateError if the root registry has not been started.
      */
@@ -37,7 +38,7 @@ public:
 
     /**
      * @brief Stops this scope: destroys all session instances in reverse construction
-     * order, clears the session store, marks the scope stopped.
+     * order while Stopping, clears the session store, then transitions to Stopped.
      *
      * Preserves `scopeNameId_`, `userData`, and tracked handles.
      * Idempotent: calling on an already-stopped scope is a no-op.
@@ -129,11 +130,13 @@ private:
     template <class> friend class Bean;
     friend class detail::Registry;
 
+    enum class ScopeState : std::uint8_t { Stopped, Running, Stopping };
+
     BeanContext* root_;
 
     detail::NameId   scopeNameId_ = detail::kInvalidNameId;
     detail::SessionStore sessionStore_;
-    bool             scopeStarted_ = false;
+    ScopeState       scopeState_ = ScopeState::Stopped;
     /// Scope-local default named qualifiers; consulted before root defaults.
     detail::DefaultsTable scopedDefaults_;
     /// Fast-path flag: false until this scope configures at least one local default.

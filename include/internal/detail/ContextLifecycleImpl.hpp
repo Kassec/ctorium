@@ -218,7 +218,10 @@ inline ScopedContext& ScopedContext::start() {
         throw ContextStateError(
             "ScopedContext::start: the root registry must be started before a scope can start.");
     }
-    if (scopeStarted_) return *this; // idempotent
+    if (scopeState_ == ScopeState::Running) return *this; // idempotent
+    if (scopeState_ == ScopeState::Stopping) {
+        throw ContextStateError("ScopedContext::start: cannot start a scope that is being stopped.");
+    }
     detail::Registry& reg = core();
     sessionStore_.resize(reg.sessionSlotCount());
     // Process pending session bindings entered before this start() call.
@@ -243,12 +246,12 @@ inline ScopedContext& ScopedContext::start() {
             scopeNameId_);
     }
     pendingRuntimeSessions_.clear();
-    scopeStarted_ = true;
+    scopeState_ = ScopeState::Running;
     return *this;
 }
 
 inline ScopedContext& ScopedContext::stop() {
-    if (!scopeStarted_) return *this; // idempotent
+    if (scopeState_ != ScopeState::Running) return *this; // idempotent
     core().stopScope(*this); // marks stopped, destroys beans, clears store
     return *this;
 }

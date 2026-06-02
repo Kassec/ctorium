@@ -35,6 +35,14 @@ struct [[=CTORIUM_NAMESPACE::singleton{}]] DeferredConsumer {
 
 } // namespace contract_handles_fixture
 
+namespace contract_handles_cast_forms_fixture {
+
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionObject {};
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] ThreadLocalObject {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Unrelated {};
+
+} // namespace contract_handles_cast_forms_fixture
+
 TEST(ContractHandles, Bean_CopyRetainsSameBean) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-copy");
     context.discover<^^contract_handles_fixture>().start();
@@ -168,6 +176,48 @@ TEST(ContractHandles, Bean_TryCast_IncompatibleReturnsNullopt) {
     auto bean = context.resolve<contract_handles_fixture::SingletonObject>();
     EXPECT_EQ(bean.tryCast<contract_handles_fixture::Unrelated>(), std::nullopt);
     context.stop();
+}
+
+TEST(ContractHandles, Bean_SessionHandle_CastHelpersMatchConcrete) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-session-cast-helpers");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+    auto& scope = root.resolveScope("ch-session-cast-helpers-scope");
+    scope.start();
+
+    auto bean = scope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    ASSERT_NE(bean.operator->(), nullptr);
+    EXPECT_TRUE(bean.exact<contract_handles_cast_forms_fixture::SessionObject>());
+    EXPECT_TRUE(bean.compatible<contract_handles_cast_forms_fixture::SessionObject>());
+    EXPECT_FALSE(bean.compatible<contract_handles_cast_forms_fixture::Unrelated>());
+
+    auto casted = bean.cast<contract_handles_cast_forms_fixture::SessionObject>();
+    EXPECT_EQ(casted.operator->(), bean.operator->());
+    EXPECT_THROW(
+        { (void)bean.cast<contract_handles_cast_forms_fixture::Unrelated>(); },
+        CTORIUM_NAMESPACE::ResolutionError);
+    EXPECT_EQ(bean.tryCast<contract_handles_cast_forms_fixture::Unrelated>(), std::nullopt);
+
+    root.stop();
+}
+
+TEST(ContractHandles, Bean_ThreadLocalHandle_CastHelpersMatchConcrete) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-thread-local-cast-helpers");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+
+    auto bean = root.resolve<contract_handles_cast_forms_fixture::ThreadLocalObject>();
+    ASSERT_NE(bean.operator->(), nullptr);
+    EXPECT_TRUE(bean.exact<contract_handles_cast_forms_fixture::ThreadLocalObject>());
+    EXPECT_TRUE(bean.compatible<contract_handles_cast_forms_fixture::ThreadLocalObject>());
+    EXPECT_FALSE(bean.compatible<contract_handles_cast_forms_fixture::Unrelated>());
+
+    auto casted = bean.cast<contract_handles_cast_forms_fixture::ThreadLocalObject>();
+    EXPECT_EQ(casted.operator->(), bean.operator->());
+    EXPECT_THROW(
+        { (void)bean.cast<contract_handles_cast_forms_fixture::Unrelated>(); },
+        CTORIUM_NAMESPACE::ResolutionError);
+    EXPECT_EQ(bean.tryCast<contract_handles_cast_forms_fixture::Unrelated>(), std::nullopt);
+
+    root.stop();
 }
 
 TEST(ContractHandles, Bean_Equality_SameSingleton) {

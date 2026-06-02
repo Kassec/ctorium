@@ -40,7 +40,7 @@ Compile and run `toolchain-check` to check your toolchain against the C++ 26 ref
 
 ```cpp
 #include <string_view>
-#include <ctorium/ctorium.hpp>
+#include <ctr/Ctorium.hpp>
 
 namespace app {
 

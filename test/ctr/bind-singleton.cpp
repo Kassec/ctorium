@@ -258,3 +258,63 @@ TEST(BindSingleton, PostStartBindWithNameResolvableByName) {
     EXPECT_THROW(ctx.resolve<bind_singleton_fixture::Widget>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
+
+TEST(BindSingleton, PostStartHigherPriorityRuntimeBindingWinsOverDiscovered) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-start-higher-priority-wins");
+    ctx.discover<^^bind_singleton_fixture>();
+    ctx.start();
+    auto runtime = std::make_unique<bind_singleton_fixture::PlainService>();
+    runtime->x = 123;
+    bind_singleton_fixture::PlainService* raw = runtime.get();
+    ctx.bindSingleton<bind_singleton_fixture::PlainService>(
+        std::move(runtime),
+        CTORIUM_NAMESPACE::BindOptions{.priority = 10});
+    auto bean = ctx.resolve<bind_singleton_fixture::PlainService>();
+    EXPECT_EQ(bean.operator->(), raw);
+    EXPECT_EQ(bean->x, 123);
+    ctx.stop();
+}
+
+TEST(BindSingleton, PostStartEqualPriorityRuntimeBindingMakesDiscoveredAmbiguous) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-start-equal-priority-ambiguous");
+    ctx.discover<^^bind_singleton_fixture>();
+    ctx.start();
+    auto runtime = std::make_unique<bind_singleton_fixture::PlainService>();
+    runtime->x = 456;
+    ctx.bindSingleton<bind_singleton_fixture::PlainService>(
+        std::move(runtime),
+        CTORIUM_NAMESPACE::BindOptions{.priority = 0});
+    EXPECT_THROW(
+        ctx.resolve<bind_singleton_fixture::PlainService>(),
+        CTORIUM_NAMESPACE::ResolutionError);
+    ctx.stop();
+}
+
+TEST(BindSingleton, PostStartSameNameDifferentPriorityAllowedAfterLowerWasResolved) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext(
+        "bs-post-start-same-name-different-priority");
+    ctx.start();
+    auto first = std::make_unique<bind_singleton_fixture::PlainService>();
+    first->x = 1;
+    bind_singleton_fixture::PlainService* firstRaw = first.get();
+    ctx.bindSingleton<bind_singleton_fixture::PlainService>(
+        std::move(first),
+        CTORIUM_NAMESPACE::BindOptions{.name = "same", .priority = 1});
+    auto resolvedFirst = ctx.resolve<bind_singleton_fixture::PlainService>(
+        CTORIUM_NAMESPACE::named("same"));
+    EXPECT_EQ(resolvedFirst.operator->(), firstRaw);
+    EXPECT_EQ(resolvedFirst->x, 1);
+
+    auto second = std::make_unique<bind_singleton_fixture::PlainService>();
+    second->x = 2;
+    bind_singleton_fixture::PlainService* secondRaw = second.get();
+    ctx.bindSingleton<bind_singleton_fixture::PlainService>(
+        std::move(second),
+        CTORIUM_NAMESPACE::BindOptions{.name = "same", .priority = 10});
+    auto resolvedSecond = ctx.resolve<bind_singleton_fixture::PlainService>(
+        CTORIUM_NAMESPACE::named("same"));
+    EXPECT_EQ(resolvedSecond.operator->(), secondRaw);
+    EXPECT_EQ(resolvedSecond->x, 2);
+    EXPECT_NE(resolvedSecond.operator->(), resolvedFirst.operator->());
+    ctx.stop();
+}

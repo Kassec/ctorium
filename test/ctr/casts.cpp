@@ -19,6 +19,32 @@ struct [[=CTORIUM_NAMESPACE::prototype{}]] ProtoType {};
 
 } // namespace casts_fixture
 
+namespace casts_session_proxy_fixture {
+
+struct SessionBase {};
+
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionDerived : SessionBase {
+    int value = 1;
+};
+
+} // namespace casts_session_proxy_fixture
+
+namespace casts_thread_local_proxy_fixture {
+
+struct ThreadBase {};
+
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] ThreadDerived : ThreadBase {
+    int value = 2;
+};
+
+} // namespace casts_thread_local_proxy_fixture
+
+namespace casts_anybean_session_fixture {
+
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionType {};
+
+} // namespace casts_anybean_session_fixture
+
 // ─── Bean<T>::context() ───────────────────────────────────────────────────────
 
 TEST(BeanCast, ContextReturnsSingletonOwner) {
@@ -575,5 +601,63 @@ TEST(AnyBeanCast, EqualityComparesLogicalBeanIdentity) {
     EXPECT_EQ(first, sameFirst);
     EXPECT_NE(first, second);
 
+    ctx.stop();
+}
+
+TEST(BeanCast, SessionProxyCastsToCompatibleBaseBeforeMaterialization) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-session-proxy-cast");
+    ctx.discover<^^casts_session_proxy_fixture>().start();
+    auto& scope = ctx.resolveScope("bc-session-proxy-cast-scope");
+    scope.start();
+
+    auto bean = scope.resolve<casts_session_proxy_fixture::SessionDerived>();
+    EXPECT_TRUE(bean.compatible<casts_session_proxy_fixture::SessionBase>());
+    auto compatible = bean.tryCast<casts_session_proxy_fixture::SessionBase>();
+    ASSERT_TRUE(compatible.has_value());
+
+    auto casted = bean.cast<casts_session_proxy_fixture::SessionBase>();
+    auto* derivedRaw = bean.operator->();
+    auto* baseRaw = casted.operator->();
+    EXPECT_NE(derivedRaw, nullptr);
+    EXPECT_EQ(static_cast<void*>(baseRaw), static_cast<void*>(derivedRaw));
+    ctx.stop();
+}
+
+TEST(BeanCast, ThreadLocalProxyCastsToCompatibleBaseBeforeMaterialization) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-threadlocal-proxy-cast");
+    ctx.discover<^^casts_thread_local_proxy_fixture>().start();
+
+    auto bean = ctx.resolve<casts_thread_local_proxy_fixture::ThreadDerived>();
+    EXPECT_TRUE(bean.compatible<casts_thread_local_proxy_fixture::ThreadBase>());
+    auto compatible = bean.tryCast<casts_thread_local_proxy_fixture::ThreadBase>();
+    ASSERT_TRUE(compatible.has_value());
+
+    auto casted = bean.cast<casts_thread_local_proxy_fixture::ThreadBase>();
+    auto* derivedRaw = bean.operator->();
+    auto* baseRaw = casted.operator->();
+    EXPECT_NE(derivedRaw, nullptr);
+    EXPECT_EQ(static_cast<void*>(baseRaw), static_cast<void*>(derivedRaw));
+    ctx.stop();
+}
+
+TEST(AnyBeanCast, SessionLifecycleContextIsOwningScope) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-session-context");
+    ctx.discover<^^casts_anybean_session_fixture>().start();
+    auto& scope = ctx.resolveScope("ab-session-context-scope");
+    scope.start();
+
+    CTORIUM_NAMESPACE::AnyBean captured;
+    bool capturedSession = false;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
+        if (bean.compatible<casts_anybean_session_fixture::SessionType>()) {
+            captured = bean;
+            capturedSession = true;
+        }
+    });
+
+    auto bean = scope.resolve<casts_anybean_session_fixture::SessionType>();
+    ASSERT_NE(bean.operator->(), nullptr);
+    EXPECT_TRUE(capturedSession);
+    EXPECT_EQ(&captured.context(), &scope);
     ctx.stop();
 }

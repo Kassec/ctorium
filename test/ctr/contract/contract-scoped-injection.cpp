@@ -5,6 +5,28 @@
 
 namespace contract_scoped_injection_fixture {
 
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Target {
+    int value = 1;
+};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] NamedScopedValidationConsumer {
+    CTORIUM_NAMESPACE::Bean<Target> target;
+    explicit NamedScopedValidationConsumer(
+        [[=CTORIUM_NAMESPACE::scoped{.name = std::define_static_string("csi-target-scope")}]]
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("session")}]]
+        CTORIUM_NAMESPACE::Bean<Target> injected)
+        : target(std::move(injected)) {}
+};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] NamedScopedInvalidConsumer {
+    CTORIUM_NAMESPACE::Bean<Target> target;
+    explicit NamedScopedInvalidConsumer(
+        [[=CTORIUM_NAMESPACE::scoped{.name = std::define_static_string("csi-target-scope")}]]
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("singleton")}]]
+        CTORIUM_NAMESPACE::Bean<Target> injected)
+        : target(std::move(injected)) {}
+};
+
 struct [[=CTORIUM_NAMESPACE::session{}]] SessionObject {
     int value = 1;
 };
@@ -103,6 +125,37 @@ TEST(ContractScopedInjection, ScopedNamed_TargetsNamedSession) {
     auto consumer = context.resolve<contract_scoped_injection_fixture::ScopedNamedConsumer>();
     ASSERT_NE(consumer->session.operator->(), nullptr);
     EXPECT_EQ(consumer->session->value, 2);
+    context.stop();
+}
+
+TEST(ContractScopedInjection, NamedScopedValidationUsesNamedSessionCandidate) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("csi-named-scoped-validation");
+    context.discover<^^contract_scoped_injection_fixture>();
+    auto& scope = context.resolveScope("csi-target-scope");
+    scope.bindSession<contract_scoped_injection_fixture::Target>(
+        std::make_unique<contract_scoped_injection_fixture::Target>(77),
+        CTORIUM_NAMESPACE::BindOptions{.name = "session", .priority = 0});
+
+    context.start();
+    scope.start();
+
+    auto consumer = context.resolve<contract_scoped_injection_fixture::NamedScopedValidationConsumer>();
+    ASSERT_NE(consumer->target.operator->(), nullptr);
+    EXPECT_EQ(consumer->target->value, 77);
+    context.stop();
+}
+
+TEST(ContractScopedInjection, NamedScopedValidationRejectsNamedNonSessionCandidate) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext(
+        "csi-named-scoped-validation-rejects");
+    context.discover<^^contract_scoped_injection_fixture>();
+    context.bindSingleton<contract_scoped_injection_fixture::Target>(
+        std::make_unique<contract_scoped_injection_fixture::Target>(11),
+        CTORIUM_NAMESPACE::BindOptions{.name = "singleton", .priority = 0});
+    auto& scope = context.resolveScope("csi-target-scope-reject");
+    scope.bindSession<contract_scoped_injection_fixture::Target>(
+        std::make_unique<contract_scoped_injection_fixture::Target>(99));
+    EXPECT_THROW(context.start(), CTORIUM_NAMESPACE::ConfigurationError);
     context.stop();
 }
 

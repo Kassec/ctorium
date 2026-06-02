@@ -185,6 +185,83 @@ TEST(BindSession, PostScopeStartBindFiresLifecycleImmediately) {
     ctx.stop();
 }
 
+TEST(BindSession, RunningScopeSameNameDifferentPriorityCreatesDistinctCandidate) {
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-running-scope-distinct-priority");
+    auto& scope = ctx.resolveScope("running-scope-distinct-priority");
+    int preDestroyCount = 0;
+
+    ctx.on<bind_session_fixture::Counter>(
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::Counter>&) {
+            ++preDestroyCount;
+        });
+
+    ctx.start();
+    scope.start();
+
+    scope.bindSession<bind_session_fixture::Counter>(
+        std::make_unique<bind_session_fixture::Counter>(1),
+        CTORIUM_NAMESPACE::BindOptions{.name = "c", .priority = 1});
+    auto low = scope.resolve<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::named("c"));
+    auto* lowRaw = low.operator->();
+    EXPECT_NE(lowRaw, nullptr);
+    EXPECT_EQ(low->count, 1);
+
+    scope.bindSession<bind_session_fixture::Counter>(
+        std::make_unique<bind_session_fixture::Counter>(2),
+        CTORIUM_NAMESPACE::BindOptions{.name = "c", .priority = 10});
+    auto high = scope.resolve<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::named("c"));
+    auto* highRaw = high.operator->();
+    EXPECT_NE(highRaw, nullptr);
+    EXPECT_EQ(high->count, 2);
+
+    EXPECT_EQ(low.operator->(), lowRaw);
+    EXPECT_NE(low.operator->(), high.operator->());
+
+    scope.stop();
+    ctx.stop();
+
+    EXPECT_EQ(preDestroyCount, 2);
+}
+
+TEST(BindSession, RunningScopeDuplicateSameKeyThrowsAndKeepsExisting) {
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-running-scope-dup-key");
+    auto& scope = ctx.resolveScope("running-scope-dup-key");
+    int preDestroyCount = 0;
+
+    ctx.on<bind_session_fixture::Counter>(
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::Counter>&) {
+            ++preDestroyCount;
+        });
+
+    ctx.start();
+    scope.start();
+
+    scope.bindSession<bind_session_fixture::Counter>(
+        std::make_unique<bind_session_fixture::Counter>(11),
+        CTORIUM_NAMESPACE::BindOptions{.name = "dup", .priority = 0});
+    auto first = scope.resolve<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::named("dup"));
+    auto* firstRaw = first.operator->();
+    EXPECT_NE(firstRaw, nullptr);
+    EXPECT_EQ(first->count, 11);
+
+    EXPECT_THROW(
+        scope.bindSession<bind_session_fixture::Counter>(
+            std::make_unique<bind_session_fixture::Counter>(12),
+            CTORIUM_NAMESPACE::BindOptions{.name = "dup", .priority = 0}),
+        CTORIUM_NAMESPACE::ConfigurationError);
+
+    auto second = scope.resolve<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::named("dup"));
+    EXPECT_EQ(second.operator->(), firstRaw);
+    EXPECT_EQ(second->count, 11);
+
+    scope.stop();
+    ctx.stop();
+
+    EXPECT_EQ(preDestroyCount, 1);
+}
+
 TEST(BindSession, BindBeanContextRaisesConfigurationError) {
     auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bss-ctx-bind");
     auto& scope = ctx.resolveScope("s");

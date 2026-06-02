@@ -118,6 +118,61 @@ TEST(Concurrency, ConcurrentListenerRegistrationRemovalDuringResolveDoesNotDropP
     ctx.stop();
 }
 
+namespace concurrency_materialized_runtime_name_fixture {
+
+std::atomic<bool> materializationStarted{false};
+std::atomic<bool> allowDefaultMaterialization{false};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] BlockingService {
+    int value;
+    BlockingService() : value(1) {
+        materializationStarted.store(true, std::memory_order_release);
+        while (!allowDefaultMaterialization.load(std::memory_order_acquire)) {}
+    }
+    explicit BlockingService(int v) : value(v) {}
+};
+
+} // namespace concurrency_materialized_runtime_name_fixture
+
+TEST(Concurrency, ConcurrentMaterializationAllowsDistinctName) {
+    concurrency_materialized_runtime_name_fixture::materializationStarted.store(
+        false, std::memory_order_release);
+    concurrency_materialized_runtime_name_fixture::allowDefaultMaterialization.store(
+        false, std::memory_order_release);
+
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext(
+        "conc-materialization-distinct-name");
+    ctx.discover<^^concurrency_materialized_runtime_name_fixture>().start();
+
+    concurrency_materialized_runtime_name_fixture::BlockingService* runtimeRaw = nullptr;
+    concurrency_materialized_runtime_name_fixture::BlockingService* resolvedRaw = nullptr;
+    std::thread resolver([&] {
+        auto bean = ctx.resolve<concurrency_materialized_runtime_name_fixture::BlockingService>();
+        resolvedRaw = bean.operator->();
+    });
+
+    while (!concurrency_materialized_runtime_name_fixture::materializationStarted.load(
+               std::memory_order_acquire)) {}
+
+    auto runtime = std::make_unique<concurrency_materialized_runtime_name_fixture::BlockingService>(99);
+    runtimeRaw = runtime.get();
+    EXPECT_NO_THROW(ctx.bindSingleton<concurrency_materialized_runtime_name_fixture::BlockingService>(
+        std::move(runtime),
+        CTORIUM_NAMESPACE::BindOptions{.name = "runtime-distinct", .priority = 0}));
+
+    concurrency_materialized_runtime_name_fixture::allowDefaultMaterialization.store(
+        true, std::memory_order_release);
+    resolver.join();
+    EXPECT_NE(resolvedRaw, nullptr);
+    EXPECT_EQ(resolvedRaw->value, 1);
+
+    auto bound = ctx.resolve<concurrency_materialized_runtime_name_fixture::BlockingService>(
+        CTORIUM_NAMESPACE::named{"runtime-distinct"});
+    EXPECT_EQ(bound.operator->(), runtimeRaw);
+    EXPECT_EQ(bound->value, 99);
+    ctx.stop();
+}
+
 namespace concurrency_default_named_fixture {
 
 struct Service {

@@ -120,6 +120,17 @@ TEST(ContractListeners, Listener_BeforeStart_SeesStartTransitions) {
     context.stop();
 }
 
+TEST(ContractListeners, Listener_TypedBeforeStart_SeesBeanContextStartCreated) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cl-before-start-typed-beancontext");
+    int count = 0;
+    context.on<CTORIUM_NAMESPACE::BeanContext>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<CTORIUM_NAMESPACE::BeanContext>&) { ++count; });
+    context.start();
+    EXPECT_EQ(count, 1);
+    context.stop();
+}
+
 TEST(ContractListeners, Listener_BeforeStart_SeesEagerSingletonCreated) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cl-before-start-eager-created");
     context.discover<^^contract_listeners_prestart_eager_fixture>();

@@ -291,6 +291,35 @@ TEST(ContractHandles, Bean_ThreadLocalHandle_EqualitySameThread) {
     root.stop();
 }
 
+TEST(ContractHandles, Bean_SessionHandle_DereferenceAccessorsMatchOperatorArrow) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-session-deref-accessors");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+    auto& scope = root.resolveScope("ch-session-deref-accessors-scope");
+    scope.start();
+
+    auto bean = scope.resolve<contract_handles_cast_forms_fixture::SessionObject>();
+    auto* pointer = bean.operator->();
+    ASSERT_NE(pointer, nullptr);
+    EXPECT_EQ(&(*bean), pointer);
+    EXPECT_EQ(&bean.value(), pointer);
+
+    root.stop();
+}
+
+TEST(ContractHandles, Bean_ThreadLocalHandle_DereferenceAccessorsAndMetadataMatch) {
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-thread-local-deref-metadata");
+    root.discover<^^contract_handles_cast_forms_fixture>().start();
+
+    auto bean = root.resolve<contract_handles_cast_forms_fixture::ThreadLocalObject>();
+    auto* pointer = bean.operator->();
+    ASSERT_NE(pointer, nullptr);
+    EXPECT_EQ(&(*bean), pointer);
+    EXPECT_EQ(&bean.value(), pointer);
+    EXPECT_EQ(bean.metadata().lifetime(), CTORIUM_NAMESPACE::Lifetime::ThreadLocal);
+
+    root.stop();
+}
+
 TEST(ContractHandles, Bean_Equality_DifferentPrototypes) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("ch-eq-prototype");
     context.discover<^^contract_handles_fixture>().start();

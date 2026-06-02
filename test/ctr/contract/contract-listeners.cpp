@@ -17,6 +17,12 @@ struct [[=CTORIUM_NAMESPACE::session{}]] ScopeObject {};
 
 } // namespace contract_listeners_fixture
 
+namespace contract_listeners_prestart_eager_fixture {
+
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerSingleton {};
+
+} // namespace contract_listeners_prestart_eager_fixture
+
 namespace contract_listeners_contracts {
 
 template <class T>
@@ -103,6 +109,38 @@ TEST(ContractListeners, Listener_BeforeStart_SeesStartTransitions) {
         if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) ++count;
     });
     context.start();
+    EXPECT_EQ(count, 1);
+    context.stop();
+}
+
+TEST(ContractListeners, Listener_BeforeStart_SeesEagerSingletonCreated) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cl-before-start-eager-created");
+    context.discover<^^contract_listeners_prestart_eager_fixture>();
+    int count = 0;
+    context.on<contract_listeners_prestart_eager_fixture::EagerSingleton>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<contract_listeners_prestart_eager_fixture::EagerSingleton>&) {
+            ++count;
+        });
+
+    context.start();
+
+    EXPECT_EQ(count, 1);
+    context.stop();
+}
+
+TEST(ContractListeners, Listener_BeforeStart_SeesEagerSingletonInitialized) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cl-before-start-eager-initialized");
+    context.discover<^^contract_listeners_prestart_eager_fixture>();
+    int count = 0;
+    context.on<contract_listeners_prestart_eager_fixture::EagerSingleton>(
+        CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<contract_listeners_prestart_eager_fixture::EagerSingleton>&) {
+            ++count;
+        });
+
+    context.start();
+
     EXPECT_EQ(count, 1);
     context.stop();
 }

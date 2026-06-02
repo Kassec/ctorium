@@ -23,6 +23,13 @@ struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerSingleton {};
 
 } // namespace contract_listeners_prestart_eager_fixture
 
+namespace contract_listeners_reentrant_resolve_fixture {
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Observed {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Other {};
+
+} // namespace contract_listeners_reentrant_resolve_fixture
+
 namespace contract_listeners_contracts {
 
 template <class T>
@@ -171,6 +178,28 @@ TEST(ContractListeners, Listener_SnapshotDispatch) {
     order.clear();
     (void)context.resolve<contract_listeners_fixture::OtherPrototype>();
     EXPECT_EQ(order, (std::vector<int>{1, 3}));
+    context.stop();
+}
+
+TEST(ContractListeners, Listener_ReentrantResolveFromCallbackSucceeds) {
+    auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cl-reentrant-resolve");
+    context.discover<^^contract_listeners_reentrant_resolve_fixture>().start();
+
+    bool resolvedOther = false;
+    context.on<contract_listeners_reentrant_resolve_fixture::Observed>(
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<contract_listeners_reentrant_resolve_fixture::Observed>& bean) {
+            auto other = bean.context().resolve<contract_listeners_reentrant_resolve_fixture::Other>();
+            EXPECT_NE(other.operator->(), nullptr);
+            resolvedOther = other.operator->() != nullptr;
+        });
+
+    EXPECT_NO_THROW({
+        auto observed = context.resolve<contract_listeners_reentrant_resolve_fixture::Observed>();
+        EXPECT_NE(observed.operator->(), nullptr);
+    });
+    EXPECT_TRUE(resolvedOther);
+
     context.stop();
 }
 

@@ -34,9 +34,22 @@ if (BUILD_TESTING)
 endif ()
 
 add_executable(ctorium-tests
+        ctr/contract/api-surface.cpp
         ctr/bean.cpp
         ctr/bind-session.cpp
         ctr/bind-singleton.cpp
+        ctr/contract/contract-bind.cpp
+        ctr/contract/contract-contexts.cpp
+        ctr/contract/contract-discovery.cpp
+        ctr/contract/contract-factories.cpp
+        ctr/contract/contract-handles.cpp
+        ctr/contract/contract-hooks.cpp
+        ctr/contract/contract-lifecycle.cpp
+        ctr/contract/contract-listeners.cpp
+        ctr/contract/contract-metadata.cpp
+        ctr/contract/contract-resolution.cpp
+        ctr/contract/contract-scoped-injection.cpp
+        ctr/contract/contract-userdata.cpp
         ctr/casts.cpp
         ctr/context.cpp
         ctr/concurrency.cpp

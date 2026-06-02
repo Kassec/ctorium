@@ -92,6 +92,25 @@ if (BUILD_TESTING)
     gtest_discover_tests(ctorium-tests)
 endif ()
 
+add_executable(ctorium-namespace-macro-tests
+        ctr/namespace-macro.cpp
+)
+
+target_compile_features(ctorium-namespace-macro-tests
+        PRIVATE
+        cxx_std_26
+)
+
+target_link_libraries(ctorium-namespace-macro-tests
+        PRIVATE
+        ctorium
+        GTest::gtest_main
+)
+
+if (BUILD_TESTING)
+    gtest_discover_tests(ctorium-namespace-macro-tests)
+endif ()
+
 add_executable(ctorium-prototype-max-slots-tests
         ctr/prototype-max-slots.cpp
 )

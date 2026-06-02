@@ -2,7 +2,8 @@
 
 #include "../../api/ctr/Config.hpp"
 
-namespace CTORIUM_NAMESPACE::detail {
+namespace
+CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::materializeOne<T>
     //
@@ -27,7 +28,8 @@ namespace CTORIUM_NAMESPACE::detail {
             return CTORIUM_NAMESPACE::Bean<T>::makeProxy(
                 handle.scopeNameId(),
                 handle.descId(),
-                this);
+                this
+                );
         case MaterializedHandleForm::ThreadLocal:
             return CTORIUM_NAMESPACE::Bean<T>::makeThreadLocal(handle.descId(), this);
         }
@@ -55,8 +57,8 @@ namespace CTORIUM_NAMESPACE::detail {
         const DescriptorId primaryDescId =
             requestedDesc.primaryDescriptor != descId
             && requestedDesc.primaryDescriptor != kInvalidDescriptorId
-                ? requestedDesc.primaryDescriptor
-                : descId;
+            ? requestedDesc.primaryDescriptor
+            : descId;
         const Descriptor &desc =
             primaryDescId == descId ? requestedDesc : descriptors_.at(primaryDescId);
         const DescriptorCold &cold = descriptors_.coldAt(primaryDescId);
@@ -88,7 +90,9 @@ namespace CTORIUM_NAMESPACE::detail {
         didMaterialize = claimMaterializationOrWait(
             primaryDescId,
             scope,
-            [&] { return scope->sessionStore_.find(slot); },
+            [&] {
+                return scope->sessionStore_.find(slot);
+            },
             "Registry::resolve: dependency cycle detected during "
             "session bean materialization.",
             "Registry::resolve: cross-thread dependency cycle detected during "
@@ -121,7 +125,7 @@ namespace CTORIUM_NAMESPACE::detail {
                     auto it = std::find_if(
                         materializing_.begin(),
                         materializing_.end(),
-                        [primaryDescId, scope](const MaterializingEntry& p) {
+                        [primaryDescId, scope](const MaterializingEntry &p) {
                             return p.key.descId == primaryDescId && p.key.scope == scope;
                         }
                         );
@@ -142,7 +146,7 @@ namespace CTORIUM_NAMESPACE::detail {
                 auto it = std::find_if(
                     materializing_.begin(),
                     materializing_.end(),
-                    [primaryDescId, scope](const MaterializingEntry& p) {
+                    [primaryDescId, scope](const MaterializingEntry &p) {
                         return p.key.descId == primaryDescId && p.key.scope == scope;
                     }
                     );
@@ -166,7 +170,8 @@ namespace CTORIUM_NAMESPACE::detail {
                 ListenerStore::phaseInitialized(),
                 cold.exposedType,
                 &anyBean,
-                scope->scopeNameId_);
+                scope->scopeNameId_
+                );
             if (cold.postConstruct) {
                 cold.postConstruct(instance, static_cast<void *>(&ctx));
             }
@@ -174,7 +179,8 @@ namespace CTORIUM_NAMESPACE::detail {
                 ListenerStore::phaseCreated(),
                 cold.exposedType,
                 &anyBean,
-                scope->scopeNameId_);
+                scope->scopeNameId_
+                );
         }
 
         return instance;
@@ -194,7 +200,8 @@ namespace CTORIUM_NAMESPACE::detail {
         // remove() or inspect the context without deadlocking on writeLock_.
         {
             std::lock_guard lock(writeLock_);
-            if (!started_.load(std::memory_order_relaxed)) return false;
+            if (!started_.load(std::memory_order_relaxed))
+                return false;
             // Mark stopped first so that Bean<T> destructors triggered by cold.destroy()
             // see startedRelaxed()==false and skip releaseIfPrototype(), preventing
             // double-destroy when a bean holds a Bean<T> member to another prototype.
@@ -213,7 +220,7 @@ namespace CTORIUM_NAMESPACE::detail {
         singletons_.releaseAll();
 
         // Prototypes: reverse slot index, matching the previous stop() sweep.
-        PrototypeStore& prototypes = prototypeStore();
+        PrototypeStore &prototypes = prototypeStore();
         const std::size_t count = prototypes.slotCount();
         for (std::size_t s = count; s > 0; --s) {
             const auto [mem, descId] =
@@ -228,6 +235,7 @@ namespace CTORIUM_NAMESPACE::detail {
 
     inline void Registry::rollbackFailedStart() noexcept {
         startLifecyclePending_.clear();
+        materializing_.clear();
         (void)stopRegistryOwnedBeans();
     }
 
@@ -240,8 +248,9 @@ namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
 
     inline void Registry::stopScope(
-            CTORIUM_NAMESPACE::ScopedContext &scope,
-            bool deferDeallocation) noexcept {
+        CTORIUM_NAMESPACE::ScopedContext &scope,
+        bool deferDeallocation
+        ) noexcept {
         // A5: mark scope Stopping and capture insertion order under writeLock_, then
         // release the lock before running destruction lifecycle so that listener
         // callbacks can call registry operations without deadlocking on writeLock_.
@@ -254,50 +263,53 @@ namespace CTORIUM_NAMESPACE::detail {
 
         const auto destroyWithoutDeallocation =
             [this, &scope](
-                    DescriptorId descId,
-                    void* mem,
-                    const DescriptorCold& cold) noexcept {
-                ResolutionContext ctx{*this};
-                const bool dispatchPreDestroy =
-                    listeners_.hasListeners(ListenerStore::phasePreDestroy());
-                const bool dispatchDestroyed =
-                    listeners_.hasListeners(ListenerStore::phaseDestroyed());
-                if (dispatchPreDestroy || dispatchDestroyed) {
-                    CTORIUM_NAMESPACE::AnyBean anyBean;
-                    anyBean.object_ = nullptr;
-                    anyBean.bits_.f2.scopeNameId = scope.scopeNameId_;
-                    anyBean.bits_.f2.descId = descId;
-                    anyBean.registry_ = this;
+            DescriptorId descId,
+            void *mem,
+            const DescriptorCold &cold
+            ) noexcept {
+            ResolutionContext ctx{*this};
+            const bool dispatchPreDestroy =
+                listeners_.hasListeners(ListenerStore::phasePreDestroy());
+            const bool dispatchDestroyed =
+                listeners_.hasListeners(ListenerStore::phaseDestroyed());
+            if (dispatchPreDestroy || dispatchDestroyed) {
+                CTORIUM_NAMESPACE::AnyBean anyBean;
+                anyBean.object_ = nullptr;
+                anyBean.bits_.f2.scopeNameId = scope.scopeNameId_;
+                anyBean.bits_.f2.descId = descId;
+                anyBean.registry_ = this;
 
-                    if (dispatchPreDestroy) {
-                        listeners_.dispatch(
-                            ListenerStore::phasePreDestroy(),
-                            cold.exposedType,
-                            &anyBean,
-                            scope.scopeNameId_);
-                    }
-
-                    if (cold.preDestroy) {
-                        cold.preDestroy(mem, static_cast<void *>(&ctx));
-                    }
-
-                    if (dispatchDestroyed) {
-                        listeners_.dispatch(
-                            ListenerStore::phaseDestroyed(),
-                            cold.exposedType,
-                            &anyBean,
-                            scope.scopeNameId_);
-                    }
-
-                    cold.destroy(mem);
-                } else {
-                    if (cold.preDestroy) {
-                        cold.preDestroy(mem, static_cast<void *>(&ctx));
-                    }
-
-                    cold.destroy(mem);
+                if (dispatchPreDestroy) {
+                    listeners_.dispatch(
+                        ListenerStore::phasePreDestroy(),
+                        cold.exposedType,
+                        &anyBean,
+                        scope.scopeNameId_
+                        );
                 }
-            };
+
+                if (cold.preDestroy) {
+                    cold.preDestroy(mem, static_cast<void *>(&ctx));
+                }
+
+                if (dispatchDestroyed) {
+                    listeners_.dispatch(
+                        ListenerStore::phaseDestroyed(),
+                        cold.exposedType,
+                        &anyBean,
+                        scope.scopeNameId_
+                        );
+                }
+
+                cold.destroy(mem);
+            } else {
+                if (cold.preDestroy) {
+                    cold.preDestroy(mem, static_cast<void *>(&ctx));
+                }
+
+                cold.destroy(mem);
+            }
+        };
 
         // Destructions outside writeLock_.
         for (auto it = order.rbegin(); it != order.rend(); ++it) {
@@ -305,14 +317,15 @@ namespace CTORIUM_NAMESPACE::detail {
             void *mem = scope.sessionStore_.find(slot); // lock-free acquire
             if (mem != nullptr) {
                 if (deferDeallocation) {
-                    const DescriptorCold& cold = descriptors_.coldAt(*it);
+                    const DescriptorCold &cold = descriptors_.coldAt(*it);
                     destroyWithoutDeallocation(*it, mem, cold);
                     scope.sessionStore_.retireDeallocation(
                         *it,
                         mem,
                         cold.dealloc,
                         cold.size,
-                        cold.align);
+                        cold.align
+                        );
                 } else {
                     executeDestructionLifecycle(*it, mem, scope.scopeNameId_);
                 }

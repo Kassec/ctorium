@@ -235,30 +235,36 @@ namespace CTORIUM_NAMESPACE {
 
         const detail::Descriptor& desc = reg->descriptorTable().at(descId);
         const detail::DescriptorCold& cold = reg->descriptorTable().coldAt(descId);
-        if (object == nullptr) {
-            return cold.exposedType == uid
-                ? CastTarget{CastTargetKind::Proxy, descId, nullptr}
-                : CastTarget{};
-        }
+        const detail::DescriptorId primary =
+            desc.primaryDescriptor != detail::kInvalidDescriptorId
+                ? desc.primaryDescriptor
+                : descId;
 
         if (cold.exposedType == uid)
-            return CastTarget{CastTargetKind::SameExposed, descId, object};
+            return CastTarget{
+                object == nullptr ? CastTargetKind::Proxy : CastTargetKind::SameExposed,
+                descId,
+                object};
 
-        const detail::DescriptorId primary = desc.primaryDescriptor;
         const bool concreteTarget = cold.concreteType == uid;
         detail::DescriptorId aliasTarget = detail::kInvalidDescriptorId;
-        if (!concreteTarget && primary != detail::kInvalidDescriptorId) {
+        if (!concreteTarget) {
             aliasTarget = findAliasByPrimary(reg, uid, cold.name, primary);
             if (aliasTarget == detail::kInvalidDescriptorId)
                 return {};
-        } else if (!concreteTarget) {
-            return {};
+        }
+
+        if (object == nullptr) {
+            return CastTarget{
+                CastTargetKind::Proxy,
+                concreteTarget ? primary : aliasTarget,
+                nullptr};
         }
 
         void* concretePtr = object;
         if (cold.adjustToConcrete != nullptr) {
             concretePtr = cold.adjustToConcrete(object);
-        } else if (primary != descId && primary != detail::kInvalidDescriptorId) {
+        } else if (primary != descId) {
             return CastTarget{
                 CastTargetKind::DowncastUnavailable,
                 concreteTarget ? primary : aliasTarget,
@@ -307,6 +313,7 @@ namespace CTORIUM_NAMESPACE {
             Bean<U> result;
             result.object_ = nullptr;
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.bits_.f2.descId = target.descId;
             result.registry_ = registry_;
             return result;
         }
@@ -345,6 +352,7 @@ namespace CTORIUM_NAMESPACE {
             Bean<U> result;
             result.object_ = nullptr;
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.bits_.f2.descId = target.descId;
             result.registry_ = registry_;
             return result;
         }
@@ -430,6 +438,7 @@ namespace CTORIUM_NAMESPACE {
             Bean<U> result;
             result.object_ = nullptr;
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.bits_.f2.descId = target.descId;
             result.registry_ = registry_;
             return result;
         }
@@ -466,6 +475,7 @@ namespace CTORIUM_NAMESPACE {
             Bean<U> result;
             result.object_ = nullptr;
             result.bits_ = std::bit_cast<typename Bean<U>::Bits>(bits_);
+            result.bits_.f2.descId = target.descId;
             result.registry_ = registry_;
             return result;
         }

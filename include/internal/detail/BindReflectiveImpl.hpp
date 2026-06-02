@@ -88,41 +88,33 @@ namespace CTORIUM_NAMESPACE::detail {
                 TypeId typeId = lookupTypeId(std::type_index(typeid(T)));
                 if (typeId == kInvalidTypeId)
                     typeId = typeInterning_.internByName(kTypeName, &TypeInfoGetter<T>::get);
-                // Check already instantiated for this exact name and priority key.
-                const NameTable *table = typeIndex_.tableFor(typeId);
-                if (table) {
-                    const auto it = table->entries.find(nameId);
-                    if (it != table->entries.end()) {
-                        const auto& entry = it->second;
-                        for (DescriptorId did : entry.candidates) {
-                            if (descriptors_.at(did).priority == priority
-                                    && singletons_.find(did) != nullptr) {
-                                std::string message =
-                                    std::string("Registry::bindSingleton: type '") + kTypeName;
-                                const std::string_view name = nameInterning_.nameOf(nameId);
-                                if (name.empty()) {
-                                    message += "' unnamed binding is already instantiated "
-                                               "in this context.";
-                                } else {
-                                    message += "' named binding '";
-                                    message += name;
-                                    message += "' is already instantiated in this context.";
-                                }
-                                throw CTORIUM_NAMESPACE::ConfigurationError(
-                                    message
-                                    );
-                            }
-                        }
+                if (candidateKeyExists(typeId, nameId, priority)) {
+                    std::string message =
+                        std::string("Registry::bindSingleton: type '") + kTypeName;
+                    const std::string_view name = nameInterning_.nameOf(nameId);
+                    if (name.empty()) {
+                        message += "' unnamed binding already exists for the same priority.";
+                    } else {
+                        message += "' named binding '";
+                        message += name;
+                        message += "' already exists for the same priority.";
                     }
+                    throw CTORIUM_NAMESPACE::ConfigurationError(message);
                 }
-                // Check concurrent materialization of the same type.
+                // Check concurrent materialization of the same candidate key.
                 for (const MaterializingEntry& entry : materializing_) {
-                    if (entry.key.scope == nullptr
-                            && descriptors_.coldAt(entry.key.descId).exposedType == typeId) {
+                    if (entry.key.scope != nullptr)
+                        continue;
+                    const Descriptor& materializingDesc = descriptors_.at(entry.key.descId);
+                    const DescriptorCold& materializingCold =
+                        descriptors_.coldAt(entry.key.descId);
+                    if (materializingCold.exposedType == typeId
+                            && materializingCold.name == nameId
+                            && materializingDesc.priority == priority) {
                         throw CTORIUM_NAMESPACE::ConfigurationError(
                             std::string("Registry::bindSingleton: type '") + kTypeName
                             + "' is currently being materialized; binding conflicts with "
-                            "concurrent materialization."
+                            "concurrent materialization of the same name and priority."
                             );
                     }
                 }
@@ -153,6 +145,7 @@ namespace CTORIUM_NAMESPACE::detail {
                 cold.nameStr = kTypeName;
 
                 const DescriptorId descId = descriptors_.append(std::move(d), std::move(cold));
+                descriptors_.atMutable(descId).primaryDescriptor = descId;
                 // Store instance before publishing to TypeIndex so materializeOne always
                 // finds the pre-stored pointer on any path.
                 singletons_.growAndStore(descId, rawPtr);
@@ -264,7 +257,7 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         }
     }
 
-    // Reuse an existing RuntimeBinding session descriptor for (typeId, nameId)
+    // Reuse an existing RuntimeBinding session descriptor for (typeId, nameId, priority)
     // to avoid accumulating duplicate candidates across scope cycles.
     detail::DescriptorId descId = detail::kInvalidDescriptorId;
     if (reg.started_.load(std::memory_order_relaxed)) {
@@ -276,7 +269,8 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
                     const detail::Descriptor& d = reg.descriptors_.at(did);
                     const detail::DescriptorCold& cold = reg.descriptors_.coldAt(did);
                     if (cold.origin == detail::Origin::RuntimeBinding
-                            && d.lifetime == detail::Lifetime::Session) {
+                            && d.lifetime == detail::Lifetime::Session
+                            && d.priority == options.priority) {
                         descId = did;
                         break;
                     }
@@ -311,8 +305,11 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
             d.sessionSlot = static_cast<detail::SessionSlot>(reg.sessionSlotCount_++);
         }
         descId = reg.descriptors_.append(std::move(d), std::move(cold));
+        reg.descriptors_.atMutable(descId).primaryDescriptor = descId;
         reg.typeIndex_.insertCandidate(typeId, nameId, descId);
         if (reg.started_.load(std::memory_order_relaxed)) {
+            reg.typeIndex_.sortAllCandidates(
+                [&reg](detail::DescriptorId id) { return reg.descriptors_.at(id).priority; });
             reg.typeIndex_.updateSingleUnnamed(typeId);
         }
     }
@@ -328,10 +325,9 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
         }
     }
 
-    // Take ownership.
-    void* rawPtr = object.release();
-
     if (scopeState_ != ScopeState::Running) {
+        // Take ownership.
+        void* rawPtr = object.release();
         // Scope not yet started (or stopped): queue for next start().
         pendingRuntimeSessions_.push_back({descId, rawPtr});
         return *this;
@@ -339,6 +335,14 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
 
     // Scope running: store immediately.
     const detail::SessionSlot slot = reg.descriptors_.at(descId).sessionSlot;
+    if (sessionStore_.find(slot) != nullptr) {
+        throw ConfigurationError(
+            "ScopedContext::bindSession: binding already exists for this "
+            "session key in the current scope cycle."
+            );
+    }
+    // Take ownership.
+    void* rawPtr = object.release();
     sessionStore_.growAndStore(slot, descId, rawPtr);
 
     // A5: release writeLock_ before dispatching so listener callbacks can call

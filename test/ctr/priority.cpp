@@ -34,23 +34,16 @@ TEST(Priority, HigherPriorityBindingWinsForSameTypeAndKey) {
 
 namespace priority_ambiguous_binding_fixture {
 
-struct Service {
-    int value;
-    explicit Service(int v) : value(v) {}
-};
+struct Service {};
+
+struct [[=CTORIUM_NAMESPACE::singleton{.priority = 5}]] First : Service {};
+struct [[=CTORIUM_NAMESPACE::singleton{.priority = 5}]] Second : Service {};
 
 } // namespace priority_ambiguous_binding_fixture
 
 TEST(Priority, EqualPriorityBindingsForSameTypeAndKeyAreAmbiguous) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("prio-bind-ambiguous");
-    ctx.bindSingleton<priority_ambiguous_binding_fixture::Service>(
-        std::make_unique<priority_ambiguous_binding_fixture::Service>(1),
-        CTORIUM_NAMESPACE::BindOptions{.priority = 5});
-    ctx.bindSingleton<priority_ambiguous_binding_fixture::Service>(
-        std::make_unique<priority_ambiguous_binding_fixture::Service>(2),
-        CTORIUM_NAMESPACE::BindOptions{.priority = 5});
-
-    ctx.start();
+    ctx.discover<^^priority_ambiguous_binding_fixture>().start();
 
     EXPECT_THROW(
         ctx.resolve<priority_ambiguous_binding_fixture::Service>(),

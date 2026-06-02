@@ -39,7 +39,7 @@ struct [[=CTORIUM_NAMESPACE::session{}]] HookedSession {
     [[=CTORIUM_NAMESPACE::preDestroy{}]] void shutdown() { ++preDestroyCount; }
 };
 
-struct ConcurrentSingleton {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ConcurrentSingleton {};
 
 } // namespace contract_bind_fixture
 

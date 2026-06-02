@@ -281,12 +281,11 @@ TEST(BindSingleton, PostStartEqualPriorityRuntimeBindingMakesDiscoveredAmbiguous
     ctx.start();
     auto runtime = std::make_unique<bind_singleton_fixture::PlainService>();
     runtime->x = 456;
-    ctx.bindSingleton<bind_singleton_fixture::PlainService>(
-        std::move(runtime),
-        CTORIUM_NAMESPACE::BindOptions{.priority = 0});
     EXPECT_THROW(
-        ctx.resolve<bind_singleton_fixture::PlainService>(),
-        CTORIUM_NAMESPACE::ResolutionError);
+        ctx.bindSingleton<bind_singleton_fixture::PlainService>(
+            std::move(runtime),
+            CTORIUM_NAMESPACE::BindOptions{.priority = 0}),
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 

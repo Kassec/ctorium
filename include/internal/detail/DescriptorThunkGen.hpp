@@ -276,8 +276,8 @@ auto injectParam(ResolutionContext& ctx) {
 //
 // Consteval helper: one entry per injectable constructor parameter, recording:
 //   - injectedTypeName/injectedTypeInfo: the U type in Bean<U>
-//   - scopeName: from [[=ctr::scoped{.name=...}]] or nullptr
-//   - namedKey:  from [[=ctr::named{.name=...}]] or nullptr
+//   - targetName: from [[=ctr::named{.name=...}]] or ""
+//   - scopeName: from [[=ctr::scoped{.name=...}]] or ""
 // Used by Registry::start() Phase 3.75 for graph validation.
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -299,6 +299,7 @@ consteval std::vector<ContributedParamDescriptor> makeParamDescriptors() {
         static constexpr auto panns = std::define_static_array(std::meta::annotations_of(p));
         bool hasScopedAnn = false;
         bool hasNamedAnn  = false;
+        const char* targetName = std::define_static_string(std::string_view{""});
         const char* scopeName = std::define_static_string(std::string_view{""});
         template for (constexpr auto ann : panns) {
             constexpr auto t = std::meta::remove_const(std::meta::type_of(ann));
@@ -309,6 +310,9 @@ consteval std::vector<ContributedParamDescriptor> makeParamDescriptors() {
                     std::string_view{(v.name != nullptr) ? v.name : ""});
             } else if constexpr (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::named)) {
                 hasNamedAnn = true;
+                constexpr auto v = std::meta::extract<CTORIUM_NAMESPACE::named>(ann);
+                targetName = std::define_static_string(
+                    std::string_view{(v.name != nullptr) ? v.name : ""});
             }
         }
         result.push_back({
@@ -316,6 +320,7 @@ consteval std::vector<ContributedParamDescriptor> makeParamDescriptors() {
             &TypeInfoGetter<U>::get,
             hasScopedAnn,
             hasNamedAnn,
+            targetName,
             scopeName
         });
     }

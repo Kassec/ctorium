@@ -37,6 +37,26 @@ struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] ThrowingOnFirstStart {
 
 } // namespace contract_contexts_fixture
 
+namespace contract_contexts_stop_fixture {
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] RootObject {
+    int value = 1;
+};
+
+struct [[=CTORIUM_NAMESPACE::session{}]] ScopeObject {
+    int value = 2;
+};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ContextConsumer {
+    CTORIUM_NAMESPACE::Bean<CTORIUM_NAMESPACE::BeanContext> context;
+    explicit ContextConsumer(CTORIUM_NAMESPACE::Bean<CTORIUM_NAMESPACE::BeanContext> injected)
+        : context(std::move(injected)) {}
+};
+
+struct [[=CTORIUM_NAMESPACE::singleton{}]] UserSingleton {};
+
+} // namespace contract_contexts_stop_fixture
+
 namespace contract_contexts_session_destroy_order_fixture {
 
 struct [[=CTORIUM_NAMESPACE::session{}]] A {};
@@ -79,17 +99,17 @@ TEST(ContractContexts, ResolveContext_DifferentKeys_ReturnsDifferent) {
 TEST(ContractContexts, Stop_IsPermanent) {
     {
         auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-stop-permanent");
-        context.discover<^^contract_contexts_fixture>().start();
+        context.discover<^^contract_contexts_stop_fixture>().start();
         context.stop();
     }
     auto& fresh = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-stop-permanent");
-    EXPECT_THROW(fresh.resolve<contract_contexts_fixture::RootObject>(), CTORIUM_NAMESPACE::ContextStateError);
+    EXPECT_THROW(fresh.resolve<contract_contexts_stop_fixture::RootObject>(), CTORIUM_NAMESPACE::ContextStateError);
     fresh.stop();
 }
 
 TEST(ContractContexts, Start_Idempotent) {
     auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-start-idempotent");
-    context.discover<^^contract_contexts_fixture>();
+    context.discover<^^contract_contexts_stop_fixture>();
     EXPECT_NO_THROW(context.start().start());
     context.stop();
 }
@@ -191,12 +211,12 @@ TEST(ContractContexts, Scope_ScopesAreFlat) {
 
 TEST(ContractContexts, Scope_Stop_PreservesKey_UserData_Handles) {
     auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-scope-stop-preserves");
-    root.discover<^^contract_contexts_fixture>().start();
+    root.discover<^^contract_contexts_stop_fixture>().start();
     auto& scope = root.resolveScope("cc-preserved-scope");
     int userData = 42;
     scope.userData(userData);
     scope.start();
-    auto handle = scope.resolve<contract_contexts_fixture::ScopeObject>();
+    auto handle = scope.resolve<contract_contexts_stop_fixture::ScopeObject>();
     ASSERT_NE(handle.operator->(), nullptr);
 
     scope.stop();
@@ -254,14 +274,14 @@ TEST(ContractContexts, Scope_Stop_DestroysSessionsInReverseConstructionOrder) {
 
 TEST(ContractContexts, Scope_Restart_EqualsStopThenStart) {
     auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-scope-restart");
-    root.discover<^^contract_contexts_fixture>().start();
+    root.discover<^^contract_contexts_stop_fixture>().start();
     auto& scope = root.resolveScope("cc-scope-restart-owner");
     scope.start();
-    auto before = scope.resolve<contract_contexts_fixture::ScopeObject>();
+    auto before = scope.resolve<contract_contexts_stop_fixture::ScopeObject>();
     auto* beforePtr = before.operator->();
     ASSERT_NE(beforePtr, nullptr);
     scope.restart();
-    auto after = scope.resolve<contract_contexts_fixture::ScopeObject>();
+    auto after = scope.resolve<contract_contexts_stop_fixture::ScopeObject>();
     EXPECT_NE(after.operator->(), nullptr);
     EXPECT_NE(after.operator->(), beforePtr);
     root.stop();
@@ -288,10 +308,10 @@ TEST(ContractContexts, BeanContext_ImplicitSingleton) {
 
 TEST(ContractContexts, BeanContext_InjectedInConstructor) {
     auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-context-injected");
-    root.discover<^^contract_contexts_fixture>().start();
+    root.discover<^^contract_contexts_stop_fixture>().start();
     auto& scope = root.resolveScope("cc-context-injected-scope");
     scope.start();
-    auto consumer = scope.resolve<contract_contexts_fixture::ContextConsumer>();
+    auto consumer = scope.resolve<contract_contexts_stop_fixture::ContextConsumer>();
     ASSERT_NE(consumer.operator->(), nullptr);
     EXPECT_EQ(consumer->context.operator->(), &root);
     root.stop();
@@ -299,13 +319,13 @@ TEST(ContractContexts, BeanContext_InjectedInConstructor) {
 
 TEST(ContractContexts, BeanContext_LastDestroyedAtShutdown) {
     auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("cc-context-last-destroyed");
-    root.discover<^^contract_contexts_fixture>().start();
+    root.discover<^^contract_contexts_stop_fixture>().start();
     std::vector<int> order;
     root.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
-        if (bean.compatible<contract_contexts_fixture::UserSingleton>()) order.push_back(1);
+        if (bean.compatible<contract_contexts_stop_fixture::UserSingleton>()) order.push_back(1);
         if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) order.push_back(2);
     });
-    (void)root.resolve<contract_contexts_fixture::UserSingleton>();
+    (void)root.resolve<contract_contexts_stop_fixture::UserSingleton>();
     root.stop();
     ASSERT_EQ(order.size(), 2u);
     EXPECT_EQ(order[0], 1);

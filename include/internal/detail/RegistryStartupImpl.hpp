@@ -4,6 +4,33 @@
 
 namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
+    // Registry::dispatchBeanContextStartLifecycle
+    // ─────────────────────────────────────────────────────────────────────────────
+
+    inline void Registry::dispatchBeanContextStartLifecycle() {
+        if (!beanContextStartLifecyclePending_)
+            return;
+        beanContextStartLifecyclePending_ = false;
+
+        const TypeId beanCtxTypeId = descriptors_.coldAt(beanContextDescId_).exposedType;
+        CTORIUM_NAMESPACE::AnyBean beanCtxBean;
+        beanCtxBean.object_         = static_cast<void*>(root_);
+        beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
+        beanCtxBean.bits_.f1.descId = beanContextDescId_;
+        beanCtxBean.registry_       = this;
+        listeners_.dispatch(
+            ListenerStore::phaseInitialized(),
+            beanCtxTypeId,
+            &beanCtxBean,
+            ListenerStore::kNoScope);
+        listeners_.dispatch(
+            ListenerStore::phaseCreated(),
+            beanCtxTypeId,
+            &beanCtxBean,
+            ListenerStore::kNoScope);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────────
     // Registry::dispatchBoundSingletonLifecycle
     // ─────────────────────────────────────────────────────────────────────────────
 

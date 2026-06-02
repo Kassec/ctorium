@@ -280,24 +280,7 @@ public:
             singletons_.resize(descriptors_.size());
             singletons_.store(beanContextDescId_, static_cast<void*>(ctx));
             started_.store(true, std::memory_order_release);
-            const TypeId beanCtxTypeId = descriptors_.coldAt(beanContextDescId_).exposedType;
-            lock.unlock();
-
-            CTORIUM_NAMESPACE::AnyBean beanCtxBean;
-            beanCtxBean.object_         = static_cast<void*>(ctx);
-            beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
-            beanCtxBean.bits_.f1.descId = beanContextDescId_;
-            beanCtxBean.registry_       = this;
-            listeners_.dispatch(
-                ListenerStore::phaseInitialized(),
-                beanCtxTypeId,
-                &beanCtxBean,
-                ListenerStore::kNoScope);
-            listeners_.dispatch(
-                ListenerStore::phaseCreated(),
-                beanCtxTypeId,
-                &beanCtxBean,
-                ListenerStore::kNoScope);
+            beanContextStartLifecyclePending_ = true;
             return;
         }
 
@@ -400,6 +383,12 @@ public:
         runtimeBound.reserve(pendingRuntimeSingletons_.size());
         for (auto& pb : pendingRuntimeSingletons_) {
             const TypeId typeId = typeInterning_.internByName(pb.typeName, pb.typeInfoGetter);
+            if (candidateKeyExists(typeId, pb.nameId, pb.priority)) {
+                throw CTORIUM_NAMESPACE::ConfigurationError(
+                    std::string("Registry::start(): runtime singleton binding for type '")
+                    + pb.typeName + "' collides with an existing candidate for the same "
+                    "name and priority.");
+            }
             Descriptor d;
             DescriptorCold cold;
             cold.exposedType         = typeId;
@@ -422,6 +411,7 @@ public:
             cold.exactTypeGetter     = pb.typeInfoGetter;
             cold.nameStr             = pb.typeName;
             const DescriptorId descId = descriptors_.append(std::move(d), std::move(cold));
+            descriptors_.atMutable(descId).primaryDescriptor = descId;
             typeIndex_.insertCandidate(typeId, pb.nameId, descId);
             runtimeBound.push_back({descId, pb.instance, typeId});
         }
@@ -503,8 +493,14 @@ public:
                     const TypeId injTypeId =
                         typeInterning_.lookupByTypeIndex(std::type_index(p.injectedTypeInfo()));
                     if (injTypeId == kInvalidTypeId) continue;
+                    NameId candidateName = kUnnamed;
+                    if (p.hasNamedAnnotation) {
+                        candidateName = nameInterning_.lookup(
+                            p.targetName ? std::string_view{p.targetName} : std::string_view{});
+                        if (candidateName == kInvalidNameId) continue;
+                    }
                     const std::vector<DescriptorId>* injCandidates =
-                        typeIndex_.candidatesFor(injTypeId, kUnnamed);
+                        typeIndex_.candidatesFor(injTypeId, candidateName);
                     if (!injCandidates || injCandidates->empty()) continue;
                     const Lifetime injLt = descriptors_.at((*injCandidates)[0]).lifetime;
                     // (a): [[=ctr::scoped]] on a non-session dependency target
@@ -530,8 +526,8 @@ public:
         // BeanContext must be interned before freeze(); defaults_ and started_ publish after.
         // singletons_ is resized once inside registerContextBean, after its descriptor is appended.
         // The resize covers all descriptors including Phase 1.5 runtime bindings.
-        // registerContextBean does NOT dispatch lifecycle events; dispatch happens below,
-        // after the lock is released (A5: prevent deadlock from listeners calling writeLock_).
+        // registerContextBean does NOT dispatch lifecycle events; public start()
+        // dispatches them after flushing deferred pre-start listeners.
         registerContextBean(ctx);
         sessionSlotCount_ = 0;
         for (std::size_t i = 0; i < descriptors_.size(); ++i) {
@@ -542,7 +538,6 @@ public:
                 d.sessionSlot = kInvalidSessionSlot;
             }
         }
-        const TypeId beanCtxTypeId = descriptors_.coldAt(beanContextDescId_).exposedType;
 
         // Store pre-start bound instances.
         // Lifecycle dispatch (onInitialized/onCreated) is deferred to
@@ -559,27 +554,7 @@ public:
         // Release store: ensures all structures populated during start() are visible
         // to threads that subsequently read started_ with memory_order_acquire.
         started_.store(true, std::memory_order_release);
-
-        // A5: release writeLock_ before dispatching BeanContext lifecycle events so
-        // that listener callbacks can call resolve() or other registry operations
-        // without deadlocking on writeLock_.
-        lock.unlock();
-
-        CTORIUM_NAMESPACE::AnyBean beanCtxBean;
-        beanCtxBean.object_         = static_cast<void*>(ctx);
-        beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
-        beanCtxBean.bits_.f1.descId = beanContextDescId_;
-        beanCtxBean.registry_       = this;
-        listeners_.dispatch(
-            ListenerStore::phaseInitialized(),
-            beanCtxTypeId,
-            &beanCtxBean,
-            ListenerStore::kNoScope);
-        listeners_.dispatch(
-            ListenerStore::phaseCreated(),
-            beanCtxTypeId,
-            &beanCtxBean,
-            ListenerStore::kNoScope);
+        beanContextStartLifecyclePending_ = true;
     }
 
     /**
@@ -930,6 +905,15 @@ public:
      * listeners registered before start() observe the events.
      */
     void dispatchBoundSingletonLifecycle();
+
+    /**
+     * @brief Fires onInitialized/onCreated for the implicit BeanContext singleton.
+     *
+     * Called by BeanContext::start() after deferred listeners are flushed. The
+     * pending flag is consumed on first dispatch, so an idempotent start() does
+     * not re-emit lifecycle callbacks.
+     */
+    void dispatchBeanContextStartLifecycle();
 
     /**
      * @brief Materializes all eager singletons (`lazy == false`) after `start()`.
@@ -1287,10 +1271,28 @@ private:
      *
      * Called during `start()` before `typeInterning_.freeze()`.  Appends a synthetic
      * `Descriptor` with `size == 0` (externally owned memory) and stores `ctx` in
-     * the `SingletonStore`.  Dispatches `onInitialized` and `onCreated`.
+     * the `SingletonStore`. Lifecycle dispatch is deferred to
+     * dispatchBeanContextStartLifecycle().
      * Defined in RegistryRuntimeImpl.hpp.
      */
     void registerContextBean(BeanContext* ctx);
+
+    [[nodiscard]] bool candidateKeyExists(
+        TypeId typeId,
+        NameId nameId,
+        int32_t priority
+        ) const noexcept {
+        for (std::size_t i = 0; i < descriptors_.size(); ++i) {
+            const DescriptorId descId = static_cast<DescriptorId>(i);
+            const DescriptorCold& cold = descriptors_.coldAt(descId);
+            if (cold.exposedType == typeId
+                    && cold.name == nameId
+                    && descriptors_.at(descId).priority == priority) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     // -------------------------------------------------------------------------
     // Components
@@ -1302,6 +1304,7 @@ private:
     CTORIUM_NAMESPACE::BeanContext* root_ = nullptr;
     DescriptorId    beanContextDescId_ = kInvalidDescriptorId;
     std::size_t     sessionSlotCount_ = 0;
+    bool            beanContextStartLifecyclePending_ = false;
 
     DescriptorTable descriptors_;
     TypeInterning   typeInterning_;

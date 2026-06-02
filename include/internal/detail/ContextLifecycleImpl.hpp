@@ -110,6 +110,7 @@ inline BeanContext& BeanContext::start() {
         for (ScopedContext* scope : scopes) {
             scope->flushDeferredListeners_();
         }
+        core().dispatchBeanContextStartLifecycle();
         // Dispatch lifecycle for pre-start bound singletons after deferred listeners
         // are flushed so that listeners registered before start() observe the events.
         core().dispatchBoundSingletonLifecycle();

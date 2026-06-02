@@ -70,6 +70,13 @@ struct ContributedParamDescriptor {
     /** True when `[[=ctr::named{...}]]` is present on this parameter. */
     bool hasNamedAnnotation;
     /**
+     * @brief Candidate name from `[[=ctr::named{.name=...}]]`; `""` when absent.
+     *
+     * This is intentionally distinct from `scopeName`: scoped selects the
+     * runtime scope, named selects the candidate key inside that scope.
+     */
+    const char* targetName;
+    /**
      * @brief Scope name from `[[=ctr::scoped{.name=...}]]`; `""` when absent or unnamed.
      *
      * Always a static-storage `const char*`: the consteval descriptor builder

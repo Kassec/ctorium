@@ -26,28 +26,41 @@ target_link_libraries(ctorium
         stdc++exp
 )
 
-include(CTest)
-include(FetchContent)
+# OFF by default when consumed as a dependency; ON by default when building this
+# project directly. Consumers may opt in explicitly via -DCTORIUM_BUILD_TESTS=ON
+# or -DCTORIUM_BUILD_BENCHMARKS=ON.
+option(CTORIUM_BUILD_TESTS      "Build Ctorium tests"      ${PROJECT_IS_TOP_LEVEL})
+option(CTORIUM_BUILD_BENCHMARKS "Build Ctorium benchmarks" ${PROJECT_IS_TOP_LEVEL})
 
-FetchContent_Declare(googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
-)
+if(CTORIUM_BUILD_TESTS)
+    include(CTest)
+    include(FetchContent)
 
-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googletest)
+    FetchContent_Declare(googletest
+            GIT_REPOSITORY https://github.com/google/googletest.git
+            GIT_TAG v1.14.0
+    )
 
-include(GoogleTest)
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googletest)
 
-FetchContent_Declare(googlebenchmark
-        GIT_REPOSITORY https://github.com/google/benchmark.git
-        GIT_TAG v1.8.4
-)
+    include(GoogleTest)
 
-set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
-set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
-set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
-FetchContent_MakeAvailable(googlebenchmark)
+    add_subdirectory(test)
+endif()
 
-add_subdirectory(benchmark)
-add_subdirectory(test)
+if(CTORIUM_BUILD_BENCHMARKS)
+    include(FetchContent)
+
+    FetchContent_Declare(googlebenchmark
+            GIT_REPOSITORY https://github.com/google/benchmark.git
+            GIT_TAG v1.8.4
+    )
+
+    set(BENCHMARK_ENABLE_TESTING   OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_GTEST_TESTS OFF CACHE BOOL "" FORCE)
+    set(BENCHMARK_ENABLE_WERROR    OFF CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(googlebenchmark)
+
+    add_subdirectory(benchmark)
+endif()

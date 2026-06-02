@@ -17,7 +17,7 @@
 
 namespace defaults_fixture {
 
-struct [[=ctr::singleton{}]] Logger {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Logger {};
 
 } // namespace defaults_fixture
 
@@ -25,8 +25,8 @@ namespace defaults_named_fixture {
 
 // Named singleton bean. The name MUST be promoted with define_static_string:
 // a raw literal in the annotation is ill-formed on GCC 16.1.0.
-struct [[=ctr::singleton{}]]
-       [[=ctr::named{.name = std::define_static_string("console")}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]]
+       [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("console")}]]
        ConsoleSink {};
 
 } // namespace defaults_named_fixture
@@ -37,22 +37,22 @@ struct DefaultsNotRegistered {};
 // ─── Pre-start guard ─────────────────────────────────────────────────────────
 
 TEST(Defaults, DefaultNamedBeforeStartRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-pre-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-pre-start");
     ctx.discover<^^defaults_fixture>();
     EXPECT_THROW(
         ctx.defaultNamed<defaults_fixture::Logger>("console"),
-        ctr::ContextStateError);
+        CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 // ─── Unknown type guard ───────────────────────────────────────────────────────
 
 TEST(Defaults, DefaultNamedUnknownTypeRaisesConfigurationError) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-unknown-type");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-unknown-type");
     ctx.start();
     EXPECT_THROW(
         ctx.defaultNamed<DefaultsNotRegistered>("console"),
-        ctr::ConfigurationError);
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
@@ -62,21 +62,21 @@ TEST(Defaults, SetDefaultRedirectsUnnamedResolveToNamedKey) {
     // Setting the default to an unknown key "console" causes resolve to look for
     // the "console" named key.  Since no such named bean exists, ResolutionError
     // is raised — confirming that the default IS applied.
-    auto& ctx = ctr::BeanContext::resolveContext("dn-set-default");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-set-default");
     ctx.discover<^^defaults_fixture>().start();
 
     ctx.defaultNamed<defaults_fixture::Logger>("console");
-    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Defaults, ClearDefaultWithNullptrRestoresUnnamedResolve) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-clear-nullptr");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-clear-nullptr");
     ctx.discover<^^defaults_fixture>().start();
 
     // Apply a default that breaks unnamed resolve.
     ctx.defaultNamed<defaults_fixture::Logger>("console");
-    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), CTORIUM_NAMESPACE::ResolutionError);
 
     // Clear: unnamed resolve must succeed again.
     ctx.defaultNamed<defaults_fixture::Logger>(nullptr);
@@ -85,11 +85,11 @@ TEST(Defaults, ClearDefaultWithNullptrRestoresUnnamedResolve) {
 }
 
 TEST(Defaults, ClearDefaultWithEmptyStringRestoresUnnamedResolve) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-clear-empty");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-clear-empty");
     ctx.discover<^^defaults_fixture>().start();
 
     ctx.defaultNamed<defaults_fixture::Logger>("console");
-    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<defaults_fixture::Logger>(), CTORIUM_NAMESPACE::ResolutionError);
 
     ctx.defaultNamed<defaults_fixture::Logger>("");
     EXPECT_NO_THROW(ctx.resolve<defaults_fixture::Logger>());
@@ -97,7 +97,7 @@ TEST(Defaults, ClearDefaultWithEmptyStringRestoresUnnamedResolve) {
 }
 
 TEST(Defaults, DefaultNamedNullptrOnUnregisteredTypeIsNoOp) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-nullptr-no-op");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-nullptr-no-op");
     ctx.start();
     // Clearing a default for a type that was never registered must not throw.
     EXPECT_NO_THROW(ctx.defaultNamed<DefaultsNotRegistered>(nullptr));
@@ -112,25 +112,25 @@ TEST(Defaults, DefaultNamedNullptrOnUnregisteredTypeIsNoOp) {
 TEST(Defaults, NamedBeanDiscoversAndStarts) {
     // The path that was actually blocked: a [[=ctr::named{.name=...}]] bean must
     // discover and start without error (scanAnnotations extracts the name).
-    auto& ctx = ctr::BeanContext::resolveContext("dn-named-discover");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-named-discover");
     EXPECT_NO_THROW(ctx.discover<^^defaults_named_fixture>().start());
     ctx.stop();
 }
 
 TEST(Defaults, ResolveByNamedSelectorReturnsNamedBean) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-named-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-named-resolve");
     ctx.discover<^^defaults_named_fixture>().start();
-    auto bean = ctx.resolve<defaults_named_fixture::ConsoleSink>(ctr::named{"console"});
+    auto bean = ctx.resolve<defaults_named_fixture::ConsoleSink>(CTORIUM_NAMESPACE::named{"console"});
     EXPECT_NE(bean.operator->(), nullptr);
     ctx.stop();
 }
 
 TEST(Defaults, DefaultNamedRedirectsUnnamedResolveToNamedCandidate) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-named-default");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-named-default");
     ctx.discover<^^defaults_named_fixture>().start();
 
     // No unnamed candidate exists for ConsoleSink → unnamed resolve fails.
-    EXPECT_THROW(ctx.resolve<defaults_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<defaults_named_fixture::ConsoleSink>(), CTORIUM_NAMESPACE::ResolutionError);
 
     // Default to the existing "console" candidate → unnamed resolve now succeeds.
     ctx.defaultNamed<defaults_named_fixture::ConsoleSink>("console");
@@ -138,13 +138,13 @@ TEST(Defaults, DefaultNamedRedirectsUnnamedResolveToNamedCandidate) {
     EXPECT_NE(byDefault.operator->(), nullptr);
 
     // It resolves to the same singleton instance as the explicit named resolve.
-    auto byName = ctx.resolve<defaults_named_fixture::ConsoleSink>(ctr::named{"console"});
+    auto byName = ctx.resolve<defaults_named_fixture::ConsoleSink>(CTORIUM_NAMESPACE::named{"console"});
     EXPECT_EQ(byDefault.operator->(), byName.operator->());
     ctx.stop();
 }
 
 TEST(Defaults, ScopedDefaultNamedIsNotCurrentlyScopeLocal) {
-    auto& root = ctr::BeanContext::resolveContext("dn-scope-local-default");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-scope-local-default");
     root.discover<^^defaults_named_fixture>().start();
     auto& scope = root.resolveScope("dn-scope-local-owner");
     auto& sibling = root.resolveScope("dn-scope-local-sibling");
@@ -156,8 +156,8 @@ TEST(Defaults, ScopedDefaultNamedIsNotCurrentlyScopeLocal) {
 
     auto scopedDefault = scope.resolve<defaults_named_fixture::ConsoleSink>();
     EXPECT_NE(scopedDefault.operator->(), nullptr);
-    EXPECT_THROW(root.resolve<defaults_named_fixture::ConsoleSink>(), ctr::ResolutionError);
-    EXPECT_THROW(sibling.resolve<defaults_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+    EXPECT_THROW(root.resolve<defaults_named_fixture::ConsoleSink>(), CTORIUM_NAMESPACE::ResolutionError);
+    EXPECT_THROW(sibling.resolve<defaults_named_fixture::ConsoleSink>(), CTORIUM_NAMESPACE::ResolutionError);
 
     root.stop();
 }
@@ -171,15 +171,15 @@ struct Product {
 } // namespace defaults_future_resolution_fixture
 
 TEST(Defaults, ChangingDefaultAffectsOnlyFutureResolutions) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-future-only");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-future-only");
     ctx.bindSingleton<defaults_future_resolution_fixture::Product>(
         std::make_unique<defaults_future_resolution_fixture::Product>(
             defaults_future_resolution_fixture::Product{.value = 1}),
-        ctr::BindOptions{.name = std::define_static_string("a")});
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("a")});
     ctx.bindSingleton<defaults_future_resolution_fixture::Product>(
         std::make_unique<defaults_future_resolution_fixture::Product>(
             defaults_future_resolution_fixture::Product{.value = 2}),
-        ctr::BindOptions{.name = std::define_static_string("b")});
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("b")});
     ctx.start();
 
     ctx.defaultNamed<defaults_future_resolution_fixture::Product>(
@@ -208,15 +208,15 @@ struct Product {
 } // namespace defaults_snapshot_fixture
 
 TEST(Defaults, DefaultNamedSequentialSnapshotObservesOldOrNewValueOnly) {
-    auto& ctx = ctr::BeanContext::resolveContext("dn-snapshot-sequential");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("dn-snapshot-sequential");
     ctx.bindSingleton<defaults_snapshot_fixture::Product>(
         std::make_unique<defaults_snapshot_fixture::Product>(
             defaults_snapshot_fixture::Product{.value = 10}),
-        ctr::BindOptions{.name = std::define_static_string("old")});
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("old")});
     ctx.bindSingleton<defaults_snapshot_fixture::Product>(
         std::make_unique<defaults_snapshot_fixture::Product>(
             defaults_snapshot_fixture::Product{.value = 20}),
-        ctr::BindOptions{.name = std::define_static_string("new")});
+        CTORIUM_NAMESPACE::BindOptions{.name = std::define_static_string("new")});
     ctx.start();
 
     ctx.defaultNamed<defaults_snapshot_fixture::Product>(

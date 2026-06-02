@@ -3,7 +3,9 @@
 #include <stdexcept>
 #include <string>
 
-namespace ctr {
+#include "Config.hpp"
+
+namespace CTORIUM_NAMESPACE {
 
 /**
  * @brief Base exception for public Ctorium API failures.
@@ -85,4 +87,4 @@ public:
         : CtoriumError(message) {}
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

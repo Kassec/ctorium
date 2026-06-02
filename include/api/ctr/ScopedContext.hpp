@@ -7,6 +7,8 @@
 #include <typeindex>
 #include <typeinfo>
 
+#include "Config.hpp"
+
 #include "BeanContext.hpp"
 #include "Errors.hpp"
 
@@ -14,7 +16,7 @@
 #include "../../internal/detail/DefaultsTable.hpp"
 #include "../../internal/detail/SessionStore.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
 /**
  * @brief Context bound to a user scope key.
@@ -112,7 +114,7 @@ protected:
      * @param registry Shared registry from the owning root context.
      * @param root Non-owning pointer to the root context that owns this scope.
      */
-    explicit ScopedContext(std::shared_ptr<ctr::detail::Registry> registry, BeanContext* root);
+    explicit ScopedContext(std::shared_ptr<CTORIUM_NAMESPACE::detail::Registry> registry, BeanContext* root);
 
     /**
      * @brief Scoped contexts never accept discovery contributions.
@@ -150,4 +152,4 @@ private:
     std::vector<PendingRuntimeSession> pendingRuntimeSessions_;
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

@@ -8,20 +8,20 @@
 
 namespace exception_lazy_constructor_fixture {
 
-struct [[=ctr::singleton{}]] ThrowingService {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ThrowingService {
     ThrowingService() { throw std::runtime_error("lazy constructor failure"); }
 };
 
 } // namespace exception_lazy_constructor_fixture
 
 TEST(ExceptionPolicy, LazyConstructorPropagatesRuntimeErrorUnwrapped) {
-    auto& ctx = ctr::BeanContext::resolveContext("ex-lazy-constructor");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-lazy-constructor");
     ctx.discover<^^exception_lazy_constructor_fixture>().start();
 
     try {
         (void)ctx.resolve<exception_lazy_constructor_fixture::ThrowingService>();
         FAIL() << "Expected std::runtime_error";
-    } catch (const ctr::CtoriumError& ex) {
+    } catch (const CTORIUM_NAMESPACE::CtoriumError& ex) {
         FAIL() << "Expected user std::runtime_error, got CtoriumError: " << ex.what();
     } catch (const std::runtime_error& ex) {
         EXPECT_STREQ(ex.what(), "lazy constructor failure");
@@ -39,21 +39,21 @@ struct Product {};
 
 using ExposedProduct = Product<ProductTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
     ExposedProduct make() { throw std::runtime_error("factory producer failure"); }
 };
 
 } // namespace exception_factory_producer_fixture
 
 TEST(ExceptionPolicy, FactoryProducerPropagatesRuntimeErrorUnwrapped) {
-    auto& ctx = ctr::BeanContext::resolveContext("ex-factory-producer");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-factory-producer");
     ctx.discover<^^exception_factory_producer_fixture>().start();
 
     try {
         (void)ctx.resolve<exception_factory_producer_fixture::ExposedProduct>();
         FAIL() << "Expected std::runtime_error";
-    } catch (const ctr::CtoriumError& ex) {
+    } catch (const CTORIUM_NAMESPACE::CtoriumError& ex) {
         FAIL() << "Expected user std::runtime_error, got CtoriumError: " << ex.what();
     } catch (const std::runtime_error& ex) {
         EXPECT_STREQ(ex.what(), "factory producer failure");
@@ -64,21 +64,21 @@ TEST(ExceptionPolicy, FactoryProducerPropagatesRuntimeErrorUnwrapped) {
 
 namespace exception_post_construct_fixture {
 
-struct [[=ctr::singleton{}]] ThrowingPostConstruct {
-    [[=ctr::postConstruct{}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ThrowingPostConstruct {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void init() { throw std::runtime_error("post construct failure"); }
 };
 
 } // namespace exception_post_construct_fixture
 
 TEST(ExceptionPolicy, PostConstructPropagatesRuntimeErrorUnwrapped) {
-    auto& ctx = ctr::BeanContext::resolveContext("ex-post-construct");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-post-construct");
     ctx.discover<^^exception_post_construct_fixture>().start();
 
     try {
         (void)ctx.resolve<exception_post_construct_fixture::ThrowingPostConstruct>();
         FAIL() << "Expected std::runtime_error";
-    } catch (const ctr::CtoriumError& ex) {
+    } catch (const CTORIUM_NAMESPACE::CtoriumError& ex) {
         FAIL() << "Expected user std::runtime_error, got CtoriumError: " << ex.what();
     } catch (const std::runtime_error& ex) {
         EXPECT_STREQ(ex.what(), "post construct failure");
@@ -91,7 +91,7 @@ namespace exception_eager_retry_fixture {
 
 std::atomic<bool> shouldThrow{true};
 
-struct [[=ctr::singleton{.lazy = false}]] EagerService {
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerService {
     EagerService() {
         if (shouldThrow.load(std::memory_order_relaxed)) {
             throw std::runtime_error("eager constructor failure");
@@ -104,13 +104,13 @@ struct [[=ctr::singleton{.lazy = false}]] EagerService {
 TEST(ExceptionPolicy, EagerStartRollbackContractIsNotCurrentlyObservable) {
     exception_eager_retry_fixture::shouldThrow.store(true, std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ex-eager-retry");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-eager-retry");
     ctx.discover<^^exception_eager_retry_fixture>();
 
     EXPECT_THROW(ctx.start(), std::runtime_error);
     EXPECT_THROW(
         ctx.resolve<exception_eager_retry_fixture::EagerService>(),
-        ctr::ContextStateError);
+        CTORIUM_NAMESPACE::ContextStateError);
 
     exception_eager_retry_fixture::shouldThrow.store(false, std::memory_order_relaxed);
 
@@ -127,13 +127,13 @@ struct Missing {};
 } // namespace exception_resolution_base_fixture
 
 TEST(ExceptionPolicy, ResolutionErrorIsCatchableAsCtoriumError) {
-    auto& ctx = ctr::BeanContext::resolveContext("ex-resolution-base");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-resolution-base");
     ctx.start();
 
     try {
         (void)ctx.resolve<exception_resolution_base_fixture::Missing>();
         FAIL() << "Expected ctr::ResolutionError";
-    } catch (const ctr::CtoriumError& ex) {
+    } catch (const CTORIUM_NAMESPACE::CtoriumError& ex) {
         EXPECT_NE(std::string_view{ex.what()}.find("requested type"), std::string_view::npos);
     }
 
@@ -142,8 +142,8 @@ TEST(ExceptionPolicy, ResolutionErrorIsCatchableAsCtoriumError) {
 
 namespace exception_pre_destroy_terminate_fixture {
 
-struct [[=ctr::singleton{}]] ThrowingPreDestroy {
-    [[=ctr::preDestroy{}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ThrowingPreDestroy {
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void cleanup() { throw std::runtime_error("pre destroy failure"); }
 };
 
@@ -152,7 +152,7 @@ struct [[=ctr::singleton{}]] ThrowingPreDestroy {
 TEST(ExceptionPolicy, PreDestroyThrowDuringStopTerminates) {
     EXPECT_DEATH(
         {
-            auto& ctx = ctr::BeanContext::resolveContext("ex-predestroy-terminate");
+            auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ex-predestroy-terminate");
             ctx.discover<^^exception_pre_destroy_terminate_fixture>().start();
             (void)ctx.resolve<exception_pre_destroy_terminate_fixture::ThrowingPreDestroy>();
             ctx.stop();

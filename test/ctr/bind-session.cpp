@@ -14,16 +14,16 @@ struct Counter {
 struct BoundSession { int val = 0; };
 
 // Ctorium session type with preDestroy.
-struct [[=ctr::session{}]] ManagedSession {
+struct [[=CTORIUM_NAMESPACE::session{}]] ManagedSession {
     int state = 0;
     bool preDestroyCalled = false;
-    [[=ctr::preDestroy{}]] void cleanup() { preDestroyCalled = true; }
+    [[=CTORIUM_NAMESPACE::preDestroy{}]] void cleanup() { preDestroyCalled = true; }
 };
 
 // Ctorium session type with postConstruct — must NOT fire for bound objects.
-struct [[=ctr::session{}]] HookedSession {
+struct [[=CTORIUM_NAMESPACE::session{}]] HookedSession {
     bool hookCalled = false;
-    [[=ctr::postConstruct{}]] void init() { hookCalled = true; }
+    [[=CTORIUM_NAMESPACE::postConstruct{}]] void init() { hookCalled = true; }
 };
 
 } // namespace bind_session_fixture
@@ -31,7 +31,7 @@ struct [[=ctr::session{}]] HookedSession {
 // ─── Pre-scope-start binding ──────────────────────────────────────────────────
 
 TEST(BindSession, PreScopeStartThenResolveReturnsInstance) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bsess-pre");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-pre");
     auto& scope = ctx.resolveScope("s");
     auto counter = std::make_unique<bind_session_fixture::Counter>(77);
     bind_session_fixture::Counter* raw = counter.get();
@@ -45,7 +45,7 @@ TEST(BindSession, PreScopeStartThenResolveReturnsInstance) {
 }
 
 TEST(BindSession, BoundInstanceNotRecreatedAfterRestart) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bsess-restart");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-restart");
     auto& scope = ctx.resolveScope("s");
     scope.bindSession<bind_session_fixture::Counter>(
         std::make_unique<bind_session_fixture::Counter>(1));
@@ -56,14 +56,14 @@ TEST(BindSession, BoundInstanceNotRecreatedAfterRestart) {
     scope.start(); // restart — no re-binding
     EXPECT_THROW(
         scope.resolve<bind_session_fixture::Counter>(),
-        ctr::ContextStateError);
+        CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 // ─── Stopped scope: accepted for next start ───────────────────────────────────
 
 TEST(BindSession, BindOnStoppedScopeEntersLifecycleOnNextStart) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bsess-stopped");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-stopped");
     auto& scope = ctx.resolveScope("s");
     // Register type before root start (intern it).
     scope.bindSession<bind_session_fixture::Counter>(
@@ -83,7 +83,7 @@ TEST(BindSession, BindOnStoppedScopeEntersLifecycleOnNextStart) {
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
 TEST(BindSession, NoPostConstructForBoundSession) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bsess-no-postconstruct");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-no-postconstruct");
     auto& scope = ctx.resolveScope("s");
     // No discover — bindSession registers the type itself.
     scope.bindSession<bind_session_fixture::HookedSession>(
@@ -98,7 +98,7 @@ TEST(BindSession, NoPostConstructForBoundSession) {
 TEST(BindSession, PreDestroyCalledForCtoriumType) {
     bool preDestroyCalled = false;
     {
-        auto& ctx   = ctr::BeanContext::resolveContext("bsess-predestroy");
+        auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-predestroy");
         auto& scope = ctx.resolveScope("s");
         // No discover — bindSession registers the type itself.
         auto svc = std::make_unique<bind_session_fixture::ManagedSession>();
@@ -114,18 +114,18 @@ TEST(BindSession, PreDestroyCalledForCtoriumType) {
 }
 
 TEST(BindSession, AllFourListenerPhasesFire) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bsess-listeners");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-listeners");
     auto& scope = ctx.resolveScope("s");
     int initialized = 0, created = 0, preDestroy = 0, destroyed = 0;
 
-    ctx.on<bind_session_fixture::Counter>(ctr::onInitialized,
-        [&](const ctr::Bean<bind_session_fixture::Counter>&){ initialized++; });
-    ctx.on<bind_session_fixture::Counter>(ctr::onCreated,
-        [&](const ctr::Bean<bind_session_fixture::Counter>&){ created++; });
-    ctx.on<bind_session_fixture::Counter>(ctr::onPreDestroy,
-        [&](const ctr::Bean<bind_session_fixture::Counter>&){ preDestroy++; });
-    ctx.on<bind_session_fixture::Counter>(ctr::onDestroyed,
-        [&](const ctr::Bean<bind_session_fixture::Counter>&){ destroyed++; });
+    ctx.on<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::Counter>&){ initialized++; });
+    ctx.on<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::Counter>&){ created++; });
+    ctx.on<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::Counter>&){ preDestroy++; });
+    ctx.on<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::Counter>&){ destroyed++; });
 
     scope.bindSession<bind_session_fixture::Counter>(
         std::make_unique<bind_session_fixture::Counter>(1));
@@ -144,14 +144,14 @@ TEST(BindSession, AllFourListenerPhasesFire) {
 // ─── Named key ────────────────────────────────────────────────────────────────
 
 TEST(BindSession, NamedKeyBinding) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bsess-named");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bsess-named");
     auto& scope = ctx.resolveScope("s");
     scope.bindSession<bind_session_fixture::Counter>(
         std::make_unique<bind_session_fixture::Counter>(33),
-        ctr::BindOptions{.name = "c", .priority = 0});
+        CTORIUM_NAMESPACE::BindOptions{.name = "c", .priority = 0});
     ctx.start();
     scope.start();
-    auto bean = scope.resolve<bind_session_fixture::Counter>(ctr::named("c"));
+    auto bean = scope.resolve<bind_session_fixture::Counter>(CTORIUM_NAMESPACE::named("c"));
     EXPECT_EQ(bean->count, 33);
     ctx.stop();
 }
@@ -160,7 +160,7 @@ TEST(BindSession, NamedKeyBinding) {
 // after both root and scope are already started.
 
 TEST(BindSession, PostScopeStartBindAvailableImmediately) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bss-post-start");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bss-post-start");
     auto& scope = ctx.resolveScope("s");
     ctx.start();
     scope.start();
@@ -172,11 +172,11 @@ TEST(BindSession, PostScopeStartBindAvailableImmediately) {
 }
 
 TEST(BindSession, PostScopeStartBindFiresLifecycleImmediately) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bss-lifecycle");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bss-lifecycle");
     auto& scope = ctx.resolveScope("s");
     int count = 0;
-    ctx.on<bind_session_fixture::BoundSession>(ctr::onCreated,
-        [&](const ctr::Bean<bind_session_fixture::BoundSession>&) { ++count; });
+    ctx.on<bind_session_fixture::BoundSession>(CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_session_fixture::BoundSession>&) { ++count; });
     ctx.start();
     scope.start();
     scope.bindSession<bind_session_fixture::BoundSession>(
@@ -186,10 +186,10 @@ TEST(BindSession, PostScopeStartBindFiresLifecycleImmediately) {
 }
 
 TEST(BindSession, BindBeanContextRaisesConfigurationError) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bss-ctx-bind");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bss-ctx-bind");
     auto& scope = ctx.resolveScope("s");
     EXPECT_THROW(
-        scope.bindSession<ctr::BeanContext>(std::unique_ptr<ctr::BeanContext>{}),
-        ctr::ConfigurationError);
+        scope.bindSession<CTORIUM_NAMESPACE::BeanContext>(std::unique_ptr<CTORIUM_NAMESPACE::BeanContext>{}),
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }

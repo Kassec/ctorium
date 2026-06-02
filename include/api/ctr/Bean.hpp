@@ -4,12 +4,14 @@
 #include <cstdint>
 #include <optional>
 
+#include "Config.hpp"
+
 #include "../../internal/DescriptorId.hpp"
 #include "../../internal/NameId.hpp"
 #include "../../internal/SlotId.hpp"
 #include "../../internal/TypeId.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
     class BeanContext;
     class AnyBean;
@@ -393,4 +395,4 @@ namespace ctr {
         void* registry_ = nullptr;
     };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

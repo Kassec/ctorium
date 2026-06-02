@@ -2,12 +2,14 @@
 
 #include <span>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "DescriptorGen.hpp"
 #include "Registry.hpp"
 #include "../../api/ctr/BeanContext.hpp"
 #include "../../api/ctr/Options.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
 // -------------------------------------------------------------------------
 // detail::submitDiscoveryContribution
@@ -34,4 +36,4 @@ inline void submitDiscoveryContribution(BeanContext& context, DiscoverOptions op
 
 } // namespace detail
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

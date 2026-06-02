@@ -6,11 +6,13 @@
 #include <type_traits>
 #include <typeinfo>
 
+#include "Config.hpp"
+
 #include "../../internal/Lifetime.hpp"
 #include "../../internal/Origin.hpp"
 #include "Markers.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
 /**
  * @brief Runtime record for a retained method parameter.
@@ -98,9 +100,9 @@ public:
              */
             template<class Annotation>
             [[nodiscard]] std::optional<Annotation> annotation() const noexcept {
-                if constexpr (std::is_same_v<Annotation, ctr::postConstruct>) {
+                if constexpr (std::is_same_v<Annotation, CTORIUM_NAMESPACE::postConstruct>) {
                     if (rec.isPostConstruct) return Annotation{};
-                } else if constexpr (std::is_same_v<Annotation, ctr::preDestroy>) {
+                } else if constexpr (std::is_same_v<Annotation, CTORIUM_NAMESPACE::preDestroy>) {
                     if (rec.isPreDestroy) return Annotation{};
                 }
                 return std::nullopt;
@@ -118,8 +120,8 @@ public:
             const BeanMethodRecord* ptr;
             const BeanMethodRecord* end;
             static bool matches(const BeanMethodRecord& r) noexcept {
-                if constexpr (std::is_same_v<A, ctr::postConstruct>) return r.isPostConstruct;
-                if constexpr (std::is_same_v<A, ctr::preDestroy>)    return r.isPreDestroy;
+                if constexpr (std::is_same_v<A, CTORIUM_NAMESPACE::postConstruct>) return r.isPostConstruct;
+                if constexpr (std::is_same_v<A, CTORIUM_NAMESPACE::preDestroy>)    return r.isPreDestroy;
                 return false;
             }
             void advance() noexcept { while (ptr != end && !matches(*ptr)) ++ptr; }
@@ -156,8 +158,8 @@ public:
 
             template<class A>
             [[nodiscard]] bool hasAnnotation() const noexcept {
-                if constexpr (std::is_same_v<A, ctr::postConstruct>) return rec.isPostConstruct;
-                if constexpr (std::is_same_v<A, ctr::preDestroy>)    return rec.isPreDestroy;
+                if constexpr (std::is_same_v<A, CTORIUM_NAMESPACE::postConstruct>) return rec.isPostConstruct;
+                if constexpr (std::is_same_v<A, CTORIUM_NAMESPACE::preDestroy>)    return rec.isPreDestroy;
                 return false;
             }
 
@@ -166,9 +168,9 @@ public:
              */
             template<class Annotation>
             [[nodiscard]] std::optional<Annotation> annotation() const noexcept {
-                if constexpr (std::is_same_v<Annotation, ctr::postConstruct>) {
+                if constexpr (std::is_same_v<Annotation, CTORIUM_NAMESPACE::postConstruct>) {
                     if (rec.isPostConstruct) return Annotation{};
-                } else if constexpr (std::is_same_v<Annotation, ctr::preDestroy>) {
+                } else if constexpr (std::is_same_v<Annotation, CTORIUM_NAMESPACE::preDestroy>) {
                     if (rec.isPreDestroy) return Annotation{};
                 }
                 return std::nullopt;
@@ -303,4 +305,4 @@ private:
     const BeanReflectiveData* reflective_;
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

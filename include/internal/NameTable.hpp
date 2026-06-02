@@ -3,10 +3,12 @@
 #include <flat_map>
 #include <vector>
 
+#include "../api/ctr/Config.hpp"
+
 #include "DescriptorId.hpp"
 #include "NameId.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Per-name candidate entry. Candidates are sorted by descending priority at start().
@@ -24,4 +26,4 @@ struct NameTable {
     std::flat_map<NameId, NameEntry> entries;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

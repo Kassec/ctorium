@@ -2,7 +2,9 @@
 
 #include <string_view>
 
-namespace ctr {
+#include "Config.hpp"
+
+namespace CTORIUM_NAMESPACE {
 
 /**
  * @brief Marks a bean as prototype scoped.
@@ -83,4 +85,4 @@ struct scoped {
     const char* name = nullptr;
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

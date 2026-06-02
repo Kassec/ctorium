@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <limits>
 
-namespace ctr::detail {
+#include "../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Dense name identifier used to index bean named qualifiers.
@@ -24,4 +26,4 @@ inline constexpr NameId kInvalidNameId = std::numeric_limits<NameId>::max();
  */
 inline constexpr NameId kThreadLocalSentinel = kInvalidNameId - 1;
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

@@ -4,6 +4,8 @@
 #include <type_traits>
 #include <utility>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "Registry.hpp"
 #include "ResolutionContext.hpp"
 #include "HashUtils.hpp"
@@ -16,27 +18,27 @@
 // lookup from BeanContext::on<T> template bodies defined below)
 // -------------------------------------------------------------------------
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
     template <class PhaseTag>
     [[nodiscard]] std::size_t phaseIndexFor(PhaseTag) {
-        if constexpr (std::is_same_v<PhaseTag, ctr::onInitialized_t>)
+        if constexpr (std::is_same_v<PhaseTag, CTORIUM_NAMESPACE::onInitialized_t>)
             return ListenerStore::phaseInitialized();
-        else if constexpr (std::is_same_v<PhaseTag, ctr::onCreated_t>)
+        else if constexpr (std::is_same_v<PhaseTag, CTORIUM_NAMESPACE::onCreated_t>)
             return ListenerStore::phaseCreated();
-        else if constexpr (std::is_same_v<PhaseTag, ctr::onPreDestroy_t>)
+        else if constexpr (std::is_same_v<PhaseTag, CTORIUM_NAMESPACE::onPreDestroy_t>)
             return ListenerStore::phasePreDestroy();
-        else if constexpr (std::is_same_v<PhaseTag, ctr::onDestroyed_t>)
+        else if constexpr (std::is_same_v<PhaseTag, CTORIUM_NAMESPACE::onDestroyed_t>)
             return ListenerStore::phaseDestroyed();
         else
-            throw ctr::ConfigurationError(
+            throw CTORIUM_NAMESPACE::ConfigurationError(
                 "BeanContext::on: unsupported phase tag; use ctr::onInitialized, "
                 "ctr::onCreated, ctr::onPreDestroy, or ctr::onDestroyed."
                 );
     }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 // -------------------------------------------------------------------------
 // Process-wide root registry
 // -------------------------------------------------------------------------
@@ -51,9 +53,9 @@ inline std::mutex kCtoriumBeanContextRootMutex;
 // -------------------------------------------------------------------------
 
 inline BeanContext::BeanContext(std::string key)
-    : registry_(std::make_shared<ctr::detail::Registry>()), key_(std::move(key)) {}
+    : registry_(std::make_shared<CTORIUM_NAMESPACE::detail::Registry>()), key_(std::move(key)) {}
 
-inline BeanContext::BeanContext(std::shared_ptr<ctr::detail::Registry> registry)
+inline BeanContext::BeanContext(std::shared_ptr<CTORIUM_NAMESPACE::detail::Registry> registry)
     : registry_(std::move(registry)) {}
 
 inline BeanContext::~BeanContext() = default;
@@ -191,7 +193,7 @@ inline ScopedContext& BeanContext::resolveScope(std::string_view key) {
 // ScopedContext
 // -------------------------------------------------------------------------
 
-inline ScopedContext::ScopedContext(std::shared_ptr<ctr::detail::Registry> registry,
+inline ScopedContext::ScopedContext(std::shared_ptr<CTORIUM_NAMESPACE::detail::Registry> registry,
                                     BeanContext* root)
     : BeanContext(std::move(registry)), root_(root) {
     asScope_ = this; // Form 2 proxy path; Bean<T>::operator-> reads this via ResolutionContext
@@ -223,7 +225,7 @@ inline ScopedContext& ScopedContext::start() {
         const detail::Descriptor& d = reg.descriptors_.at(psb.descId);
         const detail::DescriptorCold& cold = reg.descriptors_.coldAt(psb.descId);
         sessionStore_.store(d.sessionSlot, psb.descId, psb.instance);
-        ctr::AnyBean anyBean;
+        CTORIUM_NAMESPACE::AnyBean anyBean;
         anyBean.object_         = psb.instance;
         anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(detail::kInvalidSlotId);
         anyBean.bits_.f1.descId = psb.descId;
@@ -317,7 +319,7 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
                 "BeanContext::defaultNamed: type T is not registered in this context."
                 );
         }
-        ctr::ScopedContext* scope = asScope_;
+        CTORIUM_NAMESPACE::ScopedContext* scope = asScope_;
         if (name.empty()) {
             if (scope != nullptr) {
                 if (scope->scopedDefaults_.size() != 0) {
@@ -359,7 +361,7 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
         const detail::TypeId typeId = reg.typeIdFor<T>();
         if (typeId == detail::kInvalidTypeId)
             return *this; // T not registered — no-op
-        ctr::ScopedContext* scope = asScope_;
+        CTORIUM_NAMESPACE::ScopedContext* scope = asScope_;
         if (scope != nullptr) {
             if (scope->scopedDefaults_.size() != 0) {
                 scope->scopedDefaults_.setDefault(typeId, detail::kUnnamed);
@@ -401,19 +403,19 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
 
         auto wrapper =
             [cb = std::forward<Callback>(callback)](const void *vBean) {
-            const ctr::AnyBean &anyBean =
-                *static_cast<const ctr::AnyBean *>(vBean);
+            const CTORIUM_NAMESPACE::AnyBean &anyBean =
+                *static_cast<const CTORIUM_NAMESPACE::AnyBean *>(vBean);
             // Non-tracking view: kInvalidSlotId prevents releaseIfPrototype
             // on the temporary, avoiding a double-release for prototype beans.
             // Prototype tracking in listener callbacks is deferred (AnyBean
             // tracking TODO).
-            ctr::Bean<T> view = ctr::Bean<T>::makeDirect(
+            CTORIUM_NAMESPACE::Bean<T> view = CTORIUM_NAMESPACE::Bean<T>::makeDirect(
                 static_cast<T *>(anyBean.object_),
                 detail::kInvalidSlotId,
                 anyBean.bits_.f1.descId,
                 anyBean.registry()
                 );
-            cb(static_cast<const ctr::Bean<T> &>(view));
+            cb(static_cast<const CTORIUM_NAMESPACE::Bean<T> &>(view));
         };
 
         if (!reg.started()) {
@@ -462,8 +464,8 @@ inline ScopedContext& ScopedContext::resolveScope(std::string_view key) {
 
         auto wrapper =
             [cb = std::forward<Callback>(callback)](const void *vBean) {
-            const ctr::AnyBean &anyBean =
-                *static_cast<const ctr::AnyBean *>(vBean);
+            const CTORIUM_NAMESPACE::AnyBean &anyBean =
+                *static_cast<const CTORIUM_NAMESPACE::AnyBean *>(vBean);
             cb(anyBean);
         };
 
@@ -518,4 +520,4 @@ std::optional<std::reference_wrapper<const T>> ScopedContext::userData() const {
     return std::cref(*static_cast<const T*>(userData_));
 }
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

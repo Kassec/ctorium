@@ -19,7 +19,7 @@ namespace tl_lifetime_m1_fixture {
 inline constexpr int kDefaultSentinel = 17;
 inline constexpr int kGhostSentinel = 0x5A17;
 
-struct [[=ctr::threadLocal{}]] TLService {
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLService {
     int sentinel = kDefaultSentinel;
 };
 
@@ -27,20 +27,20 @@ struct [[=ctr::threadLocal{}]] TLService {
 
 namespace tl_lifetime_m2_fixture {
 
-struct [[=ctr::threadLocal{}]] TLService {};
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLService {};
 
 } // namespace tl_lifetime_m2_fixture
 
 namespace {
 
-using Registry = ctr::detail::Registry;
+using Registry = CTORIUM_NAMESPACE::detail::Registry;
 
-struct Probe : ctr::BeanContext {
+struct Probe : CTORIUM_NAMESPACE::BeanContext {
     explicit Probe(std::string key)
-        : ctr::BeanContext(std::move(key)) {}
+        : CTORIUM_NAMESPACE::BeanContext(std::move(key)) {}
 
     explicit Probe(std::shared_ptr<Registry> registry)
-        : ctr::BeanContext(std::move(registry)) {}
+        : CTORIUM_NAMESPACE::BeanContext(std::move(registry)) {}
 
     [[nodiscard]] Registry* registry() noexcept {
         return &core();
@@ -74,7 +74,7 @@ private:
 }
 
 [[nodiscard]] bool hasCallableThreadRegistrationFor(std::uint32_t registryId) {
-    const auto& registered = ctr::detail::tlCleanup().registered;
+    const auto& registered = CTORIUM_NAMESPACE::detail::tlCleanup().registered;
     const auto it = registered.find(registryId);
     if (it == registered.end()) return false;
     return it->second.lock() != nullptr;
@@ -82,13 +82,13 @@ private:
 
 template <class T>
 void collectAndDestroyThreadLocalStateFor(std::uint32_t registryId) {
-    auto& tl = ctr::detail::tlData();
+    auto& tl = CTORIUM_NAMESPACE::detail::tlData();
     std::vector<void*> instances;
 
     const auto regIt = tl.instances.registries.find(registryId);
     if (regIt != tl.instances.registries.end()) {
         const auto& entries = regIt->second;
-        for (ctr::detail::DescriptorId descId : entries.order) {
+        for (CTORIUM_NAMESPACE::detail::DescriptorId descId : entries.order) {
             const auto index = static_cast<std::size_t>(descId);
             if (index < entries.instances.size()) {
                 void* instance = entries.instances[index];
@@ -99,7 +99,7 @@ void collectAndDestroyThreadLocalStateFor(std::uint32_t registryId) {
         tl.instances.eraseRegistry(registryId);
     }
 
-    auto& cleanup = ctr::detail::tlCleanup();
+    auto& cleanup = CTORIUM_NAMESPACE::detail::tlCleanup();
     for (auto it = cleanup.registered.begin(); it != cleanup.registered.end();) {
         if (it->first == registryId) {
             it = cleanup.registered.erase(it);

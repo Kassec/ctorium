@@ -8,15 +8,15 @@
 
 namespace context_fixture {
 
-struct [[=ctr::singleton{}]] Svc {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Svc {};
 
 // ContextAware: singleton whose constructor receives the root BeanContext via
 // standard constructor injection.  Validates that any bean whose constructor
 // declares ctr::Bean<ctr::BeanContext> receives the root context at construction
 // time, regardless of whether the resolution is issued from a scope.
-struct [[=ctr::singleton{}]] ContextAware {
-    ctr::Bean<ctr::BeanContext> ctx;
-    explicit ContextAware(ctr::Bean<ctr::BeanContext> c) : ctx(std::move(c)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ContextAware {
+    CTORIUM_NAMESPACE::Bean<CTORIUM_NAMESPACE::BeanContext> ctx;
+    explicit ContextAware(CTORIUM_NAMESPACE::Bean<CTORIUM_NAMESPACE::BeanContext> c) : ctx(std::move(c)) {}
 };
 
 } // namespace context_fixture
@@ -27,8 +27,8 @@ TEST(BeanContextIdentity, DefaultKeyEquivalentToEmptyString) {
     // resolveContext() is specified to resolve the default context.
     // Internally it maps to resolveContext(""); both overloads must return the
     // same stable reference.
-    auto& def   = ctr::BeanContext::resolveContext();
-    auto& empty = ctr::BeanContext::resolveContext("");
+    auto& def   = CTORIUM_NAMESPACE::BeanContext::resolveContext();
+    auto& empty = CTORIUM_NAMESPACE::BeanContext::resolveContext("");
     EXPECT_EQ(&def, &empty);
     def.stop();
 }
@@ -37,11 +37,11 @@ TEST(BeanContextIdentity, StopAndReopenGivesFreshContext) {
     // After stop(), the same key produces a new context that has not been
     // started: discover<>() must not raise ContextStateError.
     {
-        auto& ctx = ctr::BeanContext::resolveContext("ctx-reopen");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-reopen");
         ctx.discover<^^context_fixture>().start();
         ctx.stop();
     }
-    auto& ctx2 = ctr::BeanContext::resolveContext("ctx-reopen");
+    auto& ctx2 = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-reopen");
     EXPECT_NO_THROW(ctx2.discover<^^context_fixture>());
     ctx2.stop();
 }
@@ -49,33 +49,33 @@ TEST(BeanContextIdentity, StopAndReopenGivesFreshContext) {
 // ─── Self-injectable BeanContext ──────────────────────────────────────────────
 
 TEST(BeanContextSelfInjectable, ResolvedHandleIsValid) {
-    auto& ctx = ctr::BeanContext::resolveContext("ctx-self-valid");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-self-valid");
     ctx.discover<^^context_fixture>().start();
-    auto bean = ctx.resolve<ctr::BeanContext>();
+    auto bean = ctx.resolve<CTORIUM_NAMESPACE::BeanContext>();
     EXPECT_NE(bean.operator->(), nullptr);
     ctx.stop();
 }
 
 TEST(BeanContextSelfInjectable, ResolveReturnsSelf) {
     // resolve<ctr::BeanContext>() must return the context itself.
-    auto& ctx = ctr::BeanContext::resolveContext("ctx-self");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-self");
     ctx.discover<^^context_fixture>().start();
-    auto bean = ctx.resolve<ctr::BeanContext>();
+    auto bean = ctx.resolve<CTORIUM_NAMESPACE::BeanContext>();
     EXPECT_EQ(bean.operator->(), &ctx);
     ctx.stop();
 }
 
 TEST(BeanContextSelfInjectable, ResolveBeforeStartRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("ctx-self-pre-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-self-pre-start");
     ctx.discover<^^context_fixture>();
-    EXPECT_THROW(ctx.resolve<ctr::BeanContext>(), ctr::ContextStateError);
+    EXPECT_THROW(ctx.resolve<CTORIUM_NAMESPACE::BeanContext>(), CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 TEST(BeanContextSelfInjectable, ContextInjectableIntoBean) {
     // A bean whose constructor takes ctr::Bean<ctr::BeanContext> receives the
     // root context, not the scope.
-    auto& ctx = ctr::BeanContext::resolveContext("ctx-inject");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-inject");
     ctx.discover<^^context_fixture>().start();
     auto bean = ctx.resolve<context_fixture::ContextAware>();
     EXPECT_EQ(bean->ctx.operator->(), &ctx);
@@ -86,12 +86,12 @@ TEST(BeanContextStop, StopPreventsResolve) {
     // After stop() (terminal), the context reference becomes dangling.
     // Verify: a fresh context for the same key is unstarted → resolve throws.
     {
-        auto& ctx = ctr::BeanContext::resolveContext("ctx-stop");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-stop");
         ctx.discover<^^context_fixture>().start();
         ctx.stop(); // terminal; ctx reference is now dangling
     }
-    auto& fresh = ctr::BeanContext::resolveContext("ctx-stop");
-    EXPECT_THROW(fresh.resolve<context_fixture::Svc>(), ctr::ContextStateError);
+    auto& fresh = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-stop");
+    EXPECT_THROW(fresh.resolve<context_fixture::Svc>(), CTORIUM_NAMESPACE::ContextStateError);
     fresh.stop();
 }
 
@@ -99,17 +99,17 @@ TEST(BeanContextStop, StopIsTerminal) {
     // stop() releases the global-table entry; a subsequent resolveContext
     // on the same key returns a fresh, unstarted context.
     {
-        auto& ctx = ctr::BeanContext::resolveContext("ctx-stop-close");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-stop-close");
         ctx.discover<^^context_fixture>().start();
         ctx.stop(); // terminal; ctx reference is now dangling
     }
-    auto& fresh = ctr::BeanContext::resolveContext("ctx-stop-close");
-    EXPECT_THROW(fresh.resolve<context_fixture::Svc>(), ctr::ContextStateError);
+    auto& fresh = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-stop-close");
+    EXPECT_THROW(fresh.resolve<context_fixture::Svc>(), CTORIUM_NAMESPACE::ContextStateError);
     fresh.stop();
 }
 
 TEST(BeanContextDiscover, MultipleDiscoverCallsDeduplicateCandidates) {
-    auto& ctx = ctr::BeanContext::resolveContext("ctx-multi-discover");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-multi-discover");
     ctx.discover<^^context_fixture>();
     ctx.discover<^^context_fixture>();
     ctx.start();
@@ -119,7 +119,7 @@ TEST(BeanContextDiscover, MultipleDiscoverCallsDeduplicateCandidates) {
 }
 
 TEST(BeanContextScope, ResolveScopeFromScopeDelegatesToRootAndCreatesSibling) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-scope-delegates-root");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-scope-delegates-root");
     auto& first = root.resolveScope("first");
     auto& siblingFromScope = first.resolveScope("sibling");
     auto& siblingFromRoot = root.resolveScope("sibling");
@@ -131,8 +131,8 @@ TEST(BeanContextScope, ResolveScopeFromScopeDelegatesToRootAndCreatesSibling) {
 }
 
 TEST(BeanContextScope, SameScopeKeyUnderDifferentRootsCreatesDistinctScopes) {
-    auto& firstRoot = ctr::BeanContext::resolveContext("ctx-root-a");
-    auto& secondRoot = ctr::BeanContext::resolveContext("ctx-root-b");
+    auto& firstRoot = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-root-a");
+    auto& secondRoot = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-root-b");
 
     auto& firstScope = firstRoot.resolveScope("shared");
     auto& secondScope = secondRoot.resolveScope("shared");
@@ -145,29 +145,29 @@ TEST(BeanContextScope, SameScopeKeyUnderDifferentRootsCreatesDistinctScopes) {
 
 namespace context_scope_discover_fixture {
 
-struct [[=ctr::singleton{}]] Service {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Service {};
 
 } // namespace context_scope_discover_fixture
 
 TEST(BeanContextScope, DiscoverOnScopeRaisesContextStateError) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-scope-discover");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-scope-discover");
     auto& scope = root.resolveScope("scope");
 
-    EXPECT_THROW(scope.discover<^^context_scope_discover_fixture>(), ctr::ContextStateError);
+    EXPECT_THROW(scope.discover<^^context_scope_discover_fixture>(), CTORIUM_NAMESPACE::ContextStateError);
 
     root.stop();
 }
 
 namespace context_scope_identity_fixture {
 
-struct [[=ctr::session{}]] SessionService {
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionService {
     int value = 1;
 };
 
 } // namespace context_scope_identity_fixture
 
 TEST(BeanContextScope, ScopeIdentityAndTrackedHandlesSurviveStopStartCycle) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-scope-identity");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-scope-identity");
     root.discover<^^context_scope_identity_fixture>().start();
     auto& scope = root.resolveScope("stable");
     scope.start();
@@ -190,14 +190,14 @@ TEST(BeanContextScope, ScopeIdentityAndTrackedHandlesSurviveStopStartCycle) {
 
 namespace context_sibling_restart_fixture {
 
-struct [[=ctr::session{}]] SessionService {
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionService {
     int value = 0;
 };
 
 } // namespace context_sibling_restart_fixture
 
 TEST(BeanContextScope, RestartingOneScopeDoesNotAffectSiblingSessionInstance) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-scope-restart-sibling");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-scope-restart-sibling");
     root.discover<^^context_sibling_restart_fixture>().start();
     auto& first = root.resolveScope("first");
     auto& sibling = root.resolveScope("sibling");
@@ -219,8 +219,8 @@ namespace context_root_stop_scope_sessions_fixture {
 
 std::atomic<int> preDestroyCount{0};
 
-struct [[=ctr::session{}]] SessionService {
-    [[=ctr::preDestroy{}]]
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionService {
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void cleanup() {
         preDestroyCount.fetch_add(1, std::memory_order_relaxed);
     }
@@ -233,15 +233,15 @@ TEST(BeanContextScope, RootStopDoesNotCurrentlyDestroyLiveScopeSessions) {
         0,
         std::memory_order_relaxed);
 
-    auto& root = ctr::BeanContext::resolveContext("ctx-root-stop-live-scope-sessions");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-root-stop-live-scope-sessions");
     root.discover<^^context_root_stop_scope_sessions_fixture>().start();
     auto& scope = root.resolveScope("ctx-root-stop-session-scope");
     scope.start();
 
     int destroyedCount = 0;
     root.on<context_root_stop_scope_sessions_fixture::SessionService>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<context_root_stop_scope_sessions_fixture::SessionService>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<context_root_stop_scope_sessions_fixture::SessionService>&) {
             ++destroyedCount;
         });
 
@@ -260,19 +260,19 @@ TEST(BeanContextScope, RootStopDoesNotCurrentlyDestroyLiveScopeSessions) {
 
 namespace context_destruction_order_fixture {
 
-struct [[=ctr::singleton{}]] UserSingleton {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] UserSingleton {};
 
 } // namespace context_destruction_order_fixture
 
 TEST(BeanContextStop, ContextBeanDestroyedAfterUserSingletons) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-context-bean-last");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-context-bean-last");
     root.discover<^^context_destruction_order_fixture>().start();
 
     std::vector<int> destroyedOrder;
-    root.on(ctr::onDestroyed, [&](const ctr::AnyBean& bean) {
+    root.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
         if (bean.compatible<context_destruction_order_fixture::UserSingleton>()) {
             destroyedOrder.push_back(1);
-        } else if (bean.compatible<ctr::BeanContext>()) {
+        } else if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) {
             destroyedOrder.push_back(2);
         }
     });
@@ -286,20 +286,20 @@ TEST(BeanContextStop, ContextBeanDestroyedAfterUserSingletons) {
 }
 
 TEST(BeanContextSelfInjectable, ContextBeanListenerPhasesFireInStandardOrder) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-context-bean-phases");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-context-bean-phases");
 
     std::vector<int> phases;
-    root.on(ctr::onInitialized, [&](const ctr::AnyBean& bean) {
-        if (bean.compatible<ctr::BeanContext>()) phases.push_back(1);
+    root.on(CTORIUM_NAMESPACE::onInitialized, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
+        if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) phases.push_back(1);
     });
-    root.on(ctr::onCreated, [&](const ctr::AnyBean& bean) {
-        if (bean.compatible<ctr::BeanContext>()) phases.push_back(2);
+    root.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
+        if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) phases.push_back(2);
     });
-    root.on(ctr::onPreDestroy, [&](const ctr::AnyBean& bean) {
-        if (bean.compatible<ctr::BeanContext>()) phases.push_back(3);
+    root.on(CTORIUM_NAMESPACE::onPreDestroy, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
+        if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) phases.push_back(3);
     });
-    root.on(ctr::onDestroyed, [&](const ctr::AnyBean& bean) {
-        if (bean.compatible<ctr::BeanContext>()) phases.push_back(4);
+    root.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
+        if (bean.compatible<CTORIUM_NAMESPACE::BeanContext>()) phases.push_back(4);
     });
 
     root.start();
@@ -314,12 +314,12 @@ TEST(BeanContextSelfInjectable, ContextBeanListenerPhasesFireInStandardOrder) {
 
 namespace context_singleton_via_scope_fixture {
 
-struct [[=ctr::singleton{}]] SingletonService {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] SingletonService {};
 
 } // namespace context_singleton_via_scope_fixture
 
 TEST(BeanContextSelfInjectable, SingletonResolvedThroughScopeReportsRootContext) {
-    auto& root = ctr::BeanContext::resolveContext("ctx-singleton-via-scope-root");
+    auto& root = CTORIUM_NAMESPACE::BeanContext::resolveContext("ctx-singleton-via-scope-root");
     root.discover<^^context_singleton_via_scope_fixture>().start();
     auto& scope = root.resolveScope("singleton-scope");
     scope.start();

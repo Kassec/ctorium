@@ -1,6 +1,8 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::resolve<T>  — hot-path resolution
     //
@@ -30,7 +32,7 @@ namespace ctr::detail {
         // 1. State check — acquire pairs with the release store in start(), ensuring all
         // structures populated during start() are visible to this resolving thread.
         if (!started_.load(std::memory_order_acquire)) [[unlikely]] {
-            throw ctr::ContextStateError(
+            throw CTORIUM_NAMESPACE::ContextStateError(
                 "Registry::resolve: context has not been started; "
                 "call start() before resolving beans."
                 );
@@ -39,7 +41,7 @@ namespace ctr::detail {
         // 2. TypeId via per-type static atomic cache (single relaxed load on hot path).
         const TypeId typeId = typeIdFor<T>();
         if (typeId == kInvalidTypeId) [[unlikely]] {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "Registry::resolve: the requested type was not registered in "
                 "this context via discover<>() or bindSingleton()."
                 );
@@ -79,7 +81,7 @@ namespace ctr::detail {
                 // precomputed entry head only covers candidates known at start().
                 const auto* candidates = entry != nullptr ? &entry->candidates : nullptr;
                 if (!candidates || candidates->empty()) {
-                    throw ctr::ResolutionError(
+                    throw CTORIUM_NAMESPACE::ResolutionError(
                         "Registry::resolve: no bean registered for the requested "
                         "type and named key."
                         );
@@ -88,7 +90,7 @@ namespace ctr::detail {
                 if (candidates->size() >= 2
                     && descriptors_.at((*candidates)[0]).priority
                         == descriptors_.at((*candidates)[1]).priority) [[unlikely]] {
-                    throw ctr::ResolutionError(
+                    throw CTORIUM_NAMESPACE::ResolutionError(
                         "Registry::resolve: ambiguous resolution — two candidates share "
                         "the highest priority for the requested type and named key."
                         );
@@ -96,7 +98,7 @@ namespace ctr::detail {
             } else {
                 descId = head;
                 if (entry->ambiguous) [[unlikely]] {
-                    throw ctr::ResolutionError(
+                    throw CTORIUM_NAMESPACE::ResolutionError(
                         "Registry::resolve: ambiguous resolution — two candidates share "
                         "the highest priority for the requested type and named key."
                         );
@@ -117,13 +119,13 @@ namespace ctr::detail {
             }
         } else if (lifetime == Lifetime::Session) {
             if (ctx.scope == nullptr) {
-                throw ctr::ContextStateError(
+                throw CTORIUM_NAMESPACE::ContextStateError(
                     "Registry::resolve: session beans can only be resolved from a "
                     "scoped context, not directly from a root context."
                     );
             }
             if (!ctx.scope->scopeStarted_) {
-                throw ctr::ContextStateError(
+                throw CTORIUM_NAMESPACE::ContextStateError(
                     "Registry::resolve: the scope is stopped; start the scope before resolving."
                     );
             }
@@ -285,7 +287,7 @@ namespace ctr::detail {
     template <typename FindExisting>
     bool Registry::claimMaterializationOrWait(
         DescriptorId descId,
-        ctr::ScopedContext* scope,
+        CTORIUM_NAMESPACE::ScopedContext* scope,
         FindExisting&& findExisting,
         const char* intraThreadCycleMessage,
         const char* crossThreadCycleMessage) {
@@ -312,7 +314,7 @@ namespace ctr::detail {
 
         if (hasIntraThreadCycle()) {
             lock.unlock();
-            throw ctr::ResolutionError(intraThreadCycleMessage);
+            throw CTORIUM_NAMESPACE::ResolutionError(intraThreadCycleMessage);
         }
         while (true) {
             if (findExisting() != nullptr)
@@ -328,7 +330,7 @@ namespace ctr::detail {
             if (ownerIt == materializing_.end()) {
                 if (hasIntraThreadCycle()) {
                     lock.unlock();
-                    throw ctr::ResolutionError(intraThreadCycleMessage);
+                    throw CTORIUM_NAMESPACE::ResolutionError(intraThreadCycleMessage);
                 }
                 stack.push_back(descId);
                 materializing_.push_back({key, currentThreadToken});
@@ -338,14 +340,14 @@ namespace ctr::detail {
             const std::uint32_t ownerThreadToken = ownerIt->threadToken;
             if (ownerThreadToken == currentThreadToken) {
                 lock.unlock();
-                throw ctr::ResolutionError(intraThreadCycleMessage);
+                throw CTORIUM_NAMESPACE::ResolutionError(intraThreadCycleMessage);
             }
             if (!stack.empty()
                     && materializationWaitCycleDetected(
                         currentThreadToken,
                         ownerThreadToken)) {
                 lock.unlock();
-                throw ctr::ResolutionError(crossThreadCycleMessage);
+                throw CTORIUM_NAMESPACE::ResolutionError(crossThreadCycleMessage);
             }
 
             materializationWaitSlot(currentThreadToken) = MaterializationWait{key, true};
@@ -442,7 +444,7 @@ namespace ctr::detail {
                     const bool dispatchCreated =
                         listeners_.hasListeners(ListenerStore::phaseCreated());
                     if (dispatchInitialized || dispatchCreated) {
-                        ctr::AnyBean anyBean;
+                        CTORIUM_NAMESPACE::AnyBean anyBean;
                         anyBean.object_ = exposedPtr;
                         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
                         anyBean.bits_.f1.descId = descId;
@@ -570,7 +572,7 @@ namespace ctr::detail {
                 // Lifecycle dispatch outside the write lock:
                 //   C++ construction → onInitialized → postConstruct → onCreated
                 if (didMaterialize) {
-                    ctr::AnyBean anyBean;
+                    CTORIUM_NAMESPACE::AnyBean anyBean;
                     anyBean.object_ = instance;
                     anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
                     anyBean.bits_.f1.descId = descId;
@@ -626,7 +628,7 @@ namespace ctr::detail {
             const bool dispatchCreated =
                 listeners_.hasListeners(ListenerStore::phaseCreated());
             if (dispatchInitialized || dispatchCreated) {
-                ctr::AnyBean anyBean;
+                CTORIUM_NAMESPACE::AnyBean anyBean;
                 anyBean.object_ = mem;
                 anyBean.bits_.f1.slot = static_cast<std::uint32_t>(slotId);
                 anyBean.bits_.f1.descId = descId;
@@ -661,13 +663,13 @@ namespace ctr::detail {
 
         case Lifetime::Session: {
             if (ctx.scope == nullptr) {
-                throw ctr::ContextStateError(
+                throw CTORIUM_NAMESPACE::ContextStateError(
                     "Registry::resolve: session beans can only be resolved from a "
                     "scoped context, not directly from a root context."
                     );
             }
             if (!ctx.scope->scopeStarted_) {
-                throw ctr::ContextStateError(
+                throw CTORIUM_NAMESPACE::ContextStateError(
                     "Registry::resolve: the scope is stopped; start the scope before resolving."
                     );
             }
@@ -684,8 +686,8 @@ namespace ctr::detail {
         }
 
         // Unreachable; suppress compiler warnings.
-        throw ctr::ConfigurationError("Registry::resolve: unhandled lifetime.");
+        throw CTORIUM_NAMESPACE::ConfigurationError("Registry::resolve: unhandled lifetime.");
     }
 
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

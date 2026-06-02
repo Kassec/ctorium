@@ -8,15 +8,15 @@
 
 namespace session_fixture {
 
-struct [[=ctr::session{}]] SessionSvc { int id = 0; };
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionSvc { int id = 0; };
 
-struct [[=ctr::session{}]] SessionDep { int val = 99; };
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionDep { int val = 99; };
 
 // Consumer whose constructor injects a session dep implicitly (no scoped).
 // Valid because the consumer itself is a session bean.
-struct [[=ctr::session{}]] SessionConsumer {
-    ctr::Bean<SessionDep> dep;
-    explicit SessionConsumer(ctr::Bean<SessionDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionConsumer {
+    CTORIUM_NAMESPACE::Bean<SessionDep> dep;
+    explicit SessionConsumer(CTORIUM_NAMESPACE::Bean<SessionDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace session_fixture
@@ -24,12 +24,12 @@ struct [[=ctr::session{}]] SessionConsumer {
 // Separate namespace so that graph-validation tests don't pollute the main fixture.
 namespace session_graphval {
 
-struct [[=ctr::session{}]] GvSessionDep { int v = 0; };
+struct [[=CTORIUM_NAMESPACE::session{}]] GvSessionDep { int v = 0; };
 
 // Condition (b): session dep injected into singleton without [[=ctr::scoped]].
-struct [[=ctr::singleton{}]] GvBadConsumer {
-    ctr::Bean<GvSessionDep> dep;
-    explicit GvBadConsumer(ctr::Bean<GvSessionDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] GvBadConsumer {
+    CTORIUM_NAMESPACE::Bean<GvSessionDep> dep;
+    explicit GvBadConsumer(CTORIUM_NAMESPACE::Bean<GvSessionDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace session_graphval
@@ -39,11 +39,11 @@ struct [[=ctr::singleton{}]] GvBadConsumer {
 // Graph validation detects hasScopedAnnotation && injLt != Session → ConfigurationError.
 namespace session_graphval_a {
 
-struct [[=ctr::singleton{}]] GvSingleton { int x = 0; };
+struct [[=CTORIUM_NAMESPACE::singleton{}]] GvSingleton { int x = 0; };
 
-struct [[=ctr::singleton{}]] GvScopedOnSingleton {
-    ctr::Bean<GvSingleton> dep;
-    explicit GvScopedOnSingleton([[=ctr::scoped{}]] ctr::Bean<GvSingleton> d)
+struct [[=CTORIUM_NAMESPACE::singleton{}]] GvScopedOnSingleton {
+    CTORIUM_NAMESPACE::Bean<GvSingleton> dep;
+    explicit GvScopedOnSingleton([[=CTORIUM_NAMESPACE::scoped{}]] CTORIUM_NAMESPACE::Bean<GvSingleton> d)
         : dep(std::move(d)) {}
 };
 
@@ -52,7 +52,7 @@ struct [[=ctr::singleton{}]] GvScopedOnSingleton {
 // ─── Criterion: same scope → same instance; distinct scopes → distinct instances ───
 
 TEST(Session, SameScopeReturnsSameInstance) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-same-scope");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-same-scope");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("s1");
     scope.start();
@@ -63,7 +63,7 @@ TEST(Session, SameScopeReturnsSameInstance) {
 }
 
 TEST(Session, DistinctScopesTwoInstances) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-two-scopes");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-two-scopes");
     ctx.discover<^^session_fixture>().start();
     auto& s1 = ctx.resolveScope("a");
     auto& s2 = ctx.resolveScope("b");
@@ -78,16 +78,16 @@ TEST(Session, DistinctScopesTwoInstances) {
 // ─── Criterion: root resolve → ContextStateError ──────────────────────────────
 
 TEST(Session, ResolveFromRootRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-from-root");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-from-root");
     ctx.discover<^^session_fixture>().start();
-    EXPECT_THROW(ctx.resolve<session_fixture::SessionSvc>(), ctr::ContextStateError);
+    EXPECT_THROW(ctx.resolve<session_fixture::SessionSvc>(), CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 // ─── Criterion: restart() → new instance; stop() → ContextStateError ──────────
 
 TEST(Session, RestartReplacesInstance) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-restart");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-restart");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("run");
     scope.start();
@@ -109,19 +109,19 @@ TEST(Session, RestartReplacesInstance) {
 }
 
 TEST(Session, ResolveOnStoppedScopeRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-stopped");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-stopped");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("run2");
     scope.start();
     scope.stop();
-    EXPECT_THROW(scope.resolve<session_fixture::SessionSvc>(), ctr::ContextStateError);
+    EXPECT_THROW(scope.resolve<session_fixture::SessionSvc>(), CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 // ─── Criterion: Form 2 proxy → nullptr on stopped scope (no exception) ─────────
 
 TEST(Session, ProxyHandleReturnNullptrOnStoppedScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-proxy-stop");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-proxy-stop");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("run3");
     scope.start();
@@ -140,7 +140,7 @@ TEST(Session, ProxyHandleReturnNullptrOnStoppedScope) {
 // ─── Criterion: implicit session injection (session consumer) ─────────────────
 
 TEST(Session, ImplicitSessionInjectionInSameScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-implicit-inject");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-implicit-inject");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("run4");
     scope.start();
@@ -158,7 +158,7 @@ TEST(Session, ImplicitSessionInjectionInSameScope) {
 // ─── Criterion: bean.context() returns the owning ScopedContext ───────────────
 
 TEST(Session, ContextReturnsScopedContext) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-context");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-context");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("run5");
     scope.start();
@@ -178,16 +178,16 @@ TEST(Session, ContextReturnsScopedContext) {
 // const char* markers — separate probe recommended before enabling).
 
 TEST(Session, GraphValidationSessionDepInNonSessionConsumerThrows) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-graphval-b");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-graphval-b");
     ctx.discover<^^session_graphval>();
-    EXPECT_THROW(ctx.start(), ctr::ConfigurationError);
+    EXPECT_THROW(ctx.start(), CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
 // ─── ScopedContext::start() idempotent ────────────────────────────────────────
 
 TEST(Session, ScopeStartIsIdempotent) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-idempotent");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-idempotent");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("idem");
     scope.start();
@@ -198,7 +198,7 @@ TEST(Session, ScopeStartIsIdempotent) {
 // ─── ScopedContext::stop() idempotent ─────────────────────────────────────────
 
 TEST(Session, ScopeStopIsIdempotent) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-stop-idem");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-stop-idem");
     ctx.discover<^^session_fixture>().start();
     auto& scope = ctx.resolveScope("idem2");
     scope.start();
@@ -212,32 +212,32 @@ TEST(Session, ScopeStopIsIdempotent) {
 // Boolean hasScopedAnnotation detection is sufficient — no name extraction needed.
 
 TEST(Session, GraphValidationScopedOnNonSessionTargetThrows) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-graphval-a");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-graphval-a");
     ctx.discover<^^session_graphval_a>();
-    EXPECT_THROW(ctx.start(), ctr::ConfigurationError);
+    EXPECT_THROW(ctx.start(), CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
 // ─── Lifecycle on scope stop/restart ──────────────────────────────────────────
 
 namespace session_lifecycle_fixture {
-struct [[=ctr::session{}]] LifecycleSvc {};
+struct [[=CTORIUM_NAMESPACE::session{}]] LifecycleSvc {};
 } // namespace session_lifecycle_fixture
 
 TEST(Session, StopFiresPreDestroyThenDestroyed) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-stop-lifecycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-stop-lifecycle");
     ctx.discover<^^session_lifecycle_fixture>().start();
     auto& scope = ctx.resolveScope("run-slc");
 
     int phase = 0, preDestroyOrder = 0, destroyedOrder = 0;
     ctx.on<session_lifecycle_fixture::LifecycleSvc>(
-        ctr::onPreDestroy,
-        [&](const ctr::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
             preDestroyOrder = ++phase;
         });
     ctx.on<session_lifecycle_fixture::LifecycleSvc>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
             destroyedOrder = ++phase;
         });
 
@@ -252,7 +252,7 @@ TEST(Session, StopFiresPreDestroyThenDestroyed) {
 }
 
 TEST(Session, RestartFiresDestroyThenCreateLifecycle) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-restart-lifecycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-restart-lifecycle");
     ctx.discover<^^session_lifecycle_fixture>().start();
     auto& scope = ctx.resolveScope("run-rlc");
 
@@ -261,25 +261,25 @@ TEST(Session, RestartFiresDestroyThenCreateLifecycle) {
     int initOrder2 = 0, createdOrder2 = 0;
 
     ctx.on<session_lifecycle_fixture::LifecycleSvc>(
-        ctr::onInitialized,
-        [&](const ctr::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
+        CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
             int v = ++phaseOrder;
             if (initOrder1 == 0) initOrder1 = v; else initOrder2 = v;
         });
     ctx.on<session_lifecycle_fixture::LifecycleSvc>(
-        ctr::onCreated,
-        [&](const ctr::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
             int v = ++phaseOrder;
             if (createdOrder1 == 0) createdOrder1 = v; else createdOrder2 = v;
         });
     ctx.on<session_lifecycle_fixture::LifecycleSvc>(
-        ctr::onPreDestroy,
-        [&](const ctr::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
             preDestroyOrder = ++phaseOrder;
         });
     ctx.on<session_lifecycle_fixture::LifecycleSvc>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<session_lifecycle_fixture::LifecycleSvc>&) {
             destroyedOrder = ++phaseOrder;
         });
 
@@ -305,31 +305,31 @@ TEST(Session, RestartFiresDestroyThenCreateLifecycle) {
 
 namespace scoped_inject_fixture {
 
-struct [[=ctr::session{}]] GameSvc { int id = 42; };
+struct [[=CTORIUM_NAMESPACE::session{}]] GameSvc { int id = 42; };
 
-struct [[=ctr::session{}]]
-       [[=ctr::named{.name = std::define_static_string("primary")}]]
+struct [[=CTORIUM_NAMESPACE::session{}]]
+       [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("primary")}]]
        PrimaryGameSvc { int id = 99; };
 
-struct [[=ctr::singleton{}]] GameConsumer {
-    ctr::Bean<GameSvc> svc;
+struct [[=CTORIUM_NAMESPACE::singleton{}]] GameConsumer {
+    CTORIUM_NAMESPACE::Bean<GameSvc> svc;
     explicit GameConsumer(
-        [[=ctr::scoped{.name = std::define_static_string("game")}]]
-        ctr::Bean<GameSvc> s) : svc(std::move(s)) {}
+        [[=CTORIUM_NAMESPACE::scoped{.name = std::define_static_string("game")}]]
+        CTORIUM_NAMESPACE::Bean<GameSvc> s) : svc(std::move(s)) {}
 };
 
-struct [[=ctr::singleton{}]] NamedGameConsumer {
-    ctr::Bean<PrimaryGameSvc> svc;
+struct [[=CTORIUM_NAMESPACE::singleton{}]] NamedGameConsumer {
+    CTORIUM_NAMESPACE::Bean<PrimaryGameSvc> svc;
     explicit NamedGameConsumer(
-        [[=ctr::scoped{.name = std::define_static_string("game")}]]
-        [[=ctr::named{.name = std::define_static_string("primary")}]]
-        ctr::Bean<PrimaryGameSvc> s) : svc(std::move(s)) {}
+        [[=CTORIUM_NAMESPACE::scoped{.name = std::define_static_string("game")}]]
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("primary")}]]
+        CTORIUM_NAMESPACE::Bean<PrimaryGameSvc> s) : svc(std::move(s)) {}
 };
 
 } // namespace scoped_inject_fixture
 
 TEST(Session, ScopedInjection_HandleIsNullBeforeScopeStart) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-scoped-before-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-scoped-before-start");
     ctx.discover<^^scoped_inject_fixture>().start();
     // GameConsumer is lazy (default singleton): construct it now.
     // The scope "game" has not been started → deferred handle returns nullptr.
@@ -339,7 +339,7 @@ TEST(Session, ScopedInjection_HandleIsNullBeforeScopeStart) {
 }
 
 TEST(Session, ScopedInjection_ResolvesAfterScopeStart) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-scoped-after-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-scoped-after-start");
     ctx.discover<^^scoped_inject_fixture>().start();
     auto& scope = ctx.resolveScope("game");
     scope.start();
@@ -350,7 +350,7 @@ TEST(Session, ScopedInjection_ResolvesAfterScopeStart) {
 }
 
 TEST(Session, ScopedInjection_NullptrWhenScopeStopped) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-scoped-scope-stopped");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-scoped-scope-stopped");
     ctx.discover<^^scoped_inject_fixture>().start();
     auto& scope = ctx.resolveScope("game");
     scope.start();
@@ -362,7 +362,7 @@ TEST(Session, ScopedInjection_NullptrWhenScopeStopped) {
 }
 
 TEST(Session, ScopedNamedInjection_TargetsNamedBean) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-scoped-named");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-scoped-named");
     ctx.discover<^^scoped_inject_fixture>().start();
     auto& scope = ctx.resolveScope("game");
     scope.start();
@@ -385,12 +385,12 @@ struct SessionPolyBase {
     int sentinel = 42;
 };
 
-struct [[=ctr::session{}]] SessionPolyConcrete : public SessionPolyBase {};
+struct [[=CTORIUM_NAMESPACE::session{}]] SessionPolyConcrete : public SessionPolyBase {};
 
 } // namespace session_poly_fixture
 
 TEST(Session, PolymorphicExposureResolvesBase) {
-    auto& ctx = ctr::BeanContext::resolveContext("ss-poly-expose");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ss-poly-expose");
     ctx.discover<^^session_poly_fixture>().start();
     auto& scope = ctx.resolveScope("poly-scope");
     scope.start();

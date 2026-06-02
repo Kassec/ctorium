@@ -2,7 +2,9 @@
 
 #include <cstdint>
 
-namespace ctr::detail {
+#include "../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Scope lifetime governing instance sharing and destruction.
@@ -14,4 +16,4 @@ enum class Lifetime : std::uint8_t {
     ThreadLocal,
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

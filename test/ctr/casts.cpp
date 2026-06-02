@@ -13,16 +13,16 @@ namespace casts_fixture {
 
 struct Base {};
 
-struct [[=ctr::singleton{}]] Impl : Base {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Impl : Base {};
 
-struct [[=ctr::prototype{}]] ProtoType {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] ProtoType {};
 
 } // namespace casts_fixture
 
 // ─── Bean<T>::context() ───────────────────────────────────────────────────────
 
 TEST(BeanCast, ContextReturnsSingletonOwner) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-context-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-context-singleton");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_EQ(&b.context(), &ctx);
@@ -30,7 +30,7 @@ TEST(BeanCast, ContextReturnsSingletonOwner) {
 }
 
 TEST(BeanCast, ContextReturnsPrototypeOwner) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-context-prototype");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-context-prototype");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::ProtoType>();
     EXPECT_EQ(&b.context(), &ctx);
@@ -40,7 +40,7 @@ TEST(BeanCast, ContextReturnsPrototypeOwner) {
 // ─── Bean<T>::exact<U>() ──────────────────────────────────────────────────────
 
 TEST(BeanCast, ExactTrueForOwnType) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-exact-true");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-exact-true");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_TRUE(b.exact<casts_fixture::Impl>());
@@ -48,7 +48,7 @@ TEST(BeanCast, ExactTrueForOwnType) {
 }
 
 TEST(BeanCast, ExactFalseForOtherType) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-exact-false");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-exact-false");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_FALSE(b.exact<casts_fixture::Base>());
@@ -58,7 +58,7 @@ TEST(BeanCast, ExactFalseForOtherType) {
 // ─── Bean<T>::compatible<U>() ─────────────────────────────────────────────────
 
 TEST(BeanCast, CompatibleTrueForExposedType) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-compat-true");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-compat-true");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_TRUE(b.compatible<casts_fixture::Impl>());
@@ -67,7 +67,7 @@ TEST(BeanCast, CompatibleTrueForExposedType) {
 
 TEST(BeanCast, CompatibleFalseForUnrelatedType) {
     // ProtoType is registered but unrelated to Impl — must return false.
-    auto& ctx = ctr::BeanContext::resolveContext("bc-compat-false");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-compat-false");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_FALSE(b.compatible<casts_fixture::ProtoType>());
@@ -77,7 +77,7 @@ TEST(BeanCast, CompatibleFalseForUnrelatedType) {
 // ─── Bean<T>::cast<U>() ───────────────────────────────────────────────────────
 
 TEST(BeanCast, CastToCompatibleSucceeds) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-cast-ok");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-cast-ok");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_NO_THROW({
@@ -88,17 +88,17 @@ TEST(BeanCast, CastToCompatibleSucceeds) {
 }
 
 TEST(BeanCast, CastToIncompatibleThrowsResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-cast-throw");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-cast-throw");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
-    EXPECT_THROW({ (void)b.cast<casts_fixture::ProtoType>(); }, ctr::ResolutionError);
+    EXPECT_THROW({ (void)b.cast<casts_fixture::ProtoType>(); }, CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 // ─── Bean<T>::tryCast<U>() ────────────────────────────────────────────────────
 
 TEST(BeanCast, TryCastToCompatibleReturnsValue) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-trycast-ok");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-trycast-ok");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     auto opt = b.tryCast<casts_fixture::Impl>();
@@ -108,7 +108,7 @@ TEST(BeanCast, TryCastToCompatibleReturnsValue) {
 }
 
 TEST(BeanCast, TryCastToIncompatibleReturnsNullopt) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-trycast-null");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-trycast-null");
     ctx.discover<^^casts_fixture>().start();
     auto b = ctx.resolve<casts_fixture::Impl>();
     EXPECT_FALSE(b.tryCast<casts_fixture::ProtoType>().has_value());
@@ -118,11 +118,11 @@ TEST(BeanCast, TryCastToIncompatibleReturnsNullopt) {
 // ─── Prototype cast retains correctly ─────────────────────────────────────────
 
 TEST(BeanCast, PrototypeCastRetainsRefcount) {
-    auto& ctx = ctr::BeanContext::resolveContext("bc-proto-cast-retain");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bc-proto-cast-retain");
     ctx.discover<^^casts_fixture>().start();
 
     int destroyCount = 0;
-    ctx.on(ctr::onDestroyed, [&](const ctr::AnyBean&) { ++destroyCount; });
+    ctx.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean&) { ++destroyCount; });
 
     {
         auto b1 = ctx.resolve<casts_fixture::ProtoType>();
@@ -140,11 +140,11 @@ TEST(BeanCast, PrototypeCastRetainsRefcount) {
 // ─── AnyBean::context() ───────────────────────────────────────────────────────
 
 TEST(AnyBeanCast, ContextReturnsOwner) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-context");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-context");
     ctx.discover<^^casts_fixture>().start();
 
-    ctr::AnyBean captured;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+    CTORIUM_NAMESPACE::AnyBean captured;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
         if (b.compatible<casts_fixture::Impl>()) captured = b;
     });
     ctx.resolve<casts_fixture::Impl>();
@@ -155,11 +155,11 @@ TEST(AnyBeanCast, ContextReturnsOwner) {
 // ─── AnyBean::exact<U>() / compatible<U>() ───────────────────────────────────
 
 TEST(AnyBeanCast, ExactTrueForConcreteType) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-exact-true");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-exact-true");
     ctx.discover<^^casts_fixture>().start();
 
-    ctr::AnyBean captured;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+    CTORIUM_NAMESPACE::AnyBean captured;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
         if (b.exact<casts_fixture::Impl>()) captured = b;
     });
     ctx.resolve<casts_fixture::Impl>();
@@ -168,11 +168,11 @@ TEST(AnyBeanCast, ExactTrueForConcreteType) {
 }
 
 TEST(AnyBeanCast, CompatibleTrueForExposedType) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-compat-true");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-compat-true");
     ctx.discover<^^casts_fixture>().start();
 
-    ctr::AnyBean captured;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+    CTORIUM_NAMESPACE::AnyBean captured;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
         if (b.compatible<casts_fixture::Impl>()) captured = b;
     });
     ctx.resolve<casts_fixture::Impl>();
@@ -183,11 +183,11 @@ TEST(AnyBeanCast, CompatibleTrueForExposedType) {
 // ─── AnyBean::cast<U>() / tryCast<U>() ───────────────────────────────────────
 
 TEST(AnyBeanCast, CastToCompatibleSucceeds) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-cast-ok");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-cast-ok");
     ctx.discover<^^casts_fixture>().start();
 
-    ctr::AnyBean captured;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+    CTORIUM_NAMESPACE::AnyBean captured;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
         if (b.compatible<casts_fixture::Impl>()) captured = b;
     });
     ctx.resolve<casts_fixture::Impl>();
@@ -196,24 +196,24 @@ TEST(AnyBeanCast, CastToCompatibleSucceeds) {
 }
 
 TEST(AnyBeanCast, CastToIncompatibleThrows) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-cast-throw");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-cast-throw");
     ctx.discover<^^casts_fixture>().start();
 
-    ctr::AnyBean captured;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+    CTORIUM_NAMESPACE::AnyBean captured;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
         if (b.compatible<casts_fixture::Impl>()) captured = b;
     });
     ctx.resolve<casts_fixture::Impl>();
-    EXPECT_THROW({ (void)captured.cast<casts_fixture::ProtoType>(); }, ctr::ResolutionError);
+    EXPECT_THROW({ (void)captured.cast<casts_fixture::ProtoType>(); }, CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(AnyBeanCast, TryCastToIncompatibleReturnsNullopt) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-trycast-null");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-trycast-null");
     ctx.discover<^^casts_fixture>().start();
 
-    ctr::AnyBean captured;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+    CTORIUM_NAMESPACE::AnyBean captured;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
         if (b.compatible<casts_fixture::Impl>()) captured = b;
     });
     ctx.resolve<casts_fixture::Impl>();
@@ -227,27 +227,27 @@ TEST(AnyBeanCast, TryCastToIncompatibleReturnsNullopt) {
 
 namespace poly_single_fixture {
 struct Base { int x = 10; };
-struct [[=ctr::singleton{}]] Impl : Base {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Impl : Base {};
 } // namespace poly_single_fixture
 
 namespace poly_multi_fixture {
 struct B1 { int a = 1; };
 struct B2 { int b = 2; };
-struct [[=ctr::singleton{}]] Impl : B1, B2 {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Impl : B1, B2 {};
 } // namespace poly_multi_fixture
 
 namespace poly_virt_fixture {
 struct VBase { virtual ~VBase() = default; virtual int val() { return 99; } };
-struct [[=ctr::singleton{}]] Impl : virtual VBase {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Impl : virtual VBase {};
 } // namespace poly_virt_fixture
 
 namespace poly_proto_fixture {
 struct PBase { int px = 20; };
-struct [[=ctr::prototype{}]] Impl : PBase {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Impl : PBase {};
 } // namespace poly_proto_fixture
 
 TEST(BeanCast, PolyExposure_SingleInheritance_ResolveBase) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-single");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-single");
     ctx.discover<^^poly_single_fixture>().start();
     auto base = ctx.resolve<poly_single_fixture::Base>();
     EXPECT_NE(base.operator->(), nullptr);
@@ -257,7 +257,7 @@ TEST(BeanCast, PolyExposure_SingleInheritance_ResolveBase) {
 }
 
 TEST(BeanCast, PolyExposure_SameUnderlyingInstance) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-same-instance");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-same-instance");
     ctx.discover<^^poly_single_fixture>().start();
     auto impl = ctx.resolve<poly_single_fixture::Impl>();
     auto base = ctx.resolve<poly_single_fixture::Base>();
@@ -270,7 +270,7 @@ TEST(BeanCast, PolyExposure_SameUnderlyingInstance) {
 }
 
 TEST(BeanCast, PolyExposure_MultipleInheritance_AdjustedPointer) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-multi");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-multi");
     ctx.discover<^^poly_multi_fixture>().start();
     // B2 is the second base — may have a non-zero offset.
     auto b2 = ctx.resolve<poly_multi_fixture::B2>();
@@ -280,7 +280,7 @@ TEST(BeanCast, PolyExposure_MultipleInheritance_AdjustedPointer) {
 }
 
 TEST(BeanCast, PolyExposure_Compatible_Base) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-compat");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-compat");
     ctx.discover<^^poly_single_fixture>().start();
     auto impl = ctx.resolve<poly_single_fixture::Impl>();
     EXPECT_TRUE(impl.compatible<poly_single_fixture::Base>());
@@ -289,7 +289,7 @@ TEST(BeanCast, PolyExposure_Compatible_Base) {
 }
 
 TEST(BeanCast, PolyExposure_CastBetweenBases_B1ToB2) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-cast-b1b2");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-cast-b1b2");
     ctx.discover<^^poly_multi_fixture>().start();
     auto b1 = ctx.resolve<poly_multi_fixture::B1>();
     EXPECT_NE(b1.operator->(), nullptr);
@@ -301,7 +301,7 @@ TEST(BeanCast, PolyExposure_CastBetweenBases_B1ToB2) {
 }
 
 TEST(BeanCast, PolyExposure_VirtualBase_ResolveVBase) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-virtual");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-virtual");
     ctx.discover<^^poly_virt_fixture>().start();
     auto vb = ctx.resolve<poly_virt_fixture::VBase>();
     EXPECT_NE(vb.operator->(), nullptr);
@@ -310,11 +310,11 @@ TEST(BeanCast, PolyExposure_VirtualBase_ResolveVBase) {
 }
 
 TEST(BeanCast, PolyExposure_Prototype_DestructionOnLastHandle) {
-    auto& ctx = ctr::BeanContext::resolveContext("poly-proto-destruct");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("poly-proto-destruct");
     ctx.discover<^^poly_proto_fixture>().start();
 
     int destroyCount = 0;
-    ctx.on(ctr::onDestroyed, [&](const ctr::AnyBean&) { ++destroyCount; });
+    ctx.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean&) { ++destroyCount; });
 
     {
         auto base = ctx.resolve<poly_proto_fixture::PBase>(); // ProtoImpl via alias
@@ -329,15 +329,15 @@ TEST(BeanCast, PolyExposure_Prototype_DestructionOnLastHandle) {
 // ─── AnyBean prototype refcount: copy + destroy fires one destruction ─────────
 
 TEST(AnyBeanCast, PrototypeCopyThenDestroyTriggersOneDestruction) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-proto-refcount");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-proto-refcount");
     ctx.discover<^^casts_fixture>().start();
 
     int destroyCount = 0;
-    ctx.on(ctr::onDestroyed, [&](const ctr::AnyBean&) { ++destroyCount; });
+    ctx.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean&) { ++destroyCount; });
 
     {
-        ctr::AnyBean captured;
-        ctx.on(ctr::onCreated, [&](const ctr::AnyBean& b) {
+        CTORIUM_NAMESPACE::AnyBean captured;
+        ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& b) {
             if (b.compatible<casts_fixture::ProtoType>()) captured = b; // retain
         });
 
@@ -355,43 +355,43 @@ TEST(AnyBeanCast, PrototypeCopyThenDestroyTriggersOneDestruction) {
 
 namespace metadata_fixture {
 
-struct [[=ctr::singleton{}]] MySingleton {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] MySingleton {
     int x = 0;
-    [[=ctr::postConstruct{}]] void init() { ++x; }
+    [[=CTORIUM_NAMESPACE::postConstruct{}]] void init() { ++x; }
 };
 
-struct [[=ctr::prototype{}]] MyProto {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] MyProto {};
 
-struct [[=ctr::session{}]] MySession {};
+struct [[=CTORIUM_NAMESPACE::session{}]] MySession {};
 
 } // namespace metadata_fixture
 
 TEST(BeanMetadata, Lifetime_Singleton) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-lt-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-lt-singleton");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
-    EXPECT_EQ(b.metadata().lifetime(), ctr::detail::Lifetime::Singleton);
+    EXPECT_EQ(b.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Singleton);
     ctx.stop();
 }
 
 TEST(BeanMetadata, Lifetime_Prototype) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-lt-proto");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-lt-proto");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MyProto>();
-    EXPECT_EQ(b.metadata().lifetime(), ctr::detail::Lifetime::Prototype);
+    EXPECT_EQ(b.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Prototype);
     ctx.stop();
 }
 
 TEST(BeanMetadata, Origin_AnnotatedType) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-origin");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-origin");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
-    EXPECT_EQ(b.metadata().origin(), ctr::detail::Origin::AnnotatedType);
+    EXPECT_EQ(b.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::AnnotatedType);
     ctx.stop();
 }
 
 TEST(BeanMetadata, ObservedTypeMatchesExposedType) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-observed-type");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-observed-type");
     ctx.discover<^^metadata_fixture>().start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
     EXPECT_EQ(b.metadata().observedType(), typeid(metadata_fixture::MySingleton));
@@ -399,7 +399,7 @@ TEST(BeanMetadata, ObservedTypeMatchesExposedType) {
 }
 
 TEST(BeanMetadata, Methods_EmptyWithoutRetainAllMetadata) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-methods-empty");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-methods-empty");
     ctx.discover<^^metadata_fixture>().start(); // retainAllMetadata = false (default)
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
     EXPECT_TRUE(b.metadata().methods().empty());
@@ -407,7 +407,7 @@ TEST(BeanMetadata, Methods_EmptyWithoutRetainAllMetadata) {
 }
 
 TEST(BeanMetadata, Methods_RetainedWithRetainAllMetadata) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-methods-retained");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-methods-retained");
     ctx.discover<^^metadata_fixture>({.retainAllMetadata = true}).start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
     auto methods = b.metadata().methods();
@@ -416,10 +416,10 @@ TEST(BeanMetadata, Methods_RetainedWithRetainAllMetadata) {
 }
 
 TEST(BeanMetadata, AnnotatedWith_PostConstruct) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-annotated-postc");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-annotated-postc");
     ctx.discover<^^metadata_fixture>({.retainAllMetadata = true}).start();
     auto b = ctx.resolve<metadata_fixture::MySingleton>();
-    auto filtered = b.metadata().methods().annotatedWith<ctr::postConstruct>();
+    auto filtered = b.metadata().methods().annotatedWith<CTORIUM_NAMESPACE::postConstruct>();
     EXPECT_FALSE(filtered.empty());
     // The filtered range should contain the 'init' method.
     bool found = false;
@@ -432,7 +432,7 @@ TEST(BeanMetadata, AnnotatedWith_PostConstruct) {
 
 TEST(BeanMetadata, ObservedType_BaseHandle) {
     // Via polymorphic exposure: resolve<Base>() → observedType() = Base.
-    auto& ctx = ctr::BeanContext::resolveContext("meta-observed-base");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-observed-base");
     ctx.discover<^^poly_single_fixture>().start();
     auto base = ctx.resolve<poly_single_fixture::Base>();
     EXPECT_EQ(base.metadata().observedType(), typeid(poly_single_fixture::Base));
@@ -441,13 +441,13 @@ TEST(BeanMetadata, ObservedType_BaseHandle) {
 }
 
 TEST(BeanMetadata, Lifetime_Session_Form2) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-lt-session");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-lt-session");
     ctx.discover<^^metadata_fixture>().start();
     auto& scope = ctx.resolveScope("s");
     scope.start();
     // Session handle is Form 2; metadata must still report Lifetime::Session.
     auto s = scope.resolve<metadata_fixture::MySession>();
-    EXPECT_EQ(s.metadata().lifetime(), ctr::detail::Lifetime::Session);
+    EXPECT_EQ(s.metadata().lifetime(), CTORIUM_NAMESPACE::detail::Lifetime::Session);
     ctx.stop();
 }
 
@@ -456,33 +456,33 @@ struct BoundSvc {}; // no Ctorium annotation — will be registered via bindSing
 } // namespace bound_fixture
 
 TEST(BeanMetadata, BoundSingleton_NoyauAvailable) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-bound");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-bound");
     ctx.bindSingleton(std::make_unique<bound_fixture::BoundSvc>()); // pre-start
     ctx.start();
     auto bean = ctx.resolve<bound_fixture::BoundSvc>();
     EXPECT_EQ(bean.metadata().exactType(), typeid(bound_fixture::BoundSvc));
-    EXPECT_EQ(bean.metadata().origin(), ctr::detail::Origin::RuntimeBinding);
+    EXPECT_EQ(bean.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::RuntimeBinding);
     EXPECT_TRUE(bean.metadata().methods().empty()); // no reflective data for runtime bindings
     ctx.stop();
 }
 
 namespace metadata_name_fixture {
 
-struct [[=ctr::singleton{}]] UnnamedService {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] UnnamedService {};
 
-struct [[=ctr::singleton{}]]
-       [[=ctr::named{.name = std::define_static_string("named")}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]]
+       [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("named")}]]
        NamedService {};
 
 } // namespace metadata_name_fixture
 
 TEST(BeanMetadata, NameReportsNamedKeyAndEmptyForUnnamedBean) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-name");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-name");
     ctx.discover<^^metadata_name_fixture>().start();
 
     auto unnamed = ctx.resolve<metadata_name_fixture::UnnamedService>();
     auto named = ctx.resolve<metadata_name_fixture::NamedService>(
-        ctr::named{.name = std::define_static_string("named")});
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("named")});
 
     EXPECT_TRUE(unnamed.metadata().name().empty());
     EXPECT_EQ(named.metadata().name(), std::string_view{"named"});
@@ -492,22 +492,22 @@ TEST(BeanMetadata, NameReportsNamedKeyAndEmptyForUnnamedBean) {
 
 namespace metadata_method_retention_fixture {
 
-struct [[=ctr::singleton{}]] Dep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep {};
 
-struct [[=ctr::singleton{}]] Service {
-    [[=ctr::postConstruct{}]]
-    void init(ctr::Bean<Dep>) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Service {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
+    void init(CTORIUM_NAMESPACE::Bean<Dep>) {}
 };
 
 } // namespace metadata_method_retention_fixture
 
 TEST(BeanMetadata, RetainedAnnotatedMethodsExposeNameAnnotationAndParameterCount) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-method-retained-details");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-method-retained-details");
     ctx.discover<^^metadata_method_retention_fixture>({.retainAllMetadata = true}).start();
 
     auto service = ctx.resolve<metadata_method_retention_fixture::Service>();
     auto postConstructMethods =
-        service.metadata().methods().annotatedWith<ctr::postConstruct>();
+        service.metadata().methods().annotatedWith<CTORIUM_NAMESPACE::postConstruct>();
 
     ASSERT_FALSE(postConstructMethods.empty());
     auto method = *postConstructMethods.begin();
@@ -518,7 +518,7 @@ TEST(BeanMetadata, RetainedAnnotatedMethodsExposeNameAnnotationAndParameterCount
 }
 
 TEST(BeanMetadata, MethodAnnotationObjectAndParameterMetadataAreNotInPublicApi) {
-    auto& ctx = ctr::BeanContext::resolveContext("meta-method-annotation-parameters");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("meta-method-annotation-parameters");
     ctx.discover<^^metadata_method_retention_fixture>({.retainAllMetadata = true}).start();
 
     auto service = ctx.resolve<metadata_method_retention_fixture::Service>();
@@ -526,9 +526,9 @@ TEST(BeanMetadata, MethodAnnotationObjectAndParameterMetadataAreNotInPublicApi) 
     ASSERT_FALSE(methods.empty());
 
     auto method = *methods.begin();
-    auto annotation = method.annotation<ctr::postConstruct>();
+    auto annotation = method.annotation<CTORIUM_NAMESPACE::postConstruct>();
     ASSERT_TRUE(annotation.has_value());
-    EXPECT_FALSE(method.annotation<ctr::preDestroy>().has_value());
+    EXPECT_FALSE(method.annotation<CTORIUM_NAMESPACE::preDestroy>().has_value());
 
     auto parameters = method.parameters();
     ASSERT_EQ(parameters.size(), 1u);
@@ -536,10 +536,10 @@ TEST(BeanMetadata, MethodAnnotationObjectAndParameterMetadataAreNotInPublicApi) 
     EXPECT_EQ(parameters[0].injectedType(), typeid(metadata_method_retention_fixture::Dep));
 
     auto postConstructMethods =
-        service.metadata().methods().annotatedWith<ctr::postConstruct>();
+        service.metadata().methods().annotatedWith<CTORIUM_NAMESPACE::postConstruct>();
     ASSERT_FALSE(postConstructMethods.empty());
     auto postConstructMethod = *postConstructMethods.begin();
-    EXPECT_TRUE(postConstructMethod.annotation<ctr::postConstruct>().has_value());
+    EXPECT_TRUE(postConstructMethod.annotation<CTORIUM_NAMESPACE::postConstruct>().has_value());
     EXPECT_EQ(postConstructMethod.parameters().size(), 1u);
     EXPECT_EQ(postConstructMethod.parameters().size(), postConstructMethod.parameterCount());
 
@@ -548,18 +548,18 @@ TEST(BeanMetadata, MethodAnnotationObjectAndParameterMetadataAreNotInPublicApi) 
 
 namespace anybean_equality_fixture {
 
-struct [[=ctr::singleton{}]] First {};
-struct [[=ctr::singleton{}]] Second {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] First {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Second {};
 
 } // namespace anybean_equality_fixture
 
 TEST(AnyBeanCast, EqualityComparesLogicalBeanIdentity) {
-    auto& ctx = ctr::BeanContext::resolveContext("ab-equality");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ab-equality");
     ctx.discover<^^anybean_equality_fixture>().start();
 
-    ctr::AnyBean first;
-    ctr::AnyBean second;
-    ctx.on(ctr::onCreated, [&](const ctr::AnyBean& bean) {
+    CTORIUM_NAMESPACE::AnyBean first;
+    CTORIUM_NAMESPACE::AnyBean second;
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& bean) {
         if (bean.compatible<anybean_equality_fixture::First>()) {
             first = bean;
         } else if (bean.compatible<anybean_equality_fixture::Second>()) {
@@ -570,7 +570,7 @@ TEST(AnyBeanCast, EqualityComparesLogicalBeanIdentity) {
     (void)ctx.resolve<anybean_equality_fixture::First>();
     (void)ctx.resolve<anybean_equality_fixture::Second>();
 
-    ctr::AnyBean sameFirst = first;
+    CTORIUM_NAMESPACE::AnyBean sameFirst = first;
 
     EXPECT_EQ(first, sameFirst);
     EXPECT_NE(first, second);

@@ -21,8 +21,8 @@ struct Product {
 
 using RuntimeProduct = Product<ProductTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]] RuntimeProduct make() {
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]] RuntimeProduct make() {
         ++makeCallCount;
         return RuntimeProduct{};
     }
@@ -35,7 +35,7 @@ struct [[=ctr::factory{}]] Factory {
 // ─── Factory runtime tests ────────────────────────────────────────────────────
 
 TEST(Factory, FactoryProducedBeanResolvable) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-resolve");
     ctx.discover<^^factory_rt_fixture>().start();
     auto bean = ctx.resolve<factory_rt_fixture::RuntimeProduct>();
     EXPECT_NE(bean.operator->(), nullptr);
@@ -43,7 +43,7 @@ TEST(Factory, FactoryProducedBeanResolvable) {
 }
 
 TEST(Factory, FactoryProducedBeanIsSingleton) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-singleton");
     ctx.discover<^^factory_rt_fixture>().start();
     auto b1 = ctx.resolve<factory_rt_fixture::RuntimeProduct>();
     auto b2 = ctx.resolve<factory_rt_fixture::RuntimeProduct>();
@@ -54,7 +54,7 @@ TEST(Factory, FactoryProducedBeanIsSingleton) {
 TEST(Factory, FactoryMethodCalledExactlyOnce) {
     factory_rt_fixture::Factory::makeCallCount.store(0, std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-make-once");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-make-once");
     ctx.discover<^^factory_rt_fixture>().start();
     auto b1 = ctx.resolve<factory_rt_fixture::RuntimeProduct>();
     auto b2 = ctx.resolve<factory_rt_fixture::RuntimeProduct>();
@@ -70,8 +70,8 @@ namespace factory_singleton_handle_fixture {
 
 std::atomic<int> postConstructCount{0};
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::postConstruct{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void init() {
         postConstructCount.fetch_add(1, std::memory_order_relaxed);
     }
@@ -82,7 +82,7 @@ struct [[=ctr::factory{}]] Factory {
 TEST(Factory, ResolveFactoryReturnsSingletonHandle) {
     factory_singleton_handle_fixture::postConstructCount.store(0, std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-factory-singleton-handle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-factory-singleton-handle");
     ctx.discover<^^factory_singleton_handle_fixture>().start();
 
     auto first = ctx.resolve<factory_singleton_handle_fixture::Factory>();
@@ -99,19 +99,19 @@ TEST(Factory, ResolveFactoryReturnsSingletonHandle) {
 
 namespace factory_constructor_injection_fixture {
 
-struct [[=ctr::singleton{}]] Dep {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep {
     int value = 7;
 };
 
-struct [[=ctr::factory{}]] Factory {
-    ctr::Bean<Dep> dep;
-    explicit Factory(ctr::Bean<Dep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    CTORIUM_NAMESPACE::Bean<Dep> dep;
+    explicit Factory(CTORIUM_NAMESPACE::Bean<Dep> d) : dep(std::move(d)) {}
 };
 
 } // namespace factory_constructor_injection_fixture
 
 TEST(Factory, FactoryConstructorReceivesCtoriumDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-factory-constructor-injection");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-factory-constructor-injection");
     ctx.discover<^^factory_constructor_injection_fixture>().start();
 
     auto dep = ctx.resolve<factory_constructor_injection_fixture::Dep>();
@@ -137,15 +137,15 @@ struct Product {
 using ReturnFormsProduct = Product<ReturnFormsTag>;
 using UniquePtrProduct = Product<UniquePtrTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("value")}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("value")}]]
     ReturnFormsProduct makeValue() {
         return ReturnFormsProduct{.value = 1};
     }
 
-    [[=ctr::prototype{}]]
-    [[=ctr::named{.name = std::define_static_string("unique")}]]
+    [[=CTORIUM_NAMESPACE::prototype{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("unique")}]]
     std::unique_ptr<UniquePtrProduct> makeUnique() {
         return std::make_unique<UniquePtrProduct>(UniquePtrProduct{.value = 2});
     }
@@ -154,11 +154,11 @@ struct [[=ctr::factory{}]] Factory {
 } // namespace factory_return_forms_fixture
 
 TEST(Factory, ValueProducerReturnFormIsResolvableByName) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-value-return-form");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-value-return-form");
     ctx.discover<^^factory_return_forms_fixture>().start();
 
     auto valueProduct = ctx.resolve<factory_return_forms_fixture::ReturnFormsProduct>(
-        ctr::named{.name = std::define_static_string("value")});
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("value")});
 
     ASSERT_NE(valueProduct.operator->(), nullptr);
     EXPECT_EQ(valueProduct->value, 1);
@@ -167,13 +167,13 @@ TEST(Factory, ValueProducerReturnFormIsResolvableByName) {
 }
 
 TEST(Factory, UniquePtrProducerReturnFormIsBlockedByCurrentDescriptorGeneration) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-unique-ptr-return-form");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-unique-ptr-return-form");
     ctx.discover<^^factory_return_forms_fixture>().start();
 
     auto first = ctx.resolve<factory_return_forms_fixture::UniquePtrProduct>(
-        ctr::named{.name = std::define_static_string("unique")});
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("unique")});
     auto second = ctx.resolve<factory_return_forms_fixture::UniquePtrProduct>(
-        ctr::named{.name = std::define_static_string("unique")});
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("unique")});
 
     ASSERT_NE(first.operator->(), nullptr);
     ASSERT_NE(second.operator->(), nullptr);
@@ -186,7 +186,7 @@ TEST(Factory, UniquePtrProducerReturnFormIsBlockedByCurrentDescriptorGeneration)
 
 namespace factory_product_param_injection_fixture {
 
-struct [[=ctr::singleton{}]] Dep {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep {
     int value = 11;
 };
 
@@ -214,57 +214,57 @@ struct NamedProduct {
 };
 
 struct ScopedProduct {
-    ctr::Bean<ScopedDep> dep;
+    CTORIUM_NAMESPACE::Bean<ScopedDep> dep;
 };
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
-    ValueProduct makeValue(ctr::Bean<Dep> dep) {
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    ValueProduct makeValue(CTORIUM_NAMESPACE::Bean<Dep> dep) {
         return ValueProduct{.dep = dep.operator->(), .value = dep->value};
     }
 
-    [[=ctr::prototype{}]]
-    std::unique_ptr<UniqueProduct> makeUnique(ctr::Bean<Dep> dep) {
+    [[=CTORIUM_NAMESPACE::prototype{}]]
+    std::unique_ptr<UniqueProduct> makeUnique(CTORIUM_NAMESPACE::Bean<Dep> dep) {
         return std::make_unique<UniqueProduct>(
             UniqueProduct{.dep = dep.operator->(), .value = dep->value});
     }
 
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("primary")}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("primary")}]]
     NamedDep makePrimaryNamed() {
         return NamedDep{.value = 21};
     }
 
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("secondary")}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("secondary")}]]
     NamedDep makeSecondaryNamed() {
         return NamedDep{.value = 22};
     }
 
-    [[=ctr::singleton{}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
     NamedProduct makeNamed(
-        [[=ctr::named{.name = std::define_static_string("secondary")}]]
-        ctr::Bean<NamedDep> dep) {
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("secondary")}]]
+        CTORIUM_NAMESPACE::Bean<NamedDep> dep) {
         return NamedProduct{.dep = dep.operator->(), .value = dep->value};
     }
 
-    [[=ctr::session{}]]
-    [[=ctr::named{.name = std::define_static_string("primary")}]]
+    [[=CTORIUM_NAMESPACE::session{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("primary")}]]
     ScopedDep makePrimaryScoped() {
         return ScopedDep{.value = 31};
     }
 
-    [[=ctr::session{}]]
-    [[=ctr::named{.name = std::define_static_string("secondary")}]]
+    [[=CTORIUM_NAMESPACE::session{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("secondary")}]]
     ScopedDep makeSecondaryScoped() {
         return ScopedDep{.value = 32};
     }
 
-    [[=ctr::singleton{}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
     ScopedProduct makeScopedNamed(
-        [[=ctr::scoped{.name = std::define_static_string("factory-product-param-scope")}]]
-        [[=ctr::named{.name = std::define_static_string("primary")}]]
-        ctr::Bean<ScopedDep> dep) {
+        [[=CTORIUM_NAMESPACE::scoped{.name = std::define_static_string("factory-product-param-scope")}]]
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("primary")}]]
+        CTORIUM_NAMESPACE::Bean<ScopedDep> dep) {
         return ScopedProduct{.dep = std::move(dep)};
     }
 };
@@ -272,7 +272,7 @@ struct [[=ctr::factory{}]] Factory {
 } // namespace factory_product_param_injection_fixture
 
 TEST(Factory, ValueProducerReceivesInjectedParameter) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-value-producer-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-value-producer-param");
     ctx.discover<^^factory_product_param_injection_fixture>().start();
 
     auto product = ctx.resolve<factory_product_param_injection_fixture::ValueProduct>();
@@ -286,7 +286,7 @@ TEST(Factory, ValueProducerReceivesInjectedParameter) {
 }
 
 TEST(Factory, UniquePtrProducerReceivesInjectedParameter) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-unique-producer-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-unique-producer-param");
     ctx.discover<^^factory_product_param_injection_fixture>().start();
 
     auto first = ctx.resolve<factory_product_param_injection_fixture::UniqueProduct>();
@@ -304,14 +304,14 @@ TEST(Factory, UniquePtrProducerReceivesInjectedParameter) {
 }
 
 TEST(Factory, NamedProducerParameterSelectsNamedCandidate) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-named-producer-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-named-producer-param");
     ctx.discover<^^factory_product_param_injection_fixture>().start();
 
     auto product = ctx.resolve<factory_product_param_injection_fixture::NamedProduct>();
     auto primary = ctx.resolve<factory_product_param_injection_fixture::NamedDep>(
-        ctr::named{"primary"});
+        CTORIUM_NAMESPACE::named{"primary"});
     auto secondary = ctx.resolve<factory_product_param_injection_fixture::NamedDep>(
-        ctr::named{"secondary"});
+        CTORIUM_NAMESPACE::named{"secondary"});
 
     ASSERT_NE(product.operator->(), nullptr);
     EXPECT_EQ(product->dep, secondary.operator->());
@@ -322,16 +322,16 @@ TEST(Factory, NamedProducerParameterSelectsNamedCandidate) {
 }
 
 TEST(Factory, ScopedNamedProducerParameterUsesDeferredScopedHandle) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-scoped-named-producer-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-scoped-named-producer-param");
     ctx.discover<^^factory_product_param_injection_fixture>().start();
     auto& scope = ctx.resolveScope("factory-product-param-scope");
     scope.start();
 
     auto product = ctx.resolve<factory_product_param_injection_fixture::ScopedProduct>();
     auto primary = scope.resolve<factory_product_param_injection_fixture::ScopedDep>(
-        ctr::named{"primary"});
+        CTORIUM_NAMESPACE::named{"primary"});
     auto secondary = scope.resolve<factory_product_param_injection_fixture::ScopedDep>(
-        ctr::named{"secondary"});
+        CTORIUM_NAMESPACE::named{"secondary"});
 
     ASSERT_NE(product.operator->(), nullptr);
     EXPECT_EQ(product->dep.operator->(), primary.operator->());
@@ -348,11 +348,11 @@ namespace factory_product_hook_bean {
 std::atomic<int> postConstructCount{0};
 std::atomic<int> preDestroyCount{0};
 
-struct [[=ctr::singleton{}]] BeanHookedProduct {
-    [[=ctr::postConstruct{}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]] BeanHookedProduct {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void init();
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void cleanup();
 };
 
@@ -376,10 +376,10 @@ struct PlainTag {};
 
 template<typename>
 struct HookedProduct {
-    [[=ctr::postConstruct{}]]
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void init();
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void cleanup();
 };
 
@@ -402,21 +402,21 @@ struct PlainProduct {};
 using Hooked = HookedProduct<HookedTag>;
 using Plain = PlainProduct<PlainTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("hooked")}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("hooked")}]]
     Hooked makeHooked() {
         return Hooked{};
     }
 
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("plain")}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("plain")}]]
     Plain makePlain() {
         return Plain{};
     }
 
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("bean-hooked")}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("bean-hooked")}]]
     factory_product_hook_bean::BeanHookedProduct makeBeanHooked() {
         return factory_product_hook_bean::BeanHookedProduct{};
     }
@@ -430,16 +430,16 @@ TEST(Factory, FactoryProductHooksExecuteOnlyWhenProductIsABean) {
     factory_product_hook_bean::postConstructCount.store(0, std::memory_order_relaxed);
     factory_product_hook_bean::preDestroyCount.store(0, std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-product-hooks");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-product-hooks");
     ctx.discover<^^factory_product_hook_fixture>().start();
 
     {
         auto hooked = ctx.resolve<factory_product_hook_fixture::Hooked>(
-            ctr::named{.name = std::define_static_string("hooked")});
+            CTORIUM_NAMESPACE::named{.name = std::define_static_string("hooked")});
         auto plain = ctx.resolve<factory_product_hook_fixture::Plain>(
-            ctr::named{.name = std::define_static_string("plain")});
+            CTORIUM_NAMESPACE::named{.name = std::define_static_string("plain")});
         auto beanHooked = ctx.resolve<factory_product_hook_bean::BeanHookedProduct>(
-            ctr::named{.name = std::define_static_string("bean-hooked")});
+            CTORIUM_NAMESPACE::named{.name = std::define_static_string("bean-hooked")});
         EXPECT_NE(hooked.operator->(), nullptr);
         EXPECT_NE(plain.operator->(), nullptr);
         EXPECT_NE(beanHooked.operator->(), nullptr);
@@ -479,13 +479,13 @@ struct SessionProduct {};
 using Prototype = PrototypeProduct<PrototypeTag>;
 using Session = SessionProduct<SessionTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::prototype{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::prototype{}]]
     Prototype makePrototype() {
         return Prototype{};
     }
 
-    [[=ctr::session{}]]
+    [[=CTORIUM_NAMESPACE::session{}]]
     Session makeSession() {
         return Session{};
     }
@@ -494,7 +494,7 @@ struct [[=ctr::factory{}]] Factory {
 } // namespace factory_product_lifetime_fixture
 
 TEST(Factory, PrototypeProducerCreatesDistinctInstances) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-prototype-product");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-prototype-product");
     ctx.discover<^^factory_product_lifetime_fixture>().start();
 
     auto first = ctx.resolve<factory_product_lifetime_fixture::Prototype>();
@@ -508,7 +508,7 @@ TEST(Factory, PrototypeProducerCreatesDistinctInstances) {
 }
 
 TEST(Factory, SessionProducerCreatesOneInstancePerScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-session-product");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-session-product");
     ctx.discover<^^factory_product_lifetime_fixture>().start();
     auto& firstScope = ctx.resolveScope("factory-session-a");
     auto& secondScope = ctx.resolveScope("factory-session-b");
@@ -539,8 +539,8 @@ using SessionProduct = Product<ProductTag>;
 
 std::atomic<int> destroyedCount{0};
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::session{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::session{}]]
     SessionProduct make() {
         makeCallCount.fetch_add(1, std::memory_order_relaxed);
         return SessionProduct{};
@@ -556,7 +556,7 @@ TEST(Factory, SessionFactoryProductResolveFromStartedScopeReturnsInstance) {
         0,
         std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-session-factory-product-resolve");
     ctx.discover<^^factory_session_product_fixture>().start();
     auto& scope = ctx.resolveScope("session-factory-product-resolve");
     scope.start();
@@ -577,7 +577,7 @@ TEST(Factory, SessionFactoryProductSameScopeReturnsSameInstance) {
         0,
         std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-same-scope");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-session-factory-product-same-scope");
     ctx.discover<^^factory_session_product_fixture>().start();
     auto& scope = ctx.resolveScope("session-factory-product-same-scope");
     scope.start();
@@ -600,7 +600,7 @@ TEST(Factory, SessionFactoryProductDistinctScopesReturnDistinctInstances) {
         0,
         std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-distinct-scopes");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-session-factory-product-distinct-scopes");
     ctx.discover<^^factory_session_product_fixture>().start();
     auto& firstScope = ctx.resolveScope("session-factory-product-first");
     auto& secondScope = ctx.resolveScope("session-factory-product-second");
@@ -626,12 +626,12 @@ TEST(Factory, SessionFactoryProductResolveFromRootRaisesContextStateError) {
         0,
         std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-root-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-session-factory-product-root-resolve");
     ctx.discover<^^factory_session_product_fixture>().start();
 
     EXPECT_THROW(
         ctx.resolve<factory_session_product_fixture::SessionProduct>(),
-        ctr::ContextStateError);
+        CTORIUM_NAMESPACE::ContextStateError);
     EXPECT_EQ(
         factory_session_product_fixture::Factory::makeCallCount.load(
             std::memory_order_relaxed),
@@ -648,11 +648,11 @@ TEST(Factory, SessionFactoryProductScopeStopDestroysInstance) {
         0,
         std::memory_order_relaxed);
 
-    auto& ctx = ctr::BeanContext::resolveContext("ft-session-factory-product-stop-destroys");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-session-factory-product-stop-destroys");
     ctx.discover<^^factory_session_product_fixture>().start();
     ctx.on<factory_session_product_fixture::SessionProduct>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<factory_session_product_fixture::SessionProduct>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<factory_session_product_fixture::SessionProduct>&) {
             factory_session_product_fixture::destroyedCount.fetch_add(
                 1,
                 std::memory_order_relaxed);
@@ -690,8 +690,8 @@ struct Product {};
 
 using ListenerProduct = Product<ProductTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::prototype{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::prototype{}]]
     ListenerProduct make() {
         return ListenerProduct{};
     }
@@ -700,7 +700,7 @@ struct [[=ctr::factory{}]] Factory {
 } // namespace factory_product_listener_fixture
 
 TEST(Factory, FactoryProductListenerPhasesFireInStandardOrder) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-product-listener-phases");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-product-listener-phases");
     ctx.discover<^^factory_product_listener_fixture>().start();
 
     int phase = 0;
@@ -710,23 +710,23 @@ TEST(Factory, FactoryProductListenerPhasesFireInStandardOrder) {
     int destroyed = 0;
 
     ctx.on<factory_product_listener_fixture::ListenerProduct>(
-        ctr::onInitialized,
-        [&](const ctr::Bean<factory_product_listener_fixture::ListenerProduct>&) {
+        CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<factory_product_listener_fixture::ListenerProduct>&) {
             initialized = ++phase;
         });
     ctx.on<factory_product_listener_fixture::ListenerProduct>(
-        ctr::onCreated,
-        [&](const ctr::Bean<factory_product_listener_fixture::ListenerProduct>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<factory_product_listener_fixture::ListenerProduct>&) {
             created = ++phase;
         });
     ctx.on<factory_product_listener_fixture::ListenerProduct>(
-        ctr::onPreDestroy,
-        [&](const ctr::Bean<factory_product_listener_fixture::ListenerProduct>&) {
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<factory_product_listener_fixture::ListenerProduct>&) {
             preDestroy = ++phase;
         });
     ctx.on<factory_product_listener_fixture::ListenerProduct>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<factory_product_listener_fixture::ListenerProduct>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<factory_product_listener_fixture::ListenerProduct>&) {
             destroyed = ++phase;
         });
 
@@ -752,10 +752,10 @@ struct Product {};
 
 using MetadataProduct = Product<ProductTag>;
 
-struct [[=ctr::singleton{}]] OrdinaryBean {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] OrdinaryBean {};
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
     MetadataProduct make() {
         return MetadataProduct{};
     }
@@ -764,26 +764,26 @@ struct [[=ctr::factory{}]] Factory {
 } // namespace factory_product_metadata_fixture
 
 TEST(Factory, FactoryProductMetadataOriginIsFactoryProduct) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-product-metadata-origin");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-product-metadata-origin");
     ctx.discover<^^factory_product_metadata_fixture>().start();
 
     auto product = ctx.resolve<factory_product_metadata_fixture::MetadataProduct>();
 
-    EXPECT_EQ(product.metadata().origin(), ctr::detail::Origin::FactoryProduct);
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::FactoryProduct);
 
     ctx.stop();
 }
 
 TEST(Factory, FactoryProductMetadataFactoryMethodIsNotInPublicApi) {
-    auto& ctx = ctr::BeanContext::resolveContext("ft-product-metadata-factory-method");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-product-metadata-factory-method");
     ctx.discover<^^factory_product_metadata_fixture>().start();
 
     auto product = ctx.resolve<factory_product_metadata_fixture::MetadataProduct>();
     auto ordinary = ctx.resolve<factory_product_metadata_fixture::OrdinaryBean>();
 
-    EXPECT_EQ(product.metadata().origin(), ctr::detail::Origin::FactoryProduct);
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::FactoryProduct);
     EXPECT_EQ(product.metadata().factoryMethod(), std::string_view{"make"});
-    EXPECT_EQ(ordinary.metadata().origin(), ctr::detail::Origin::AnnotatedType);
+    EXPECT_EQ(ordinary.metadata().origin(), CTORIUM_NAMESPACE::detail::Origin::AnnotatedType);
     EXPECT_TRUE(ordinary.metadata().factoryMethod().empty());
 
     ctx.stop();

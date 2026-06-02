@@ -1,6 +1,8 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 // ─────────────────────────────────────────────────────────────────────────────
 // Polymorphic-exposure helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,7 +138,7 @@ auto injectParam(ResolutionContext& ctx) {
     static constexpr bool kHasScoped = []{
         template for (constexpr auto ann : kAnns) {
             if constexpr (std::meta::is_same_type(
-                    std::meta::remove_const(std::meta::type_of(ann)), ^^ctr::scoped)) {
+                    std::meta::remove_const(std::meta::type_of(ann)), ^^CTORIUM_NAMESPACE::scoped)) {
                 return true;
             }
         }
@@ -146,7 +148,7 @@ auto injectParam(ResolutionContext& ctx) {
     static constexpr bool kHasNamed = []{
         template for (constexpr auto ann : kAnns) {
             if constexpr (std::meta::is_same_type(
-                    std::meta::remove_const(std::meta::type_of(ann)), ^^ctr::named)) {
+                    std::meta::remove_const(std::meta::type_of(ann)), ^^CTORIUM_NAMESPACE::named)) {
                 return true;
             }
         }
@@ -161,8 +163,8 @@ auto injectParam(ResolutionContext& ctx) {
         static constexpr const char* kScopeNameStr = []{
             template for (constexpr auto ann : kAnns) {
                 if constexpr (std::meta::is_same_type(
-                        std::meta::remove_const(std::meta::type_of(ann)), ^^ctr::scoped)) {
-                    return std::meta::extract<ctr::scoped>(ann).name;
+                        std::meta::remove_const(std::meta::type_of(ann)), ^^CTORIUM_NAMESPACE::scoped)) {
+                    return std::meta::extract<CTORIUM_NAMESPACE::scoped>(ann).name;
                 }
             }
             return static_cast<const char*>(nullptr);
@@ -179,8 +181,8 @@ auto injectParam(ResolutionContext& ctx) {
             static constexpr const char* kCandidateNameStr = []{
                 template for (constexpr auto ann : kAnns) {
                     if constexpr (std::meta::is_same_type(
-                            std::meta::remove_const(std::meta::type_of(ann)), ^^ctr::named)) {
-                        return std::meta::extract<ctr::named>(ann).name;
+                            std::meta::remove_const(std::meta::type_of(ann)), ^^CTORIUM_NAMESPACE::named)) {
+                        return std::meta::extract<CTORIUM_NAMESPACE::named>(ann).name;
                     }
                 }
                 return static_cast<const char*>(nullptr);
@@ -195,7 +197,7 @@ auto injectParam(ResolutionContext& ctx) {
                     kCandidateNameStr ? std::string_view{kCandidateNameStr}
                                       : std::string_view{});
                 if (candidateNameId == kInvalidNameId) {
-                    throw ctr::ResolutionError(
+                    throw CTORIUM_NAMESPACE::ResolutionError(
                         std::string("injectParam: unknown named qualifier '")
                         + std::string(kCandidateNameStr ? kCandidateNameStr : "") + "'.");
                 }
@@ -208,7 +210,7 @@ auto injectParam(ResolutionContext& ctx) {
 
         const TypeId targetTypeId = ctx.registry.typeIdFor<U>();
         if (targetTypeId == kInvalidTypeId) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "Registry::resolve: the requested type was not registered in "
                 "this context via discover<>() or bindSingleton()."
                 );
@@ -216,7 +218,7 @@ auto injectParam(ResolutionContext& ctx) {
         const auto* candidates =
             ctx.registry.typeIndex().candidatesFor(targetTypeId, candidateNameId);
         if (!candidates || candidates->empty()) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "Registry::resolve: no bean registered for the requested "
                 "type and named key."
                 );
@@ -224,7 +226,7 @@ auto injectParam(ResolutionContext& ctx) {
         if (candidates->size() >= 2
             && ctx.registry.descriptorTable().at((*candidates)[0]).priority
                 == ctx.registry.descriptorTable().at((*candidates)[1]).priority) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "Registry::resolve: ambiguous resolution — two candidates share "
                 "the highest priority for the requested type and named key."
                 );
@@ -236,8 +238,8 @@ auto injectParam(ResolutionContext& ctx) {
         static constexpr const char* kNameStr = []{
             template for (constexpr auto ann : kAnns) {
                 if constexpr (std::meta::is_same_type(
-                        std::meta::remove_const(std::meta::type_of(ann)), ^^ctr::named)) {
-                    return std::meta::extract<ctr::named>(ann).name;
+                        std::meta::remove_const(std::meta::type_of(ann)), ^^CTORIUM_NAMESPACE::named)) {
+                    return std::meta::extract<CTORIUM_NAMESPACE::named>(ann).name;
                 }
             }
             return static_cast<const char*>(nullptr);
@@ -253,7 +255,7 @@ auto injectParam(ResolutionContext& ctx) {
             nid = ctx.registry.nameInterning().lookup(
                 kNameStr ? std::string_view{kNameStr} : std::string_view{});
             if (nid == kInvalidNameId) {
-                throw ctr::ResolutionError(
+                throw CTORIUM_NAMESPACE::ResolutionError(
                     std::string("injectParam: unknown named qualifier '")
                     + std::string(kNameStr ? kNameStr : "") + "'.");
             }
@@ -300,12 +302,12 @@ consteval std::vector<ContributedParamDescriptor> makeParamDescriptors() {
         const char* scopeName = std::define_static_string(std::string_view{""});
         template for (constexpr auto ann : panns) {
             constexpr auto t = std::meta::remove_const(std::meta::type_of(ann));
-            if constexpr (std::meta::is_same_type(t, ^^ctr::scoped)) {
+            if constexpr (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::scoped)) {
                 hasScopedAnn = true;
-                constexpr auto v = std::meta::extract<ctr::scoped>(ann);
+                constexpr auto v = std::meta::extract<CTORIUM_NAMESPACE::scoped>(ann);
                 scopeName = std::define_static_string(
                     std::string_view{(v.name != nullptr) ? v.name : ""});
-            } else if constexpr (std::meta::is_same_type(t, ^^ctr::named)) {
+            } else if constexpr (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::named)) {
                 hasNamedAnn = true;
             }
         }
@@ -356,7 +358,7 @@ consteval bool isBeanType(std::meta::info paramType) {
     if (!std::meta::is_type(d) || !std::meta::is_class_type(d)) return false;
     const auto args = std::meta::template_arguments_of(d);
     if (args.size() != 1) return false;
-    return std::meta::template_of(d) == ^^ctr::Bean;
+    return std::meta::template_of(d) == ^^CTORIUM_NAMESPACE::Bean;
 }
 
 struct HookList {
@@ -506,10 +508,10 @@ consteval void scanMembersOfType(
             }
         } else if (!std::meta::is_type(m)
                    && !std::meta::is_special_member_function(m)) {
-            if (memberHasAnnotationOfType(m, ^^ctr::postConstruct)) {
+            if (memberHasAnnotationOfType(m, ^^CTORIUM_NAMESPACE::postConstruct)) {
                 postConstructHooks.push_back(m);
             }
-            if (memberHasAnnotationOfType(m, ^^ctr::preDestroy)) {
+            if (memberHasAnnotationOfType(m, ^^CTORIUM_NAMESPACE::preDestroy)) {
                 preDestroyHooks.push_back(m);
             }
         }
@@ -686,7 +688,7 @@ consteval bool isRetainedBeanParameter() {
         try {
             const auto args = std::meta::template_arguments_of(d);
             if (args.size() != 1) return false;
-            return std::meta::template_of(d) == ^^ctr::Bean;
+            return std::meta::template_of(d) == ^^CTORIUM_NAMESPACE::Bean;
         } catch (...) {
             return false;
         }
@@ -703,10 +705,10 @@ consteval std::meta::info retainedParameterType() {
 }
 
 template<std::meta::info Method>
-consteval std::vector<ctr::BeanParameterRecord> makeMethodParameterRecords() {
+consteval std::vector<CTORIUM_NAMESPACE::BeanParameterRecord> makeMethodParameterRecords() {
     static constexpr auto kParams =
         std::define_static_array(std::meta::parameters_of(Method));
-    std::vector<ctr::BeanParameterRecord> result;
+    std::vector<CTORIUM_NAMESPACE::BeanParameterRecord> result;
     result.reserve(kParams.size());
     template for (constexpr auto p : kParams) {
         constexpr auto paramType = std::meta::dealias(std::meta::type_of(p));
@@ -727,4 +729,4 @@ consteval bool hasRetainedParameterList() {
     }
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

@@ -1,6 +1,8 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::materializeOne<T>
     //
@@ -11,26 +13,26 @@ namespace ctr::detail {
     auto Registry::materializeOne(
         DescriptorId descId, ResolutionContext &ctx
         )
-        -> ctr::Bean<T> {
+        -> CTORIUM_NAMESPACE::Bean<T> {
         const MaterializedBeanHandle handle = materializeOneImpl(descId, ctx);
         switch (handle.form()) {
         case MaterializedHandleForm::Direct:
-            return ctr::Bean<T>::makeDirect(
+            return CTORIUM_NAMESPACE::Bean<T>::makeDirect(
                 static_cast<T *>(handle.instance()),
                 handle.slot(),
                 handle.descId(),
                 this
                 );
         case MaterializedHandleForm::Proxy:
-            return ctr::Bean<T>::makeProxy(
+            return CTORIUM_NAMESPACE::Bean<T>::makeProxy(
                 handle.scopeNameId(),
                 handle.descId(),
                 this);
         case MaterializedHandleForm::ThreadLocal:
-            return ctr::Bean<T>::makeThreadLocal(handle.descId(), this);
+            return CTORIUM_NAMESPACE::Bean<T>::makeThreadLocal(handle.descId(), this);
         }
 
-        throw ctr::ConfigurationError("Registry::resolve: unhandled materialized handle form.");
+        throw CTORIUM_NAMESPACE::ConfigurationError("Registry::resolve: unhandled materialized handle form.");
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -46,7 +48,7 @@ namespace ctr::detail {
 
     inline void *Registry::materializeSessionInstance(
         DescriptorId descId,
-        ctr::ScopedContext *scope,
+        CTORIUM_NAMESPACE::ScopedContext *scope,
         ResolutionContext &ctx
         ) {
         const Descriptor &requestedDesc = descriptors_.at(descId);
@@ -70,7 +72,7 @@ namespace ctr::detail {
         // RuntimeBinding session beans must be pre-stored in sessionStore_ at
         // scope start(). A nil slot means the binding was not renewed for this cycle.
         if (cold.origin == Origin::RuntimeBinding) {
-            throw ctr::ContextStateError(
+            throw CTORIUM_NAMESPACE::ContextStateError(
                 "Registry::materializeSessionInstance: bound session bean has no "
                 "instance for this scope cycle; call bindSession<T>() before start()."
                 );
@@ -148,7 +150,7 @@ namespace ctr::detail {
             instance = mem;
 
             // Lifecycle dispatch outside lock: onInitialized → postConstruct → onCreated.
-            ctr::AnyBean anyBean;
+            CTORIUM_NAMESPACE::AnyBean anyBean;
             anyBean.object_ = instance;
             anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
             anyBean.bits_.f1.descId = primaryDescId;
@@ -231,7 +233,7 @@ namespace ctr::detail {
     // Called from ScopedContext::stop().
     // ─────────────────────────────────────────────────────────────────────────────
 
-    inline void Registry::stopScope(ctr::ScopedContext &scope) noexcept {
+    inline void Registry::stopScope(CTORIUM_NAMESPACE::ScopedContext &scope) noexcept {
         // A5: mark scope stopped and capture insertion order under writeLock_, then
         // release the lock before calling executeDestructionLifecycle so that listener
         // callbacks triggered during destruction can call registry operations without
@@ -256,4 +258,4 @@ namespace ctr::detail {
         scope.sessionStore_.releaseAll();
     }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

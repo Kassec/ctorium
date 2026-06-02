@@ -4,9 +4,11 @@
 #include <meta>
 #include <vector>
 
+#include "../api/ctr/Config.hpp"
+
 #include <ctr/Markers.hpp>
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Classification of a compile-time entity discovered during enumeration.
@@ -57,15 +59,15 @@ consteval bool hasAnnotationOfType(std::meta::info entity, std::meta::info marke
 
 /** Returns true when @p entity carries at least one lifetime-marker annotation. */
 consteval bool hasLifetimeMarker(std::meta::info entity) {
-    return hasAnnotationOfType(entity, ^^ctr::singleton)
-        || hasAnnotationOfType(entity, ^^ctr::prototype)
-        || hasAnnotationOfType(entity, ^^ctr::session)
-        || hasAnnotationOfType(entity, ^^ctr::threadLocal);
+    return hasAnnotationOfType(entity, ^^CTORIUM_NAMESPACE::singleton)
+        || hasAnnotationOfType(entity, ^^CTORIUM_NAMESPACE::prototype)
+        || hasAnnotationOfType(entity, ^^CTORIUM_NAMESPACE::session)
+        || hasAnnotationOfType(entity, ^^CTORIUM_NAMESPACE::threadLocal);
 }
 
 /** Classifies a class/struct type and appends matching entities to @p result. */
 consteval void classifyType(std::meta::info type, std::vector<DiscoveredEntity>& result) {
-    if (hasAnnotationOfType(type, ^^ctr::factory)) {
+    if (hasAnnotationOfType(type, ^^CTORIUM_NAMESPACE::factory)) {
         // B7: a factory must not carry a lifetime marker (singleton/prototype/session/threadLocal).
         if (hasLifetimeMarker(type)) {
             throw "Ctorium: a type annotated with [[=ctr::factory{}]] must not "
@@ -139,4 +141,4 @@ consteval std::vector<DiscoveredEntity> enumerateDiscovery() {
     return result;
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

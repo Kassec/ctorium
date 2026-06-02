@@ -13,8 +13,8 @@ namespace shutdown_singleton_fixture {
 
 std::atomic<int> preDestroyCallCount{0};
 
-struct [[=ctr::singleton{}]] Singleton {
-    [[=ctr::preDestroy{}]] void cleanup() {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Singleton {
+    [[=CTORIUM_NAMESPACE::preDestroy{}]] void cleanup() {
         preDestroyCallCount.fetch_add(1, std::memory_order_relaxed);
     }
 };
@@ -25,16 +25,16 @@ namespace shutdown_prototype_fixture {
 
 std::atomic<int> preDestroyCallCount{0};
 
-struct [[=ctr::prototype{}]] Proto {
-    [[=ctr::preDestroy{}]] void cleanup() {
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Proto {
+    [[=CTORIUM_NAMESPACE::preDestroy{}]] void cleanup() {
         preDestroyCallCount.fetch_add(1, std::memory_order_relaxed);
     }
 };
 
-struct [[=ctr::singleton{}]] Holder {
-    ctr::Bean<Proto> proto;
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Holder {
+    CTORIUM_NAMESPACE::Bean<Proto> proto;
 
-    explicit Holder(ctr::Bean<Proto> injected)
+    explicit Holder(CTORIUM_NAMESPACE::Bean<Proto> injected)
         : proto(std::move(injected)) {}
 };
 
@@ -44,9 +44,9 @@ namespace {
 
 constexpr std::size_t kHeapPressureBlockCount = 256;
 
-struct Probe : ctr::BeanContext {
+struct Probe : CTORIUM_NAMESPACE::BeanContext {
     explicit Probe(std::string key)
-        : ctr::BeanContext(std::move(key)) {}
+        : CTORIUM_NAMESPACE::BeanContext(std::move(key)) {}
 };
 
 } // namespace
@@ -101,7 +101,7 @@ TEST(ShutdownGuarantee, PrototypeHandleCanBeDestroyedAfterExplicitStop) {
     EXPECT_EXIT(
         {
             {
-                auto& context = ctr::BeanContext::resolveContext(
+                auto& context = CTORIUM_NAMESPACE::BeanContext::resolveContext(
                     "shutdown-guarantee-prototype-handle-after-stop");
                 context.discover<^^shutdown_prototype_fixture>().start();
                 auto proto = context.resolve<shutdown_prototype_fixture::Proto>();
@@ -129,13 +129,13 @@ TEST(ShutdownGuarantee, PrototypeHandleCanBeDestroyedAfterExplicitStop) {
 TEST(ShutdownGuarantee, PrototypeHandlesCanBeDestroyedAfterContextDestruction) {
     shutdown_prototype_fixture::preDestroyCallCount.store(0, std::memory_order_relaxed);
 
-    ctr::Bean<shutdown_prototype_fixture::Proto> proto;
-    ctr::AnyBean anyProto;
+    CTORIUM_NAMESPACE::Bean<shutdown_prototype_fixture::Proto> proto;
+    CTORIUM_NAMESPACE::AnyBean anyProto;
 
     {
         Probe context("shutdown-guarantee-prototype-handles-after-context");
         context.discover<^^shutdown_prototype_fixture>();
-        context.on(ctr::onCreated, [&](const ctr::AnyBean& observed) {
+        context.on(CTORIUM_NAMESPACE::onCreated, [&](const CTORIUM_NAMESPACE::AnyBean& observed) {
             if (observed.compatible<shutdown_prototype_fixture::Proto>())
                 anyProto = observed;
         });

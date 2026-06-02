@@ -5,7 +5,7 @@
 
 namespace user_data_fixture {
 
-struct [[=ctr::session{}]] Service {};
+struct [[=CTORIUM_NAMESPACE::session{}]] Service {};
 
 struct Score { int value = 0; };
 struct Tag   { int id    = 0; };
@@ -15,7 +15,7 @@ struct Tag   { int id    = 0; };
 // ─── Acceptance criteria ──────────────────────────────────────────────────────
 
 TEST(UserData, SetThenGetReturnsSameObject) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-basic");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-basic");
     auto& scope = ctx.resolveScope("s");
 
     user_data_fixture::Score score{42};
@@ -29,7 +29,7 @@ TEST(UserData, SetThenGetReturnsSameObject) {
 }
 
 TEST(UserData, WrongTypeReturnsNullopt) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-wrong-type");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-wrong-type");
     auto& scope = ctx.resolveScope("s");
 
     user_data_fixture::Score score{1};
@@ -42,7 +42,7 @@ TEST(UserData, WrongTypeReturnsNullopt) {
 }
 
 TEST(UserData, SetNullptrClearsAssociation) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-nullptr");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-nullptr");
     auto& scope = ctx.resolveScope("s");
 
     user_data_fixture::Score score{7};
@@ -55,7 +55,7 @@ TEST(UserData, SetNullptrClearsAssociation) {
 }
 
 TEST(UserData, PersistsThroughStopAndStart) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-persist");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-persist");
     ctx.discover<^^user_data_fixture>();
     auto& scope = ctx.resolveScope("s");
     ctx.start();
@@ -86,13 +86,13 @@ TEST(UserData, PersistsThroughStopAndStart) {
 }
 
 TEST(UserData, ConstAccessWorks) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-const");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-const");
     auto& scope = ctx.resolveScope("s");
 
     user_data_fixture::Score score{5};
     scope.userData(score);
 
-    const ctr::ScopedContext& cscope = scope;
+    const CTORIUM_NAMESPACE::ScopedContext& cscope = scope;
     auto result = cscope.userData<user_data_fixture::Score>();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result->get().value, 5);
@@ -100,7 +100,7 @@ TEST(UserData, ConstAccessWorks) {
 }
 
 TEST(UserData, ReplaceUserData) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-replace");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-replace");
     auto& scope = ctx.resolveScope("s");
 
     user_data_fixture::Score score1{1};
@@ -115,7 +115,7 @@ TEST(UserData, ReplaceUserData) {
 }
 
 TEST(UserData, NoUserDataReturnsNullopt) {
-    auto& ctx   = ctr::BeanContext::resolveContext("ud-none");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("ud-none");
     auto& scope = ctx.resolveScope("s");
 
     EXPECT_FALSE(scope.userData<user_data_fixture::Score>().has_value());

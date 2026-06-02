@@ -7,11 +7,13 @@
 #include <string_view>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../Identity.hpp"
 #include "../Lifetime.hpp"
 #include "../../api/ctr/Markers.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 // ─────────────────────────────────────────────────────────────────────────────
 // FNV-1a 64-bit — consteval
 // ─────────────────────────────────────────────────────────────────────────────
@@ -187,28 +189,28 @@ consteval AnnotationScan scanAnnotations(std::meta::info entity) {
     r.beanName = std::define_static_string(std::string_view{""});
     for (auto ann : std::meta::annotations_of(entity)) {
         const auto t = std::meta::remove_const(std::meta::type_of(ann));
-        if (std::meta::is_same_type(t, ^^ctr::singleton)) {
+        if (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::singleton)) {
             if (r.hasLifetimeMarker) r.lifetimeConflict = true;
             r.hasLifetimeMarker = true;
-            const auto v = std::meta::extract<ctr::singleton>(ann);
+            const auto v = std::meta::extract<CTORIUM_NAMESPACE::singleton>(ann);
             r.lifetime = Lifetime::Singleton; r.priority = v.priority; r.lazy = v.lazy;
-        } else if (std::meta::is_same_type(t, ^^ctr::prototype)) {
+        } else if (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::prototype)) {
             if (r.hasLifetimeMarker) r.lifetimeConflict = true;
             r.hasLifetimeMarker = true;
-            const auto v = std::meta::extract<ctr::prototype>(ann);
+            const auto v = std::meta::extract<CTORIUM_NAMESPACE::prototype>(ann);
             r.lifetime = Lifetime::Prototype; r.priority = v.priority;
-        } else if (std::meta::is_same_type(t, ^^ctr::session)) {
+        } else if (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::session)) {
             if (r.hasLifetimeMarker) r.lifetimeConflict = true;
             r.hasLifetimeMarker = true;
-            const auto v = std::meta::extract<ctr::session>(ann);
+            const auto v = std::meta::extract<CTORIUM_NAMESPACE::session>(ann);
             r.lifetime = Lifetime::Session; r.priority = v.priority;
-        } else if (std::meta::is_same_type(t, ^^ctr::threadLocal)) {
+        } else if (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::threadLocal)) {
             if (r.hasLifetimeMarker) r.lifetimeConflict = true;
             r.hasLifetimeMarker = true;
-            const auto v = std::meta::extract<ctr::threadLocal>(ann);
+            const auto v = std::meta::extract<CTORIUM_NAMESPACE::threadLocal>(ann);
             r.lifetime = Lifetime::ThreadLocal; r.priority = v.priority;
-        } else if (std::meta::is_same_type(t, ^^ctr::named)) {
-            const char* n = std::meta::extract<ctr::named>(ann).name;
+        } else if (std::meta::is_same_type(t, ^^CTORIUM_NAMESPACE::named)) {
+            const char* n = std::meta::extract<CTORIUM_NAMESPACE::named>(ann).name;
             if (n == nullptr || n[0] == '\0') r.emptyNameError = true; // B8
             r.beanName = std::define_static_string(
                 std::string_view{(n != nullptr) ? n : ""});
@@ -217,4 +219,4 @@ consteval AnnotationScan scanAnnotations(std::meta::info entity) {
     return r;
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

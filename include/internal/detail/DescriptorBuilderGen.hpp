@@ -1,6 +1,8 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 consteval std::string_view compatibleConstructorConflictMessage(std::string_view typeName) {
     constexpr std::string_view kPrefix = "Ctorium: type ";
@@ -248,4 +250,4 @@ consteval std::vector<ContributedDescriptor> makeAllDescriptors() {
     return result;
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

@@ -1,13 +1,15 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::dispatchBoundSingletonLifecycle
     // ─────────────────────────────────────────────────────────────────────────────
 
     inline void Registry::dispatchBoundSingletonLifecycle() {
         for (const auto &sb : startLifecyclePending_) {
-            ctr::AnyBean anyBean;
+            CTORIUM_NAMESPACE::AnyBean anyBean;
             anyBean.object_ = sb.instance;
             anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
             anyBean.bits_.f1.descId = sb.descId;
@@ -81,4 +83,4 @@ namespace ctr::detail {
         }
     }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

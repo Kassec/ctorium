@@ -7,9 +7,11 @@
 #include <new>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../DescriptorId.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Storage for singleton bean instances, keyed by `DescriptorId`.
@@ -160,4 +162,4 @@ private:
     std::vector<DescriptorId>                           insertionOrder_;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

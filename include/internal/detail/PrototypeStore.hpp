@@ -10,12 +10,14 @@
 #include <new>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../DescriptorId.hpp"
 #include "../SlotId.hpp"
 #include "../../api/ctr/Errors.hpp"
 #include "TreiberFreelist.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 class Registry;
 struct ResolutionContext;
@@ -99,7 +101,7 @@ public:
 #ifdef CTORIUM_PROTOTYPE_MAX_SLOTS
         // C3: enforce user-configured slot cap before growing the table.
         if (slotCount_ >= static_cast<std::size_t>(CTORIUM_PROTOTYPE_MAX_SLOTS)) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "PrototypeStore: CTORIUM_PROTOTYPE_MAX_SLOTS limit reached; "
                 "cannot allocate a new prototype slot.");
         }
@@ -375,4 +377,4 @@ private:
     }
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

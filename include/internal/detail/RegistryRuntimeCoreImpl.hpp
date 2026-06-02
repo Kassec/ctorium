@@ -1,6 +1,8 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::executeDestructionLifecycle
     // ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +20,7 @@ namespace ctr::detail {
         const bool dispatchDestroyed =
             listeners_.hasListeners(ListenerStore::phaseDestroyed());
         if (dispatchPreDestroy || dispatchDestroyed) {
-            ctr::AnyBean anyBean;
+            CTORIUM_NAMESPACE::AnyBean anyBean;
             anyBean.object_ = mem;
             anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
             anyBean.bits_.f1.descId = descId;
@@ -82,7 +84,7 @@ namespace ctr::detail {
     inline void Registry::registerContextBean(BeanContext *ctx) {
         const TypeId typeId = typeInterning_.internByName(
             "ctr::BeanContext",
-            TypeInfoGetter<ctr::BeanContext>::get
+            TypeInfoGetter<CTORIUM_NAMESPACE::BeanContext>::get
             );
 
         Descriptor d;
@@ -100,11 +102,11 @@ namespace ctr::detail {
         cold.postConstruct = nullptr;
         cold.preDestroy = nullptr;
         cold.size = 0; // externally owned; executeDestructionLifecycle skips ::operator delete
-        cold.align = alignof(ctr::BeanContext);
+        cold.align = alignof(CTORIUM_NAMESPACE::BeanContext);
         cold.factoryMethodDescriptor = kInvalidDescriptorId;
 
-        cold.observedTypeGetter = &TypeInfoGetter<ctr::BeanContext>::get;
-        cold.exactTypeGetter = &TypeInfoGetter<ctr::BeanContext>::get;
+        cold.observedTypeGetter = &TypeInfoGetter<CTORIUM_NAMESPACE::BeanContext>::get;
+        cold.exactTypeGetter = &TypeInfoGetter<CTORIUM_NAMESPACE::BeanContext>::get;
         cold.nameStr = "ctr::BeanContext";
 
         beanContextDescId_ = descriptors_.append(std::move(d), std::move(cold));
@@ -120,4 +122,4 @@ namespace ctr::detail {
     }
 
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

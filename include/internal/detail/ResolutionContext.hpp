@@ -1,10 +1,12 @@
 #pragma once
 
-namespace ctr {
-class ScopedContext; // forward declaration — full type not required here
-} // namespace ctr
+#include "../../api/ctr/Config.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE {
+class ScopedContext; // forward declaration — full type not required here
+} // namespace CTORIUM_NAMESPACE
+
+namespace CTORIUM_NAMESPACE::detail {
 
 class Registry; // forward declaration
 
@@ -60,7 +62,7 @@ struct ResolutionContext {
      * A thunk resolving session-scoped dependencies uses this field to target the
      * correct scope's `SessionStore` rather than the root store.
      */
-    ctr::ScopedContext* scope = nullptr;
+    CTORIUM_NAMESPACE::ScopedContext* scope = nullptr;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

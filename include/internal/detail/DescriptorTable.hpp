@@ -4,11 +4,13 @@
 #include <cstddef>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../Descriptor.hpp"
 #include "../DescriptorId.hpp"
 #include "../Lifetime.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Append-only table of runtime descriptors, indexed by dense `DescriptorId`.
@@ -153,4 +155,4 @@ private:
     std::vector<Lifetime>   lifetimes_;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

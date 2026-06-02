@@ -7,13 +7,15 @@
 #include <type_traits>
 #include <typeindex>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "DescriptorGen.hpp"
 #include "Registry.hpp"
 #include "../../api/ctr/BeanContext.hpp"
 #include "../../api/ctr/Errors.hpp"
 #include "../../api/ctr/ScopedContext.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
 // -------------------------------------------------------------------------
 // detail::deallocBoundObjectThunk<T>
@@ -49,9 +51,9 @@ Bean<T> BeanContext::bindSingleton(std::unique_ptr<T> object, BindOptions option
     return reg.bindSingleton<T>(std::move(object), nameId, options.priority);
 }
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // Registry::bindSingleton<T>
     // ─────────────────────────────────────────────────────────────────────────────
@@ -60,10 +62,10 @@ namespace ctr::detail {
     auto Registry::bindSingleton(
         std::unique_ptr<T> object, NameId nameId, int32_t priority
         )
-        -> ctr::Bean<T> {
+        -> CTORIUM_NAMESPACE::Bean<T> {
 
-        if constexpr (std::is_same_v<T, ctr::BeanContext>) {
-            throw ctr::ConfigurationError(
+        if constexpr (std::is_same_v<T, CTORIUM_NAMESPACE::BeanContext>) {
+            throw CTORIUM_NAMESPACE::ConfigurationError(
                 "Registry::bindSingleton: ctr::BeanContext is registered implicitly at "
                 "start(); explicit bindSingleton<ctr::BeanContext>() is forbidden."
                 );
@@ -90,7 +92,7 @@ namespace ctr::detail {
                     for (const auto &[nid, entry] : table->entries) {
                         for (DescriptorId did : entry.candidates) {
                             if (singletons_.find(did) != nullptr) {
-                                throw ctr::ConfigurationError(
+                                throw CTORIUM_NAMESPACE::ConfigurationError(
                                     std::string("Registry::bindSingleton: type '") + kTypeName
                                     + "' is already instantiated in this context."
                                     );
@@ -102,7 +104,7 @@ namespace ctr::detail {
                 for (const MaterializingEntry& entry : materializing_) {
                     if (entry.key.scope == nullptr
                             && descriptors_.coldAt(entry.key.descId).exposedType == typeId) {
-                        throw ctr::ConfigurationError(
+                        throw CTORIUM_NAMESPACE::ConfigurationError(
                             std::string("Registry::bindSingleton: type '") + kTypeName
                             + "' is currently being materialized; binding conflicts with "
                             "concurrent materialization."
@@ -146,7 +148,7 @@ namespace ctr::detail {
                 // registry operations without deadlocking.
                 lock.unlock();
 
-                ctr::AnyBean anyBean;
+                CTORIUM_NAMESPACE::AnyBean anyBean;
                 anyBean.object_ = rawPtr;
                 anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
                 anyBean.bits_.f1.descId = descId;
@@ -162,7 +164,7 @@ namespace ctr::detail {
                     &anyBean,
                     ListenerStore::kNoScope);
 
-                return ctr::Bean<T>::makeDirect(static_cast<T *>(rawPtr), kInvalidSlotId, descId, this);
+                return CTORIUM_NAMESPACE::Bean<T>::makeDirect(static_cast<T *>(rawPtr), kInvalidSlotId, descId, this);
             }
 
             // Pre-start: enqueue for processing in start() Phase 1.5.
@@ -174,21 +176,21 @@ namespace ctr::detail {
                     sizeof(T), alignof(T)
                 }
                 );
-            return ctr::Bean<T>{}; // empty handle — use resolve<T>() after start()
+            return CTORIUM_NAMESPACE::Bean<T>{}; // empty handle — use resolve<T>() after start()
 
         } // end else (!BeanContext)
     }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 // ─────────────────────────────────────────────────────────────────────────────
 // ScopedContext::bindSession<T>
 // ─────────────────────────────────────────────────────────────────────────────
 
 template <class T>
 ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions options) {
-    if constexpr (std::is_same_v<T, ctr::BeanContext>) {
+    if constexpr (std::is_same_v<T, CTORIUM_NAMESPACE::BeanContext>) {
         throw ConfigurationError(
             "ScopedContext::bindSession: ctr::BeanContext cannot be bound as a "
             "session bean.");
@@ -304,7 +306,7 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     // registry operations without deadlocking.
     lock.unlock();
 
-    ctr::AnyBean anyBean;
+    CTORIUM_NAMESPACE::AnyBean anyBean;
     anyBean.object_         = rawPtr;
     anyBean.bits_.f1.slot   = static_cast<std::uint32_t>(detail::kInvalidSlotId);
     anyBean.bits_.f1.descId = descId;
@@ -325,4 +327,4 @@ ScopedContext& ScopedContext::bindSession(std::unique_ptr<T> object, BindOptions
     } // end else (!BeanContext)
 }
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

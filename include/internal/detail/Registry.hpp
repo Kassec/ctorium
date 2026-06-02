@@ -18,9 +18,12 @@
 #include <vector>
 
 // Forward declarations to allow method signatures without circular includes.
-namespace ctr { template <class> class Bean; }
-namespace ctr { class BeanContext; }
-namespace ctr { class ScopedContext; }
+
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE { template <class> class Bean; }
+namespace CTORIUM_NAMESPACE { class BeanContext; }
+namespace CTORIUM_NAMESPACE { class ScopedContext; }
 
 #include "../ContributedDescriptor.hpp"
 #include "../Descriptor.hpp"
@@ -44,7 +47,7 @@ namespace ctr { class ScopedContext; }
 #include "TypeIndex.hpp"
 #include "TypeInterning.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 
 inline constexpr std::uint32_t kNoMaterializationThreadToken = 0;
@@ -52,7 +55,7 @@ inline constexpr std::uint32_t kNoMaterializationThreadToken = 0;
 inline constexpr std::size_t kScopeChunkSize = 256;
 inline constexpr std::size_t kScopeTopCapacity = 256;
 using ScopeChunk = std::array<
-    std::atomic<ctr::ScopedContext*>,
+    std::atomic<CTORIUM_NAMESPACE::ScopedContext*>,
     kScopeChunkSize>;
 
 inline constexpr std::size_t kTypeIdCacheChunkSize = 256;
@@ -62,7 +65,7 @@ using TypeIdCacheChunk = std::array<std::atomic<TypeId>, kTypeIdCacheChunkSize>;
 /** @brief Key used to serialize singleton and session materialization. */
 struct MaterializationKey {
     DescriptorId descId = kInvalidDescriptorId;
-    ctr::ScopedContext* scope = nullptr;
+    CTORIUM_NAMESPACE::ScopedContext* scope = nullptr;
 };
 
 [[nodiscard]] inline bool operator==(
@@ -244,7 +247,7 @@ public:
     void submitContribution(DiscoverContribution contribution, DiscoverOptions options) {
         std::lock_guard lock(writeLock_);
         if (started_) {
-            throw ctr::ContextStateError(
+            throw CTORIUM_NAMESPACE::ContextStateError(
                 "discover<>() called after start() — contributions must be "
                 "submitted before the context is started.");
         }
@@ -280,7 +283,7 @@ public:
             const TypeId beanCtxTypeId = descriptors_.coldAt(beanContextDescId_).exposedType;
             lock.unlock();
 
-            ctr::AnyBean beanCtxBean;
+            CTORIUM_NAMESPACE::AnyBean beanCtxBean;
             beanCtxBean.object_         = static_cast<void*>(ctx);
             beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
             beanCtxBean.bits_.f1.descId = beanContextDescId_;
@@ -378,7 +381,7 @@ public:
                             || nameInterning_.nameOf(existingCold.name)
                                 != std::string_view{cd.beanName}
                             || existing.lifetime != cd.lifetime) {
-                        throw ctr::ConfigurationError(
+                        throw CTORIUM_NAMESPACE::ConfigurationError(
                             std::string("Registry::start(): Identity collision between '"
                                 )
                             + cd.exposedTypeName + "' and existing '"
@@ -428,7 +431,7 @@ public:
         for (const auto& [beanId, factoryMethodIdentity] : factoryLinks) {
             const auto fit = identityMap.find(factoryMethodIdentity);
             if (fit == identityMap.end()) {
-                throw ctr::ConfigurationError(
+                throw CTORIUM_NAMESPACE::ConfigurationError(
                     std::string("Registry::start(): factory method identity not found "
                                 "for bean '")
                     + std::string(typeInterning_.nameOf(descriptors_.coldAt(beanId).concreteType))
@@ -443,7 +446,7 @@ public:
         for (const auto& [aliasId, primaryIdentity] : aliasLinks) {
             const auto fit = identityMap.find(primaryIdentity);
             if (fit == identityMap.end()) {
-                throw ctr::ConfigurationError(
+                throw CTORIUM_NAMESPACE::ConfigurationError(
                     std::string("Registry::start(): primary descriptor not found for "
                                 "exposed alias '")
                     + typeInterning_.nameOf(descriptors_.coldAt(aliasId).exposedType)
@@ -478,7 +481,7 @@ public:
                 std::sort(factoryIds.begin(), factoryIds.end());
                 if (std::adjacent_find(factoryIds.begin(), factoryIds.end())
                         != factoryIds.end()) {
-                    throw ctr::ConfigurationError(
+                    throw CTORIUM_NAMESPACE::ConfigurationError(
                         "Registry::start(): two producer methods on the same factory "
                         "return the same type and named key: type='"
                         + std::string(typeInterning_.nameOf(typeId))
@@ -506,7 +509,7 @@ public:
                     const Lifetime injLt = descriptors_.at((*injCandidates)[0]).lifetime;
                     // (a): [[=ctr::scoped]] on a non-session dependency target
                     if (p.hasScopedAnnotation && injLt != Lifetime::Session) {
-                        throw ctr::ConfigurationError(
+                        throw CTORIUM_NAMESPACE::ConfigurationError(
                             std::string("start(): [[=ctr::scoped]] targets non-session bean '")
                             + (p.injectedTypeName ? p.injectedTypeName : "?") + "'.");
                     }
@@ -514,7 +517,7 @@ public:
                     if (!p.hasScopedAnnotation
                             && injLt == Lifetime::Session
                             && cd.lifetime != Lifetime::Session) {
-                        throw ctr::ConfigurationError(
+                        throw CTORIUM_NAMESPACE::ConfigurationError(
                             std::string("start(): session bean '")
                             + (p.injectedTypeName ? p.injectedTypeName : "?")
                             + "' injected into a non-session consumer without [[=ctr::scoped]].");
@@ -562,7 +565,7 @@ public:
         // without deadlocking on writeLock_.
         lock.unlock();
 
-        ctr::AnyBean beanCtxBean;
+        CTORIUM_NAMESPACE::AnyBean beanCtxBean;
         beanCtxBean.object_         = static_cast<void*>(ctx);
         beanCtxBean.bits_.f1.slot   = static_cast<std::uint32_t>(kInvalidSlotId);
         beanCtxBean.bits_.f1.descId = beanContextDescId_;
@@ -725,9 +728,9 @@ public:
      * @param reg             Root Registry pointer.
      */
     template<typename U>
-    [[nodiscard]] static ctr::Bean<U> makeDeferredHandle(
+    [[nodiscard]] static CTORIUM_NAMESPACE::Bean<U> makeDeferredHandle(
             NameId scopeNameId, DescriptorId descId, Registry* reg) noexcept {
-        return ctr::Bean<U>::makeDeferred(scopeNameId, descId, reg);
+        return CTORIUM_NAMESPACE::Bean<U>::makeDeferred(scopeNameId, descId, reg);
     }
 
     // -------------------------------------------------------------------------
@@ -743,12 +746,12 @@ public:
      * @throws ctr::ConfigurationError if `id` exceeds the fixed top-level
      *         scope table capacity.
      */
-    void registerScope(NameId id, ctr::ScopedContext* scope) {
+    void registerScope(NameId id, CTORIUM_NAMESPACE::ScopedContext* scope) {
         std::lock_guard lock(scopesMutex_);
         const auto idx = static_cast<std::size_t>(id);
         const std::size_t chunkIndex = idx / kScopeChunkSize;
         if (chunkIndex >= kScopeTopCapacity) {
-            throw ctr::ConfigurationError(
+            throw CTORIUM_NAMESPACE::ConfigurationError(
                 "Registry::registerScope: scope NameId exceeds segmented "
                 "scope table capacity.");
         }
@@ -769,7 +772,7 @@ public:
      * @brief Looks up a scope by its NameId.  Returns `nullptr` if not found.
      * Used by the Form 2 proxy path in `Bean<T>::operator->`.
      */
-    [[nodiscard]] ctr::ScopedContext* findScope(NameId id) const noexcept {
+    [[nodiscard]] CTORIUM_NAMESPACE::ScopedContext* findScope(NameId id) const noexcept {
         const auto idx = static_cast<std::size_t>(id);
         const std::size_t chunkIndex = idx / kScopeChunkSize;
         if (chunkIndex >= kScopeTopCapacity)
@@ -874,7 +877,7 @@ public:
      * @throws ctr::ConfigurationError if an internal descriptor lifetime is unhandled.
      */
     template <typename T>
-    [[nodiscard]] auto resolve(NameId nameId, ResolutionContext& ctx) -> ctr::Bean<T>;
+    [[nodiscard]] auto resolve(NameId nameId, ResolutionContext& ctx) -> CTORIUM_NAMESPACE::Bean<T>;
     // Defined in RegistryRuntimeImpl.hpp (included at the bottom of Ctorium.hpp) to
     // avoid a circular dependency between Registry.hpp and Bean.hpp.
 
@@ -892,7 +895,7 @@ public:
      * @throws ctr::ResolutionError on dependency cycle.
      */
     void* materializeSessionInstance(DescriptorId descId,
-                                     ctr::ScopedContext* scope,
+                                     CTORIUM_NAMESPACE::ScopedContext* scope,
                                      ResolutionContext& ctx);
     // Defined in RegistryRuntimeImpl.hpp.
 
@@ -935,7 +938,7 @@ public:
      * @throws ctr::ConfigurationError on forbidden or invalid post-`start()` bind.
      */
     template <typename T>
-    [[nodiscard]] ctr::Bean<T> bindSingleton(std::unique_ptr<T> object,
+    [[nodiscard]] CTORIUM_NAMESPACE::Bean<T> bindSingleton(std::unique_ptr<T> object,
                                              NameId nameId, int32_t priority);
     // Defined in BindReflectiveImpl.hpp.
 
@@ -1032,7 +1035,7 @@ private:
      */
     template <typename T>
     [[nodiscard]] auto materializeOne(DescriptorId descId, ResolutionContext& ctx)
-        -> ctr::Bean<T>;
+        -> CTORIUM_NAMESPACE::Bean<T>;
     // Defined in RegistryRuntimeImpl.hpp.
 
     /**
@@ -1055,7 +1058,7 @@ private:
     template <typename FindExisting>
     [[nodiscard]] bool claimMaterializationOrWait(
         DescriptorId descId,
-        ctr::ScopedContext* scope,
+        CTORIUM_NAMESPACE::ScopedContext* scope,
         FindExisting&& findExisting,
         const char* intraThreadCycleMessage,
         const char* crossThreadCycleMessage);
@@ -1226,7 +1229,7 @@ private:
             : stack(s) {
             for (DescriptorId existing : stack) {
                 if (existing == id) {
-                    throw ctr::ResolutionError(
+                    throw CTORIUM_NAMESPACE::ResolutionError(
                         "Registry: dependency cycle detected during bean materialization.");
                 }
             }
@@ -1261,9 +1264,9 @@ private:
     inline static std::mutex materializationThreadTokenMutex_;
     inline static std::vector<std::uint32_t> freeMaterializationThreadTokens_;
 
-    template <class> friend class ctr::Bean;
-    friend class ctr::AnyBean;
-    friend class ctr::ScopedContext;
+    template <class> friend class CTORIUM_NAMESPACE::Bean;
+    friend class CTORIUM_NAMESPACE::AnyBean;
+    friend class CTORIUM_NAMESPACE::ScopedContext;
     friend struct TLCleanup;
 
     /**
@@ -1286,7 +1289,7 @@ private:
      * order.  Marks the scope stopped, clears its SessionStore.
      * Called by `ScopedContext::stop()`.  Defined in RegistryRuntimeImpl.hpp.
      */
-    void stopScope(ctr::ScopedContext& scope) noexcept;
+    void stopScope(CTORIUM_NAMESPACE::ScopedContext& scope) noexcept;
 
     /**
      * @brief Registers the owning `BeanContext` as a self-injectable singleton.
@@ -1303,9 +1306,9 @@ private:
     // -------------------------------------------------------------------------
 
     /** @brief Pointer to the owning BeanContext; set by registerContextBean(). */
-    [[nodiscard]] ctr::BeanContext* rootContext() const noexcept { return root_; }
+    [[nodiscard]] CTORIUM_NAMESPACE::BeanContext* rootContext() const noexcept { return root_; }
 
-    ctr::BeanContext* root_ = nullptr;
+    CTORIUM_NAMESPACE::BeanContext* root_ = nullptr;
     DescriptorId    beanContextDescId_ = kInvalidDescriptorId;
     std::size_t     sessionSlotCount_ = 0;
 
@@ -1388,4 +1391,4 @@ inline std::vector<DescriptorId>& Registry::materializationStack() noexcept {
     return stack;
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

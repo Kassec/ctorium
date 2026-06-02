@@ -1,6 +1,8 @@
 #pragma once
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
     // ─────────────────────────────────────────────────────────────────────────────
     // TLCleanup::~TLCleanup
     //
@@ -92,7 +94,7 @@ namespace ctr::detail {
         tl.storeInstance(registryId(), primaryDescId, mem);
 
         // Lifecycle: C++ construction → onInitialized → postConstruct → onCreated.
-        ctr::AnyBean anyBean;
+        CTORIUM_NAMESPACE::AnyBean anyBean;
         anyBean.object_ = mem;
         anyBean.bits_.f1.slot = static_cast<std::uint32_t>(kInvalidSlotId);
         anyBean.bits_.f1.descId = primaryDescId;
@@ -137,4 +139,4 @@ namespace ctr::detail {
         }
     }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

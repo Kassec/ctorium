@@ -5,12 +5,14 @@
 #include <memory>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../DescriptorId.hpp"
 #include "../NameId.hpp"
 #include "../NameTable.hpp"
 #include "../TypeId.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Two-level index mapping `(TypeId, NameId)` pairs to sorted candidate lists.
@@ -301,4 +303,4 @@ private:
     std::vector<DescriptorId> singleUnnamed_;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

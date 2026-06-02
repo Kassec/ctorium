@@ -2,7 +2,9 @@
 
 #include <cstdint>
 
-namespace ctr::detail {
+#include "../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Source of a descriptor contribution.
@@ -13,4 +15,4 @@ enum class Origin : std::uint8_t {
     RuntimeBinding,
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

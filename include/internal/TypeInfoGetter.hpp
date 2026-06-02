@@ -2,7 +2,9 @@
 
 #include <typeinfo>
 
-namespace ctr::detail {
+#include "../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Compile-time source of `std::type_info` for a given C++ type.
@@ -50,4 +52,4 @@ struct TypeInfoGetter {
     static const std::type_info& get() noexcept { return typeid(T); }
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

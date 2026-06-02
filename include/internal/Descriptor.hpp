@@ -5,15 +5,17 @@
 #include <limits>
 #include <typeinfo>
 
+#include "../api/ctr/Config.hpp"
+
 #include "DescriptorId.hpp"
 #include "Lifetime.hpp"
 #include "NameId.hpp"
 #include "Origin.hpp"
 #include "TypeId.hpp"
 
-namespace ctr { struct BeanReflectiveData; } // forward decl
+namespace CTORIUM_NAMESPACE { struct BeanReflectiveData; } // forward decl
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 using SessionSlot = std::uint32_t;
 inline constexpr SessionSlot kInvalidSessionSlot = std::numeric_limits<SessionSlot>::max();
@@ -113,7 +115,7 @@ struct DescriptorCold {
      * Non-null only when `DiscoverOptions::retainAllMetadata = true` and the
      * descriptor originates from an annotated type (not a factory product or binding).
      */
-    const ctr::BeanReflectiveData* reflectiveData = nullptr;
+    const CTORIUM_NAMESPACE::BeanReflectiveData* reflectiveData = nullptr;
 
     /**
      * @brief Downcast thunk: `(void* base) -> void* concrete`.
@@ -165,4 +167,4 @@ struct Descriptor {
     void*      (*adjustToExposed)(void*) = nullptr;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

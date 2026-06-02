@@ -13,21 +13,21 @@ struct Widget {
 };
 
 // Ctorium singleton with preDestroy.
-struct [[=ctr::singleton{}]] ManagedService {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ManagedService {
     int state  = 0;
     bool destroyed = false;
-    [[=ctr::preDestroy{}]] void cleanup() { destroyed = true; }
+    [[=CTORIUM_NAMESPACE::preDestroy{}]] void cleanup() { destroyed = true; }
 };
 
 // Ctorium singleton without preDestroy.
-struct [[=ctr::singleton{}]] PlainService {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] PlainService {
     int x = 42;
 };
 
 // Ctorium singleton with postConstruct — never called for bound objects.
-struct [[=ctr::singleton{}]] HookedService {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] HookedService {
     bool hookCalled = false;
-    [[=ctr::postConstruct{}]] void init() { hookCalled = true; }
+    [[=CTORIUM_NAMESPACE::postConstruct{}]] void init() { hookCalled = true; }
 };
 
 } // namespace bind_singleton_fixture
@@ -35,7 +35,7 @@ struct [[=ctr::singleton{}]] HookedService {
 // ─── Pre-start binding ────────────────────────────────────────────────────────
 
 TEST(BindSingleton, PreStartThenResolveReturnsInstance) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-pre-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-pre-start");
     auto widget = std::make_unique<bind_singleton_fixture::Widget>(99);
     bind_singleton_fixture::Widget* raw = widget.get();
     ctx.bindSingleton<bind_singleton_fixture::Widget>(std::move(widget));
@@ -47,12 +47,12 @@ TEST(BindSingleton, PreStartThenResolveReturnsInstance) {
 }
 
 TEST(BindSingleton, PreStartWithNamedKey) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-pre-start-named");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-pre-start-named");
     ctx.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(7),
-        ctr::BindOptions{.name = "w", .priority = 0});
+        CTORIUM_NAMESPACE::BindOptions{.name = "w", .priority = 0});
     ctx.start();
-    auto bean = ctx.resolve<bind_singleton_fixture::Widget>(ctr::named("w"));
+    auto bean = ctx.resolve<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::named("w"));
     EXPECT_EQ(bean->value, 7);
     ctx.stop();
 }
@@ -60,7 +60,7 @@ TEST(BindSingleton, PreStartWithNamedKey) {
 // ─── Lifecycle: no postConstruct, preDestroy only for Ctorium types ───────────
 
 TEST(BindSingleton, NoPostConstructForBoundObject) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-no-postconstruct");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-no-postconstruct");
     ctx.bindSingleton<bind_singleton_fixture::HookedService>(
         std::make_unique<bind_singleton_fixture::HookedService>());
     ctx.start();
@@ -72,7 +72,7 @@ TEST(BindSingleton, NoPostConstructForBoundObject) {
 TEST(BindSingleton, PreDestroyCalledForCtoriumType) {
     bool destroyCalled = false;
     {
-        auto& ctx = ctr::BeanContext::resolveContext("bs-predestroy-ctorium");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-predestroy-ctorium");
         auto svc = std::make_unique<bind_singleton_fixture::ManagedService>();
         bind_singleton_fixture::ManagedService* raw = svc.get();
         ctx.bindSingleton<bind_singleton_fixture::ManagedService>(std::move(svc));
@@ -88,7 +88,7 @@ TEST(BindSingleton, NoPreDestroyForNonCtoriumType) {
     // Widget has no Ctorium markers; its destructor sets value=-1 once.
     // We verify no double-destruction or crash.
     {
-        auto& ctx = ctr::BeanContext::resolveContext("bs-no-predestroy");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-no-predestroy");
         ctx.bindSingleton<bind_singleton_fixture::Widget>(
             std::make_unique<bind_singleton_fixture::Widget>(42));
         ctx.start();
@@ -103,17 +103,17 @@ TEST(BindSingleton, NoPreDestroyForNonCtoriumType) {
 // ─── Listener phases ──────────────────────────────────────────────────────────
 
 TEST(BindSingleton, AllFourListenerPhasesFire) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-listeners");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-listeners");
     int initialized = 0, created = 0, preDestroy = 0, destroyed = 0;
 
-    ctx.on<bind_singleton_fixture::Widget>(ctr::onInitialized,
-        [&](const ctr::Bean<bind_singleton_fixture::Widget>&){ initialized++; });
-    ctx.on<bind_singleton_fixture::Widget>(ctr::onCreated,
-        [&](const ctr::Bean<bind_singleton_fixture::Widget>&){ created++; });
-    ctx.on<bind_singleton_fixture::Widget>(ctr::onPreDestroy,
-        [&](const ctr::Bean<bind_singleton_fixture::Widget>&){ preDestroy++; });
-    ctx.on<bind_singleton_fixture::Widget>(ctr::onDestroyed,
-        [&](const ctr::Bean<bind_singleton_fixture::Widget>&){ destroyed++; });
+    ctx.on<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_singleton_fixture::Widget>&){ initialized++; });
+    ctx.on<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_singleton_fixture::Widget>&){ created++; });
+    ctx.on<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_singleton_fixture::Widget>&){ preDestroy++; });
+    ctx.on<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_singleton_fixture::Widget>&){ destroyed++; });
 
     ctx.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(1));
@@ -130,7 +130,7 @@ TEST(BindSingleton, AllFourListenerPhasesFire) {
 // ─── Post-start binding guards ────────────────────────────────────────────────
 
 TEST(BindSingleton, PostStartUnknownTypeAdoptsAndResolves) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-post-unknown");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-unknown");
     ctx.start();
     auto widget = std::make_unique<bind_singleton_fixture::Widget>(0);
     bind_singleton_fixture::Widget* raw = widget.get();
@@ -141,30 +141,30 @@ TEST(BindSingleton, PostStartUnknownTypeAdoptsAndResolves) {
 }
 
 TEST(BindSingleton, PostStartAlreadyInstantiatedThrowsConfigurationError) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-post-instantiated");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-instantiated");
     ctx.discover<^^bind_singleton_fixture>();
     ctx.start();
     ctx.resolve<bind_singleton_fixture::PlainService>(); // materialize first
     EXPECT_THROW(
         ctx.bindSingleton<bind_singleton_fixture::PlainService>(
             std::make_unique<bind_singleton_fixture::PlainService>()),
-        ctr::ConfigurationError);
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
 TEST(BindSingleton, ExplicitBeanContextBindingThrowsConfigurationError) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-beancontext");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-beancontext");
     EXPECT_THROW(
-        ctx.bindSingleton<ctr::BeanContext>(
-            std::unique_ptr<ctr::BeanContext>(nullptr)),
-        ctr::ConfigurationError);
+        ctx.bindSingleton<CTORIUM_NAMESPACE::BeanContext>(
+            std::unique_ptr<CTORIUM_NAMESPACE::BeanContext>(nullptr)),
+        CTORIUM_NAMESPACE::ConfigurationError);
     ctx.stop();
 }
 
 // ─── ScopedContext delegation to root ─────────────────────────────────────────
 
 TEST(BindSingleton, ViaScopedContextDelegatesToRoot) {
-    auto& ctx   = ctr::BeanContext::resolveContext("bs-scope-delegate");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-scope-delegate");
     auto& scope = ctx.resolveScope("s");
     scope.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(55));
@@ -178,7 +178,7 @@ TEST(BindSingleton, ViaScopedContextDelegatesToRoot) {
 // ─── Pre-start handle contract ────────────────────────────────────────────────
 
 TEST(BindSingleton, PreStartBindReturnsEmptyHandle) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-pre-start-handle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-pre-start-handle");
     auto handle = ctx.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(0));
     EXPECT_EQ(handle.operator->(), nullptr);
@@ -186,10 +186,10 @@ TEST(BindSingleton, PreStartBindReturnsEmptyHandle) {
 }
 
 TEST(BindSingleton, PreStartLifecycleFiresAfterStartWithDeferredListeners) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-pre-start-lifecycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-pre-start-lifecycle");
     int count = 0;
-    ctx.on<bind_singleton_fixture::Widget>(ctr::onCreated,
-        [&](const ctr::Bean<bind_singleton_fixture::Widget>&) { ++count; });
+    ctx.on<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_singleton_fixture::Widget>&) { ++count; });
     ctx.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(1));
     ctx.start();
@@ -201,7 +201,7 @@ TEST(BindSingleton, PreStartLifecycleFiresAfterStartWithDeferredListeners) {
 // after the root context is already started.
 
 TEST(BindSingleton, PostStartBindResolvable) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-post-start-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-start-resolve");
     ctx.start();
     auto widget = std::make_unique<bind_singleton_fixture::Widget>(77);
     bind_singleton_fixture::Widget* raw = widget.get();
@@ -212,10 +212,10 @@ TEST(BindSingleton, PostStartBindResolvable) {
 }
 
 TEST(BindSingleton, PostStartBindFiresLifecycleImmediately) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-post-start-lifecycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-start-lifecycle");
     int count = 0;
-    ctx.on<bind_singleton_fixture::Widget>(ctr::onCreated,
-        [&](const ctr::Bean<bind_singleton_fixture::Widget>&) { ++count; });
+    ctx.on<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<bind_singleton_fixture::Widget>&) { ++count; });
     ctx.start();
     ctx.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(2));
@@ -224,13 +224,13 @@ TEST(BindSingleton, PostStartBindFiresLifecycleImmediately) {
 }
 
 TEST(BindSingleton, PostStartBindWithNameResolvableByName) {
-    auto& ctx = ctr::BeanContext::resolveContext("bs-post-start-named");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bs-post-start-named");
     ctx.start();
     ctx.bindSingleton<bind_singleton_fixture::Widget>(
         std::make_unique<bind_singleton_fixture::Widget>(99),
-        ctr::BindOptions{.name = "primary", .priority = 0});
-    auto bean = ctx.resolve<bind_singleton_fixture::Widget>(ctr::named("primary"));
+        CTORIUM_NAMESPACE::BindOptions{.name = "primary", .priority = 0});
+    auto bean = ctx.resolve<bind_singleton_fixture::Widget>(CTORIUM_NAMESPACE::named("primary"));
     EXPECT_EQ(bean->value, 99);
-    EXPECT_THROW(ctx.resolve<bind_singleton_fixture::Widget>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<bind_singleton_fixture::Widget>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }

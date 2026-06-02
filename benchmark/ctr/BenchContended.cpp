@@ -11,35 +11,35 @@
 
 namespace bench_contended_session {
 
-    struct [[=ctr::session{}]] SessionBean {
+    struct [[=CTORIUM_NAMESPACE::session{}]] SessionBean {
     };
 
 } // namespace bench_contended_session
 
 namespace bench_contended_thread_local {
 
-    struct [[=ctr::threadLocal{}]] ThreadLocalBean {
+    struct [[=CTORIUM_NAMESPACE::threadLocal{}]] ThreadLocalBean {
     };
 
 } // namespace bench_contended_thread_local
 
 namespace {
 
-    static ctr::BeanContext *gAccessSessionContext = nullptr;
-    static ctr::ScopedContext *gAccessSessionScope = nullptr;
-    static ctr::Bean<bench_contended_session::SessionBean> gAccessSessionHandle;
+    static CTORIUM_NAMESPACE::BeanContext *gAccessSessionContext = nullptr;
+    static CTORIUM_NAMESPACE::ScopedContext *gAccessSessionScope = nullptr;
+    static CTORIUM_NAMESPACE::Bean<bench_contended_session::SessionBean> gAccessSessionHandle;
 
-    static ctr::BeanContext *gResolveSessionContext = nullptr;
-    static ctr::ScopedContext *gResolveSessionScope = nullptr;
+    static CTORIUM_NAMESPACE::BeanContext *gResolveSessionContext = nullptr;
+    static CTORIUM_NAMESPACE::ScopedContext *gResolveSessionScope = nullptr;
 
-    static ctr::BeanContext *gAccessThreadLocalContext = nullptr;
-    static ctr::Bean<bench_contended_thread_local::ThreadLocalBean> gAccessThreadLocalHandle;
+    static CTORIUM_NAMESPACE::BeanContext *gAccessThreadLocalContext = nullptr;
+    static CTORIUM_NAMESPACE::Bean<bench_contended_thread_local::ThreadLocalBean> gAccessThreadLocalHandle;
 
-    static ctr::BeanContext *gResolveThreadLocalContext = nullptr;
+    static CTORIUM_NAMESPACE::BeanContext *gResolveThreadLocalContext = nullptr;
 
     static void setupAccessSession(const benchmark::State &) {
         gAccessSessionContext =
-            &ctr::BeanContext::resolveContext("bm-contended-access-session");
+            &CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-contended-access-session");
         gAccessSessionContext->discover<^^bench_contended_session>().start();
         gAccessSessionScope =
             &gAccessSessionContext->resolveScope("bm-contended-access-session-scope");
@@ -57,7 +57,7 @@ namespace {
 
     static void setupResolveSession(const benchmark::State &) {
         gResolveSessionContext =
-            &ctr::BeanContext::resolveContext("bm-contended-resolve-session");
+            &CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-contended-resolve-session");
         gResolveSessionContext->discover<^^bench_contended_session>().start();
         gResolveSessionScope =
             &gResolveSessionContext->resolveScope("bm-contended-resolve-session-scope");
@@ -76,7 +76,7 @@ namespace {
 
     static void setupAccessThreadLocal(const benchmark::State &) {
         gAccessThreadLocalContext =
-            &ctr::BeanContext::resolveContext("bm-contended-access-thread-local");
+            &CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-contended-access-thread-local");
         gAccessThreadLocalContext
             ->discover<^^bench_contended_thread_local>()
             .start();
@@ -93,7 +93,7 @@ namespace {
 
     static void setupResolveThreadLocal(const benchmark::State &) {
         gResolveThreadLocalContext =
-            &ctr::BeanContext::resolveContext("bm-contended-resolve-thread-local");
+            &CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-contended-resolve-thread-local");
         gResolveThreadLocalContext
             ->discover<^^bench_contended_thread_local>()
             .start();

@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "Config.hpp"
+
 #include "AnyBean.hpp"
 #include "Errors.hpp"
 #include "ListenerHandle.hpp"
@@ -20,7 +22,7 @@
 #include "../../internal/detail/HashUtils.hpp"
 #include "../../internal/NameId.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
 class BeanContext;
 class ScopedContext;
@@ -198,7 +200,7 @@ protected:
     /**
      * @brief Creates a context sharing an existing registry (used by ScopedContext).
      */
-    explicit BeanContext(std::shared_ptr<ctr::detail::Registry> registry);
+    explicit BeanContext(std::shared_ptr<CTORIUM_NAMESPACE::detail::Registry> registry);
 
     /**
      * @brief Internal precondition guard for discover<...>().
@@ -208,9 +210,9 @@ protected:
      */
     virtual void assertCanDiscover_() const;
 
-    [[nodiscard]] ctr::detail::Registry& core() noexcept { return *registry_; }
+    [[nodiscard]] CTORIUM_NAMESPACE::detail::Registry& core() noexcept { return *registry_; }
 
-    std::shared_ptr<ctr::detail::Registry> registry_;
+    std::shared_ptr<CTORIUM_NAMESPACE::detail::Registry> registry_;
     /** Non-null only for ScopedContext instances; set in ScopedContext constructor body. */
     ScopedContext* asScope_ = nullptr;
 
@@ -220,7 +222,7 @@ private:
 
     std::string key_;
     std::unordered_map<std::string, std::unique_ptr<ScopedContext>,
-                       ctr::detail::StringViewHash, std::equal_to<>> scopes_;
+                       CTORIUM_NAMESPACE::detail::StringViewHash, std::equal_to<>> scopes_;
     std::shared_mutex scopesMutex_;
 
     struct DeferredListener {
@@ -234,4 +236,4 @@ private:
     void flushDeferredListeners_();
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

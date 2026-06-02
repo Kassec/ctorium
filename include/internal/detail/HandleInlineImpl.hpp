@@ -7,6 +7,8 @@
 #include <type_traits>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "Registry.hpp"
 #include "ResolutionContext.hpp"
 #include "../TypeInfoGetter.hpp"
@@ -17,7 +19,7 @@
 #include "../../api/ctr/Errors.hpp"
 #include "../../api/ctr/ScopedContext.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
     template <class T>
     Bean<T> Bean<T>::makeDirect(
         T *instance, detail::SlotId slot,
@@ -68,12 +70,12 @@ namespace ctr {
     // AnyBean prototype refcount helpers
     // ─────────────────────────────────────────────────────────────────────────────
 
-    [[gnu::always_inline]] inline void ctr::AnyBean::retainIfPrototype() noexcept {
+    [[gnu::always_inline]] inline void CTORIUM_NAMESPACE::AnyBean::retainIfPrototype() noexcept {
         auto* store = static_cast<detail::PrototypeStore*>(registry_);
         store->retain(bits_.f1.slot);
     }
 
-    inline void ctr::AnyBean::releaseIfPrototype() noexcept {
+    inline void CTORIUM_NAMESPACE::AnyBean::releaseIfPrototype() noexcept {
         auto* store = static_cast<detail::PrototypeStore*>(registry_);
         if (!store->releaseAcquire(bits_.f1.slot))
             return;
@@ -107,7 +109,7 @@ namespace ctr {
             return *reg->rootContext();
         }
         // Form 2: session handle — return the owning ScopedContext.
-        ctr::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
+        CTORIUM_NAMESPACE::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
         if (scope != nullptr)
             return *scope;
         return *reg->rootContext(); // fallback (scope no longer registered)
@@ -126,7 +128,7 @@ namespace ctr {
     template <class T>
     T *Bean<T>::proxyResolve_() const noexcept {
         auto* reg = static_cast<detail::Registry*>(registry_);
-        ctr::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
+        CTORIUM_NAMESPACE::ScopedContext *scope = reg->findScope(bits_.f2.scopeNameId);
         if (scope == nullptr || !scope->scopeStarted_)
             return nullptr;
 
@@ -290,12 +292,12 @@ namespace ctr {
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
         const CastTarget target = resolveCastTarget<U>(reg, object_, descId);
         if (!target.compatible()) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "Bean::cast: the bean is not compatible with the requested type."
                 );
         }
         if (!target.castable()) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "Bean::cast: cannot cast from virtual base — downcast unavailable."
                 );
         }
@@ -408,12 +410,12 @@ namespace ctr {
             object_ != nullptr ? bits_.f1.descId : bits_.f2.descId;
         const CastTarget target = resolveCastTarget<U>(reg, object_, descId);
         if (!target.compatible()) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "AnyBean::cast: the bean is not compatible with the requested type."
                 );
         }
         if (!target.castable()) {
-            throw ctr::ResolutionError(
+            throw CTORIUM_NAMESPACE::ResolutionError(
                 "AnyBean::cast: cannot cast from virtual base — downcast unavailable."
                 );
         }
@@ -558,4 +560,4 @@ namespace ctr {
                             detail::Origin::AnnotatedType, nullptr};
     }
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

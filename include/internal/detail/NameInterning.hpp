@@ -7,10 +7,12 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../NameId.hpp"
 #include "HashUtils.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Bidirectional interning table mapping bean named-qualifier strings to `NameId`.
@@ -122,4 +124,4 @@ private:
     std::vector<const char*>                idToName_; ///< Reverse map; pointers into nameToId_ keys.
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

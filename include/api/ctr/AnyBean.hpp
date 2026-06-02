@@ -4,9 +4,11 @@
 #include <cstdint>
 #include <optional>
 
+#include "Config.hpp"
+
 #include "Bean.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
     class BeanContext;
 
@@ -182,4 +184,4 @@ namespace ctr {
         void* registry_ = nullptr;
     };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

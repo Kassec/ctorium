@@ -13,7 +13,7 @@ namespace bench_handle {
 
     struct [[
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -22,7 +22,7 @@ namespace bench_handle {
     };
     struct [[
     =
-    ctr::prototype {
+    CTORIUM_NAMESPACE::prototype {
     }
 
     ]
@@ -38,7 +38,7 @@ namespace bench_handle {
 // This sets the lower bound for handle copying cost.
 
 static void BM_Handle_Singleton_Copy(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-hnd-sing-copy");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-hnd-sing-copy");
     ctx.discover<^^bench_handle>().start();
     auto handle = ctx.resolve<bench_handle::HSingleton>();
 
@@ -66,7 +66,7 @@ BENCHMARK(BM_Handle_Singleton_Copy);
 // Each iteration performs two moves; subtract singleton-copy cost for one-move cost.
 
 static void BM_Handle_Singleton_Move(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-hnd-sing-move");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-hnd-sing-move");
     ctx.discover<^^bench_handle>().start();
     auto handle = ctx.resolve<bench_handle::HSingleton>();
 
@@ -95,7 +95,7 @@ BENCHMARK(BM_Handle_Singleton_Move);
 // Difference vs BM_Handle_Singleton_Copy isolates two atomic ops per iteration.
 
 static void BM_Handle_Prototype_Copy(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-hnd-proto-copy");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-hnd-proto-copy");
     ctx.discover<^^bench_handle>().start();
     auto handle = ctx.resolve<bench_handle::HPrototype>();
 
@@ -125,7 +125,7 @@ BENCHMARK(BM_Handle_Prototype_Copy);
 // confirm that move avoids the two atomic ops paid by copy.
 
 static void BM_Handle_Prototype_Move(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-hnd-proto-move");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-hnd-proto-move");
     ctx.discover<^^bench_handle>().start();
     auto handle = ctx.resolve<bench_handle::HPrototype>();
 

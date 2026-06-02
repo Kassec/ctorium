@@ -5,22 +5,22 @@
 
 namespace listener_fixture {
 
-struct [[=ctr::singleton{}]] ServiceA {};
-struct [[=ctr::singleton{}]] ServiceB {};
-struct [[=ctr::prototype{}]] Widget {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ServiceA {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] ServiceB {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Widget {};
 
 } // namespace listener_fixture
 
 // ─── Typed listener — fires only for the target type ────────────────────────
 
 TEST(Listener, TypedListenerFiresOnlyForTargetType) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-typed-filter");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-typed-filter");
     ctx.discover<^^listener_fixture>().start();
 
     int countA = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&countA](const ctr::Bean<listener_fixture::ServiceA>&) { ++countA; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&countA](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++countA; });
 
     ctx.resolve<listener_fixture::ServiceA>();
     ctx.resolve<listener_fixture::ServiceB>();
@@ -30,13 +30,13 @@ TEST(Listener, TypedListenerFiresOnlyForTargetType) {
 }
 
 TEST(Listener, TypedListenerNotFiredBySubsequentResolvesOfSameSingleton) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-typed-singleton-once");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-typed-singleton-once");
     ctx.discover<^^listener_fixture>().start();
 
     int countA = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&countA](const ctr::Bean<listener_fixture::ServiceA>&) { ++countA; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&countA](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++countA; });
 
     ctx.resolve<listener_fixture::ServiceA>();
     ctx.resolve<listener_fixture::ServiceA>(); // already materialized; no event
@@ -47,13 +47,13 @@ TEST(Listener, TypedListenerNotFiredBySubsequentResolvesOfSameSingleton) {
 // ─── Global listener — fires for all beans ───────────────────────────────────
 
 TEST(Listener, GlobalListenerFiresForAllBeans) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-global-all");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-global-all");
     ctx.discover<^^listener_fixture>().start();
 
     int callCount = 0;
     ctx.on(
-        ctr::onCreated,
-        [&callCount](const ctr::AnyBean&) { ++callCount; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&callCount](const CTORIUM_NAMESPACE::AnyBean&) { ++callCount; });
 
     ctx.resolve<listener_fixture::ServiceA>();
     ctx.resolve<listener_fixture::ServiceB>();
@@ -65,16 +65,16 @@ TEST(Listener, GlobalListenerFiresForAllBeans) {
 // ─── Multiple independent registrations ──────────────────────────────────────
 
 TEST(Listener, MultipleListenerRegistrationsAreIndependent) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-multi-reg");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-multi-reg");
     ctx.discover<^^listener_fixture>().start();
 
     int count1 = 0, count2 = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&count1](const ctr::Bean<listener_fixture::ServiceA>&) { ++count1; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count1](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count1; });
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&count2](const ctr::Bean<listener_fixture::ServiceA>&) { ++count2; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count2](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count2; });
 
     ctx.resolve<listener_fixture::ServiceA>();
     EXPECT_EQ(count1, 1);
@@ -85,18 +85,18 @@ TEST(Listener, MultipleListenerRegistrationsAreIndependent) {
 // ─── Priority ordering ────────────────────────────────────────────────────────
 
 TEST(Listener, HigherPriorityListenerFiresFirst) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-priority");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-priority");
     ctx.discover<^^listener_fixture>().start();
 
     int lastFired = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&lastFired](const ctr::Bean<listener_fixture::ServiceA>&) { lastFired = 1; },
-        ctr::ListenerOptions{.priority = 10});
+        CTORIUM_NAMESPACE::onCreated,
+        [&lastFired](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { lastFired = 1; },
+        CTORIUM_NAMESPACE::ListenerOptions{.priority = 10});
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&lastFired](const ctr::Bean<listener_fixture::ServiceA>&) { lastFired = 2; },
-        ctr::ListenerOptions{.priority = 5});
+        CTORIUM_NAMESPACE::onCreated,
+        [&lastFired](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { lastFired = 2; },
+        CTORIUM_NAMESPACE::ListenerOptions{.priority = 5});
 
     ctx.resolve<listener_fixture::ServiceA>();
     // Listener with priority 5 fired last (lower priority executes last).
@@ -107,13 +107,13 @@ TEST(Listener, HigherPriorityListenerFiresFirst) {
 // ─── remove — idempotent unregistration ──────────────────────────────────────
 
 TEST(Listener, RemoveByHandlePreventsSubsequentDispatches) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-remove-handle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-remove-handle");
     ctx.discover<^^listener_fixture>().start();
 
     int count = 0;
     auto handle = ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<listener_fixture::ServiceA>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count; });
 
     handle.remove();
 
@@ -123,13 +123,13 @@ TEST(Listener, RemoveByHandlePreventsSubsequentDispatches) {
 }
 
 TEST(Listener, ContextRemoveByHandlePreventsSubsequentDispatches) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-ctx-remove");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-ctx-remove");
     ctx.discover<^^listener_fixture>().start();
 
     int count = 0;
     auto handle = ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<listener_fixture::ServiceA>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count; });
 
     ctx.remove(handle);
 
@@ -139,13 +139,13 @@ TEST(Listener, ContextRemoveByHandlePreventsSubsequentDispatches) {
 }
 
 TEST(Listener, RemoveIsIdempotent) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-remove-idempotent");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-remove-idempotent");
     ctx.discover<^^listener_fixture>().start();
 
     int count = 0;
     auto handle = ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<listener_fixture::ServiceA>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count; });
 
     handle.remove();
     handle.remove(); // idempotent — must not crash or throw
@@ -159,13 +159,13 @@ TEST(Listener, RemoveIsIdempotent) {
 // ─── Pre-start typed listener registration ───────────────────────────────────
 
 TEST(Listener, PreStartTypedListenerFiresOnlyForTargetType) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-prestart-typed-filter");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-prestart-typed-filter");
     ctx.discover<^^listener_fixture>();
 
     int countA = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&countA](const ctr::Bean<listener_fixture::ServiceA>&) { ++countA; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&countA](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++countA; });
 
     ctx.start();
     ctx.resolve<listener_fixture::ServiceA>();
@@ -176,13 +176,13 @@ TEST(Listener, PreStartTypedListenerFiresOnlyForTargetType) {
 }
 
 TEST(Listener, PreStartTypedListenerContinuesWorkingPostStart) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-prestart-post-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-prestart-post-start");
     ctx.discover<^^listener_fixture>();
 
     int countA = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&countA](const ctr::Bean<listener_fixture::ServiceA>&) { ++countA; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&countA](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++countA; });
 
     ctx.start();
     ctx.resolve<listener_fixture::ServiceA>();
@@ -193,29 +193,29 @@ TEST(Listener, PreStartTypedListenerContinuesWorkingPostStart) {
 // ─── All four lifecycle phases ────────────────────────────────────────────────
 
 TEST(Listener, AllFourPhasesFireInOrderForSingleton) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-phases");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-phases");
     ctx.discover<^^listener_fixture>().start();
 
     int phaseOrder = 0;
     int initOrder = 0, createdOrder = 0, preDestroyOrder = 0, destroyedOrder = 0;
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onInitialized,
-        [&](const ctr::Bean<listener_fixture::ServiceA>&) {
+        CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) {
             initOrder = ++phaseOrder;
         });
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&](const ctr::Bean<listener_fixture::ServiceA>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) {
             createdOrder = ++phaseOrder;
         });
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onPreDestroy,
-        [&](const ctr::Bean<listener_fixture::ServiceA>&) {
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) {
             preDestroyOrder = ++phaseOrder;
         });
     ctx.on<listener_fixture::ServiceA>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<listener_fixture::ServiceA>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) {
             destroyedOrder = ++phaseOrder;
         });
 
@@ -229,23 +229,23 @@ TEST(Listener, AllFourPhasesFireInOrderForSingleton) {
 }
 
 TEST(Listener, PrototypeAllFourPhasesFireInOrder) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-proto-phases");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-proto-phases");
     ctx.discover<^^listener_fixture>().start();
 
     int phaseOrder = 0;
     int initOrder = 0, createdOrder = 0, preDestroyOrder = 0, destroyedOrder = 0;
     ctx.on<listener_fixture::Widget>(
-        ctr::onInitialized,
-        [&](const ctr::Bean<listener_fixture::Widget>&) { initOrder = ++phaseOrder; });
+        CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::Widget>&) { initOrder = ++phaseOrder; });
     ctx.on<listener_fixture::Widget>(
-        ctr::onCreated,
-        [&](const ctr::Bean<listener_fixture::Widget>&) { createdOrder = ++phaseOrder; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::Widget>&) { createdOrder = ++phaseOrder; });
     ctx.on<listener_fixture::Widget>(
-        ctr::onPreDestroy,
-        [&](const ctr::Bean<listener_fixture::Widget>&) { preDestroyOrder = ++phaseOrder; });
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::Widget>&) { preDestroyOrder = ++phaseOrder; });
     ctx.on<listener_fixture::Widget>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<listener_fixture::Widget>&) { destroyedOrder = ++phaseOrder; });
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<listener_fixture::Widget>&) { destroyedOrder = ++phaseOrder; });
 
     {
         auto handle = ctx.resolve<listener_fixture::Widget>();
@@ -259,16 +259,16 @@ TEST(Listener, PrototypeAllFourPhasesFireInOrder) {
 }
 
 TEST(Listener, GlobalListenerHigherPriorityFiresFirst) {
-    auto& ctx = ctr::BeanContext::resolveContext("ls-global-priority");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ls-global-priority");
     ctx.discover<^^listener_fixture>().start();
 
     int lastFired = 0;
-    ctx.on(ctr::onCreated,
-        [&lastFired](const ctr::AnyBean&) { lastFired = 1; },
-        ctr::ListenerOptions{.priority = 10});
-    ctx.on(ctr::onCreated,
-        [&lastFired](const ctr::AnyBean&) { lastFired = 2; },
-        ctr::ListenerOptions{.priority = 5});
+    ctx.on(CTORIUM_NAMESPACE::onCreated,
+        [&lastFired](const CTORIUM_NAMESPACE::AnyBean&) { lastFired = 1; },
+        CTORIUM_NAMESPACE::ListenerOptions{.priority = 10});
+    ctx.on(CTORIUM_NAMESPACE::onCreated,
+        [&lastFired](const CTORIUM_NAMESPACE::AnyBean&) { lastFired = 2; },
+        CTORIUM_NAMESPACE::ListenerOptions{.priority = 5});
 
     ctx.resolve<listener_fixture::ServiceA>();
     EXPECT_EQ(lastFired, 2);
@@ -278,13 +278,13 @@ TEST(Listener, GlobalListenerHigherPriorityFiresFirst) {
 // ─── A1 — ListenerHandle: copy + double remove (UAF fix) ─────────────────────
 
 TEST(ListenerHandle, CopyThenDoubleRemoveDoesNotCrash) {
-    auto& ctx = ctr::BeanContext::resolveContext("lh-copy-double-remove");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("lh-copy-double-remove");
     ctx.discover<^^listener_fixture>().start();
 
     int count = 0;
     auto h1 = ctx.on<listener_fixture::ServiceA>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<listener_fixture::ServiceA>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<listener_fixture::ServiceA>&) { ++count; });
     auto h2 = h1; // copy: both share the same token in the store
 
     h1.remove(); // removes the token from the store

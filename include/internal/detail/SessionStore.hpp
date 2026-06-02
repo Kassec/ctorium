@@ -5,9 +5,11 @@
 #include <memory>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../Descriptor.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Per-scope storage for session bean instances, keyed by dense session slot.
@@ -116,4 +118,4 @@ private:
     std::vector<DescriptorId>                           insertionOrder_;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

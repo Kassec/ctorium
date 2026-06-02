@@ -1,8 +1,10 @@
 #pragma once
 
+#include "Config.hpp"
+
 #include "Markers.hpp"
 
-namespace ctr {
+namespace CTORIUM_NAMESPACE {
 
 /**
  * @brief Controls reflection discovery behavior.
@@ -46,4 +48,4 @@ struct ListenerOptions {
     int priority = 0;
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

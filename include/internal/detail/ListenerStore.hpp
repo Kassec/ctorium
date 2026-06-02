@@ -13,12 +13,14 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../NameId.hpp"
 #include "../TypeId.hpp"
 #include "../../api/ctr/ListenerHandle.hpp"
 #include "TreiberFreelist.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Lifecycle listener registry: registration, removal, and phase dispatch.
@@ -567,14 +569,14 @@ private:
     inline static std::atomic<std::size_t> publishedDispatchHazardSlots_{0};
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ListenerHandle::remove() — defined here because it requires the full
 // ListenerStore definition (calls removeByToken()).
 // ─────────────────────────────────────────────────────────────────────────────
 
-inline void ctr::ListenerHandle::remove() noexcept {
+inline void CTORIUM_NAMESPACE::ListenerHandle::remove() noexcept {
     if (store_ != nullptr) {
         store_->removeByToken(tokenValue_);
         store_ = nullptr;

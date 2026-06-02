@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Config.hpp"
+
 #include "AnyBean.hpp"
 #include "Bean.hpp"
 #include "BeanContext.hpp"

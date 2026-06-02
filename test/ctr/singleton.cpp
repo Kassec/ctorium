@@ -18,9 +18,9 @@
 
 namespace singleton_fixture {
 
-struct [[=ctr::singleton{}]] Service {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Service {};
 
-struct [[=ctr::singleton{}]] Dependency {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dependency {};
 
 // HookedService: singleton with a postConstruct hook.
 // callCount is incremented once on first materialization; the hook is not
@@ -28,9 +28,9 @@ struct [[=ctr::singleton{}]] Dependency {};
 // No user destructor, no inline globals: the reflect_constant failure
 // documented earlier was specific to the "inline global + user destructor"
 // pattern and does not apply here.
-struct [[=ctr::singleton{}]] HookedService {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] HookedService {
     int callCount = 0;
-    [[=ctr::postConstruct{}]] void init() { callCount++; }
+    [[=CTORIUM_NAMESPACE::postConstruct{}]] void init() { callCount++; }
 };
 
 // Consumer: depends on Dependency via constructor injection.
@@ -39,9 +39,9 @@ struct [[=ctr::singleton{}]] HookedService {
 // The two-phase lock pattern in Registry::resolve<T> releases the write lock
 // before the construct thunk executes, so the nested resolve<Dependency>()
 // inside constructThunkInjected proceeds without deadlocking.
-struct [[=ctr::singleton{}]] Consumer {
-    ctr::Bean<Dependency> dep;
-    explicit Consumer(ctr::Bean<Dependency> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<Dependency> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<Dependency> d) : dep(std::move(d)) {}
 };
 
 } // namespace singleton_fixture
@@ -50,8 +50,8 @@ struct [[=ctr::singleton{}]] Consumer {
 // ill-formed on GCC 16.1.0.
 namespace singleton_named_fixture {
 
-struct [[=ctr::singleton{}]]
-       [[=ctr::named{.name = std::define_static_string("console")}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]]
+       [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("console")}]]
        ConsoleSink {};
 
 } // namespace singleton_named_fixture
@@ -62,21 +62,21 @@ struct NotRegistered {};
 // ─── Lifecycle state tests ────────────────────────────────────────────────────
 
 TEST(Singleton, ResolveBeforeStartRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-pre-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-pre-start");
     ctx.discover<^^singleton_fixture>();
-    EXPECT_THROW(ctx.resolve<singleton_fixture::Service>(), ctr::ContextStateError);
+    EXPECT_THROW(ctx.resolve<singleton_fixture::Service>(), CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 TEST(Singleton, DiscoverAfterStartRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-post-start-discover");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-post-start-discover");
     ctx.discover<^^singleton_fixture>().start();
-    EXPECT_THROW(ctx.discover<^^singleton_fixture>(), ctr::ContextStateError);
+    EXPECT_THROW(ctx.discover<^^singleton_fixture>(), CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 TEST(Singleton, StartIsIdempotent) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-start-idempotent");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-start-idempotent");
     ctx.discover<^^singleton_fixture>().start();
     EXPECT_NO_THROW(ctx.start());
     ctx.stop();
@@ -85,7 +85,7 @@ TEST(Singleton, StartIsIdempotent) {
 // ─── Resolution and identity tests ───────────────────────────────────────────
 
 TEST(Singleton, ResolveReturnsValidBean) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-basic-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-basic-resolve");
     ctx.discover<^^singleton_fixture>().start();
     auto bean = ctx.resolve<singleton_fixture::Service>();
     EXPECT_NE(bean.operator->(), nullptr);
@@ -93,7 +93,7 @@ TEST(Singleton, ResolveReturnsValidBean) {
 }
 
 TEST(Singleton, SameObjectReturnedOnRepeatedResolve) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-identity");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-identity");
     ctx.discover<^^singleton_fixture>().start();
     auto b1 = ctx.resolve<singleton_fixture::Service>();
     auto b2 = ctx.resolve<singleton_fixture::Service>();
@@ -102,15 +102,15 @@ TEST(Singleton, SameObjectReturnedOnRepeatedResolve) {
 }
 
 TEST(Singleton, SameContextKeyReturnsSameContextInstance) {
-    auto& ctx1 = ctr::BeanContext::resolveContext("st-same-key");
-    auto& ctx2 = ctr::BeanContext::resolveContext("st-same-key");
+    auto& ctx1 = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-same-key");
+    auto& ctx2 = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-same-key");
     EXPECT_EQ(&ctx1, &ctx2);
     ctx1.stop();
 }
 
 TEST(Singleton, DifferentContextKeysYieldIndependentInstances) {
-    auto& ctx1 = ctr::BeanContext::resolveContext("st-key-a");
-    auto& ctx2 = ctr::BeanContext::resolveContext("st-key-b");
+    auto& ctx1 = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-key-a");
+    auto& ctx2 = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-key-b");
     ctx1.discover<^^singleton_fixture>().start();
     ctx2.discover<^^singleton_fixture>().start();
     auto b1 = ctx1.resolve<singleton_fixture::Service>();
@@ -123,51 +123,51 @@ TEST(Singleton, DifferentContextKeysYieldIndependentInstances) {
 // ─── Named key tests ─────────────────────────────────────────────────────────
 
 TEST(Singleton, NamedSingletonResolvesSuccessfullyByName) {
-    auto& ctx = ctr::BeanContext::resolveContext("sn-named-resolve");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("sn-named-resolve");
     ctx.discover<^^singleton_named_fixture>().start();
-    EXPECT_NO_THROW(ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"}));
-    auto bean = ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"});
+    EXPECT_NO_THROW(ctx.resolve<singleton_named_fixture::ConsoleSink>(CTORIUM_NAMESPACE::named{"console"}));
+    auto bean = ctx.resolve<singleton_named_fixture::ConsoleSink>(CTORIUM_NAMESPACE::named{"console"});
     EXPECT_NE(bean.operator->(), nullptr);
     ctx.stop();
 }
 
 TEST(Singleton, UnnamedResolveOfNamedOnlyBeanRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("sn-named-unnamed-fail");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("sn-named-unnamed-fail");
     ctx.discover<^^singleton_named_fixture>().start();
-    EXPECT_THROW(ctx.resolve<singleton_named_fixture::ConsoleSink>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<singleton_named_fixture::ConsoleSink>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Singleton, NamedSingletonSameInstanceOnRepeatedResolve) {
-    auto& ctx = ctr::BeanContext::resolveContext("sn-named-identity");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("sn-named-identity");
     ctx.discover<^^singleton_named_fixture>().start();
-    auto b1 = ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"});
-    auto b2 = ctx.resolve<singleton_named_fixture::ConsoleSink>(ctr::named{"console"});
+    auto b1 = ctx.resolve<singleton_named_fixture::ConsoleSink>(CTORIUM_NAMESPACE::named{"console"});
+    auto b2 = ctx.resolve<singleton_named_fixture::ConsoleSink>(CTORIUM_NAMESPACE::named{"console"});
     EXPECT_EQ(b1.operator->(), b2.operator->());
     ctx.stop();
 }
 
 TEST(Singleton, NamedResolveWithUnknownKeyRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-unknown-key");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-unknown-key");
     ctx.discover<^^singleton_fixture>().start();
     // "nonexistent" was never interned as a NameId → ResolutionError.
     EXPECT_THROW(
-        ctx.resolve<singleton_fixture::Service>(ctr::named{"nonexistent"}),
-        ctr::ResolutionError);
+        ctx.resolve<singleton_fixture::Service>(CTORIUM_NAMESPACE::named{"nonexistent"}),
+        CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Singleton, ResolveOfUnregisteredTypeRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-unknown-type");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-unknown-type");
     ctx.discover<^^singleton_fixture>().start();
-    EXPECT_THROW(ctx.resolve<NotRegistered>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<NotRegistered>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 // ─── Hook tests ───────────────────────────────────────────────────────────────
 
 TEST(Singleton, PostConstructHookFiresOnceOnFirstMaterialization) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-post-construct");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-post-construct");
     ctx.discover<^^singleton_fixture>().start();
     auto b1 = ctx.resolve<singleton_fixture::HookedService>();
     EXPECT_EQ(b1->callCount, 1);
@@ -180,7 +180,7 @@ TEST(Singleton, PostConstructHookFiresOnceOnFirstMaterialization) {
 // ─── Dependency injection tests ───────────────────────────────────────────────
 
 TEST(Singleton, InjectedDependencyIsSameInstanceAsDirectResolve) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-injection");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-injection");
     ctx.discover<^^singleton_fixture>().start();
     // Pre-resolve Dependency to materialise it before Consumer is constructed.
     // See comment on Consumer fixture above for the non-recursive-lock rationale.
@@ -200,38 +200,38 @@ TEST(Singleton, InjectedDependencyIsSameInstanceAsDirectResolve) {
 
 namespace eager_basic_fixture {
 inline int eagerCount = 0;
-struct [[=ctr::singleton{.lazy = false}]] EagerSvc {
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerSvc {
     EagerSvc() { ++eagerCount; }
 };
 } // namespace eager_basic_fixture
 
 namespace lazy_basic_fixture {
 inline int lazyCount = 0;
-struct [[=ctr::singleton{}]] LazySvc { // default: lazy = true
+struct [[=CTORIUM_NAMESPACE::singleton{}]] LazySvc { // default: lazy = true
     LazySvc() { ++lazyCount; }
 };
 } // namespace lazy_basic_fixture
 
 namespace eager_dep_fixture {
 inline int depCount = 0;
-struct [[=ctr::singleton{.lazy = false}]] EagerDep {
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerDep {
     EagerDep() { ++depCount; }
 };
-struct [[=ctr::singleton{.lazy = false}]] EagerConsumer {
-    ctr::Bean<EagerDep> dep;
-    explicit EagerConsumer(ctr::Bean<EagerDep> d) : dep(std::move(d)) { ++depCount; }
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerConsumer {
+    CTORIUM_NAMESPACE::Bean<EagerDep> dep;
+    explicit EagerConsumer(CTORIUM_NAMESPACE::Bean<EagerDep> d) : dep(std::move(d)) { ++depCount; }
 };
 } // namespace eager_dep_fixture
 
 namespace eager_throw_fixture {
-struct [[=ctr::singleton{.lazy = false}]] EagerThrowing {
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] EagerThrowing {
     EagerThrowing() { throw std::runtime_error("eager ctor failed"); }
 };
 } // namespace eager_throw_fixture
 
 TEST(Singleton, EagerSingleton_BuiltAtStart) {
     eager_basic_fixture::eagerCount = 0;
-    auto& ctx = ctr::BeanContext::resolveContext("st-eager-built-at-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-eager-built-at-start");
     ctx.discover<^^eager_basic_fixture>().start();
     EXPECT_EQ(eager_basic_fixture::eagerCount, 1); // built before any resolve
     ctx.stop();
@@ -239,7 +239,7 @@ TEST(Singleton, EagerSingleton_BuiltAtStart) {
 
 TEST(Singleton, LazySingleton_NotBuiltAtStart) {
     lazy_basic_fixture::lazyCount = 0;
-    auto& ctx = ctr::BeanContext::resolveContext("st-lazy-not-built-at-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-lazy-not-built-at-start");
     ctx.discover<^^lazy_basic_fixture>().start();
     EXPECT_EQ(lazy_basic_fixture::lazyCount, 0); // not built at start
     ctx.resolve<lazy_basic_fixture::LazySvc>();
@@ -249,7 +249,7 @@ TEST(Singleton, LazySingleton_NotBuiltAtStart) {
 
 TEST(Singleton, EagerSingletonWithDep_BothBuiltAtStart) {
     eager_dep_fixture::depCount = 0;
-    auto& ctx = ctr::BeanContext::resolveContext("st-eager-with-dep");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-eager-with-dep");
     ctx.discover<^^eager_dep_fixture>().start();
     EXPECT_EQ(eager_dep_fixture::depCount, 2); // EagerDep + EagerConsumer both built
     auto b = ctx.resolve<eager_dep_fixture::EagerConsumer>();
@@ -258,7 +258,7 @@ TEST(Singleton, EagerSingletonWithDep_BothBuiltAtStart) {
 }
 
 TEST(Singleton, EagerSingleton_ExceptionPropagatesFromStart) {
-    auto& ctx = ctr::BeanContext::resolveContext("st-eager-throws");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("st-eager-throws");
     ctx.discover<^^eager_throw_fixture>();
     EXPECT_THROW(ctx.start(), std::runtime_error);
     ctx.stop();

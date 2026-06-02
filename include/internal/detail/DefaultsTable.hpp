@@ -5,10 +5,12 @@
 #include <cstddef>
 #include <memory>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../NameId.hpp"
 #include "../TypeId.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
     /**
      * @brief Per-type runtime default `NameId` store with thread-safe snapshot semantics.
      *
@@ -94,4 +96,4 @@ namespace ctr::detail {
         std::unique_ptr<std::atomic<NameId>[]> defaults_;
         std::size_t size_ = 0;
     };
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

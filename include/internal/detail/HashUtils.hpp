@@ -3,7 +3,9 @@
 #include <functional>
 #include <string_view>
 
-namespace ctr::detail {
+#include "../../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 /// Transparent hash allowing unordered_map<string,...> to be queried with string_view,
 /// eliminating heap allocation on lookup hot paths.
@@ -19,4 +21,4 @@ struct StringViewHash {
     }
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

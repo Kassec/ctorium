@@ -7,19 +7,19 @@
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 namespace tl_fixture {
-struct [[=ctr::threadLocal{}]] TLSvc { int id = 0; };
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLSvc { int id = 0; };
 } // namespace tl_fixture
 
 namespace thread_local_fixture {
 
 std::atomic<int> preDestroyCallCount{0};
 
-struct [[=ctr::threadLocal{}]] TLService {
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLService {
     int threadId = 0;
-    [[=ctr::preDestroy{}]] void cleanup() { preDestroyCallCount.fetch_add(1); }
+    [[=CTORIUM_NAMESPACE::preDestroy{}]] void cleanup() { preDestroyCallCount.fetch_add(1); }
 };
 
-struct [[=ctr::threadLocal{}]] TLSimple {
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLSimple {
     int value = 42;
 };
 
@@ -28,7 +28,7 @@ struct [[=ctr::threadLocal{}]] TLSimple {
 // ─── Criterion 1: distinct instances per thread, same per same thread ─────────
 
 TEST(ThreadLocal, DistinctInstancesPerThread) {
-    auto& ctx = ctr::BeanContext::resolveContext("tl-distinct");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-distinct");
     ctx.discover<^^thread_local_fixture>();
     ctx.start();
 
@@ -52,7 +52,7 @@ TEST(ThreadLocal, DistinctInstancesPerThread) {
 // ─── Criterion 2: ScopedContext resolution == root resolution ─────────────────
 
 TEST(ThreadLocal, ScopedContextTransparent) {
-    auto& ctx   = ctr::BeanContext::resolveContext("tl-scope");
+    auto& ctx   = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-scope");
     auto& scope = ctx.resolveScope("s");
     ctx.discover<^^thread_local_fixture>();
     ctx.start();
@@ -70,7 +70,7 @@ TEST(ThreadLocal, ScopedContextTransparent) {
 TEST(ThreadLocal, ThreadExitDestroysInstance) {
     thread_local_fixture::preDestroyCallCount.store(0);
     {
-        auto& ctx = ctr::BeanContext::resolveContext("tl-thread-exit");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-thread-exit");
         ctx.discover<^^thread_local_fixture>();
         ctx.start();
 
@@ -92,7 +92,7 @@ TEST(ThreadLocal, ThreadExitDestroysInstance) {
 TEST(ThreadLocal, StopDestroysLiveThreadInstances) {
     thread_local_fixture::preDestroyCallCount.store(0);
     {
-        auto& ctx = ctr::BeanContext::resolveContext("tl-stop");
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-stop");
         ctx.discover<^^thread_local_fixture>();
         ctx.start();
 
@@ -129,7 +129,7 @@ TEST(ThreadLocal, OperatorArrowDiscrimination) {
     // Resolving a singleton returns a Form 1 handle (object_ non-null).
     // Resolving a threadLocal returns a Form 3 handle (object_ null, sentinel nameId).
     // Ensure both return valid pointers.
-    auto& ctx = ctr::BeanContext::resolveContext("tl-discrimination");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-discrimination");
     ctx.discover<^^thread_local_fixture>();
     ctx.start();
 
@@ -143,18 +143,18 @@ TEST(ThreadLocal, OperatorArrowDiscrimination) {
 // ─── tl_fixture: guard pre-start + destroy on close ──────────────────────────
 
 TEST(ThreadLocal, ResolveBeforeStartRaisesContextStateError) {
-    auto& ctx = ctr::BeanContext::resolveContext("tl-pre-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-pre-start");
     ctx.discover<^^tl_fixture>();
-    EXPECT_THROW(ctx.resolve<tl_fixture::TLSvc>(), ctr::ContextStateError);
+    EXPECT_THROW(ctx.resolve<tl_fixture::TLSvc>(), CTORIUM_NAMESPACE::ContextStateError);
     ctx.stop();
 }
 
 TEST(ThreadLocal, InstanceDestroyedAtContextClose) {
-    auto& ctx = ctr::BeanContext::resolveContext("tl-destroy-on-close");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-destroy-on-close");
     ctx.discover<^^tl_fixture>().start();
 
     int destroyCount = 0;
-    ctx.on(ctr::onDestroyed, [&](const ctr::AnyBean&) { ++destroyCount; });
+    ctx.on(CTORIUM_NAMESPACE::onDestroyed, [&](const CTORIUM_NAMESPACE::AnyBean&) { ++destroyCount; });
 
     ctx.resolve<tl_fixture::TLSvc>();
     ctx.stop();
@@ -177,12 +177,12 @@ struct TLPolyBase {
     int sentinel = 77;
 };
 
-struct [[=ctr::threadLocal{}]] TLPolyConcrete : public TLPolyBase {};
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] TLPolyConcrete : public TLPolyBase {};
 
 } // namespace tl_poly_fixture
 
 TEST(ThreadLocal, PolymorphicExposureResolvesBase) {
-    auto& ctx = ctr::BeanContext::resolveContext("tl-poly-expose");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("tl-poly-expose");
     ctx.discover<^^tl_poly_fixture>().start();
 
     auto baseBean = ctx.resolve<tl_poly_fixture::TLPolyBase>();

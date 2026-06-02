@@ -8,17 +8,17 @@
 
 namespace scoped_listener_fixture {
 
-struct [[=ctr::session{}]] ScopedSvc {};
-struct [[=ctr::session{}]] OtherScopedSvc {};
-struct [[=ctr::singleton{}]] RootSingleton {};
-struct [[=ctr::prototype{}]] RootProto {};
+struct [[=CTORIUM_NAMESPACE::session{}]] ScopedSvc {};
+struct [[=CTORIUM_NAMESPACE::session{}]] OtherScopedSvc {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] RootSingleton {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] RootProto {};
 
 } // namespace scoped_listener_fixture
 
 // --- ScopedListener: scope listener filtering -------------------------------
 
 TEST(ScopedListener, ScopeListenerFiresOnlyForItsOwnScope_Creation) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-own-scope-creation");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-own-scope-creation");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -27,8 +27,8 @@ TEST(ScopedListener, ScopeListenerFiresOnlyForItsOwnScope_Creation) {
 
     int count = 0;
     scopeA.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) { ++count; });
 
     scopeA.resolve<scoped_listener_fixture::ScopedSvc>();
     scopeB.resolve<scoped_listener_fixture::ScopedSvc>();
@@ -38,15 +38,15 @@ TEST(ScopedListener, ScopeListenerFiresOnlyForItsOwnScope_Creation) {
 }
 
 TEST(ScopedListener, ScopeListenerDoesNotFireForRootSingleton) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-no-root-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-no-root-singleton");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scope = ctx.resolveScope("scope");
     scope.start();
 
     int count = 0;
     scope.on<scoped_listener_fixture::RootSingleton>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::RootSingleton>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::RootSingleton>&) { ++count; });
 
     ctx.resolve<scoped_listener_fixture::RootSingleton>();
 
@@ -55,15 +55,15 @@ TEST(ScopedListener, ScopeListenerDoesNotFireForRootSingleton) {
 }
 
 TEST(ScopedListener, ScopeListenerDoesNotFireForPrototype) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-no-root-prototype");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-no-root-prototype");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scope = ctx.resolveScope("scope");
     scope.start();
 
     int count = 0;
     scope.on<scoped_listener_fixture::RootProto>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::RootProto>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::RootProto>&) { ++count; });
 
     auto bean = ctx.resolve<scoped_listener_fixture::RootProto>();
 
@@ -72,7 +72,7 @@ TEST(ScopedListener, ScopeListenerDoesNotFireForPrototype) {
 }
 
 TEST(ScopedListener, ScopeListenerFiresForAllFourPhasesOfItsScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-four-phases");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-four-phases");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scope = ctx.resolveScope("scope");
     scope.start();
@@ -84,23 +84,23 @@ TEST(ScopedListener, ScopeListenerFiresForAllFourPhasesOfItsScope) {
     int destroyedOrder = 0;
 
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onInitialized,
-        [&](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onInitialized,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             initOrder = ++phaseOrder;
         });
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             createdOrder = ++phaseOrder;
         });
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onPreDestroy,
-        [&](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onPreDestroy,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             preDestroyOrder = ++phaseOrder;
         });
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             destroyedOrder = ++phaseOrder;
         });
 
@@ -118,7 +118,7 @@ TEST(ScopedListener, ScopeListenerFiresForAllFourPhasesOfItsScope) {
 }
 
 TEST(ScopedListener, ScopeListenerDoesNotFireOnDestructionOfOtherScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-other-scope-destruction");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-other-scope-destruction");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -127,8 +127,8 @@ TEST(ScopedListener, ScopeListenerDoesNotFireOnDestructionOfOtherScope) {
 
     int destroyed = 0;
     scopeA.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onDestroyed,
-        [&destroyed](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&destroyed](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++destroyed;
         });
 
@@ -140,13 +140,13 @@ TEST(ScopedListener, ScopeListenerDoesNotFireOnDestructionOfOtherScope) {
 }
 
 TEST(ScopedListener, ScopeListenerGlobalFormFiresOnlyForItsScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-global-form-scope-only");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-global-form-scope-only");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scope = ctx.resolveScope("scope");
     scope.start();
 
     int count = 0;
-    scope.on(ctr::onCreated, [&count](const ctr::AnyBean&) { ++count; });
+    scope.on(CTORIUM_NAMESPACE::onCreated, [&count](const CTORIUM_NAMESPACE::AnyBean&) { ++count; });
 
     ctx.resolve<scoped_listener_fixture::RootSingleton>();
     scope.resolve<scoped_listener_fixture::ScopedSvc>();
@@ -156,24 +156,24 @@ TEST(ScopedListener, ScopeListenerGlobalFormFiresOnlyForItsScope) {
 }
 
 TEST(ScopedListener, ScopeListenerPriorityOrderPreservedUnderFiltering) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-priority-filtered");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-priority-filtered");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scope = ctx.resolveScope("scope");
     scope.start();
 
     std::vector<int> order;
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&order](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&order](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             order.push_back(10);
         },
-        ctr::ListenerOptions{.priority = 10});
+        CTORIUM_NAMESPACE::ListenerOptions{.priority = 10});
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&order](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&order](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             order.push_back(5);
         },
-        ctr::ListenerOptions{.priority = 5});
+        CTORIUM_NAMESPACE::ListenerOptions{.priority = 5});
 
     scope.resolve<scoped_listener_fixture::ScopedSvc>();
 
@@ -184,14 +184,14 @@ TEST(ScopedListener, ScopeListenerPriorityOrderPreservedUnderFiltering) {
 }
 
 TEST(ScopedListener, ScopeListenerRegisteredPreStartFiresForItsScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-prestart-scope-listener");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-prestart-scope-listener");
     auto& scope = ctx.resolveScope("scope");
     ctx.discover<^^scoped_listener_fixture>();
 
     int count = 0;
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) { ++count; });
 
     ctx.start();
     scope.start();
@@ -202,19 +202,19 @@ TEST(ScopedListener, ScopeListenerRegisteredPreStartFiresForItsScope) {
 }
 
 TEST(ScopedListener, ScopeListenerBindSessionPostStartDispatchIsScoped) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-bind-session-post-start");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-bind-session-post-start");
     auto& scope = ctx.resolveScope("scope");
 
     int scopedCount = 0;
     int rootCount = 0;
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&scopedCount](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&scopedCount](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++scopedCount;
         });
     ctx.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&rootCount](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&rootCount](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++rootCount;
         });
 
@@ -229,13 +229,13 @@ TEST(ScopedListener, ScopeListenerBindSessionPostStartDispatchIsScoped) {
 }
 
 TEST(ScopedListener, ScopeListenerBindSessionPendingAtStartDispatchIsScoped) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-bind-session-pending");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-bind-session-pending");
     auto& scope = ctx.resolveScope("scope");
 
     int count = 0;
     scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) { ++count; });
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) { ++count; });
     scope.bindSession<scoped_listener_fixture::ScopedSvc>(
         std::make_unique<scoped_listener_fixture::ScopedSvc>());
 
@@ -249,7 +249,7 @@ TEST(ScopedListener, ScopeListenerBindSessionPendingAtStartDispatchIsScoped) {
 // --- RootListenerScope: root behavior remains broad -------------------------
 
 TEST(RootListenerScope, RootListenerFiresForSingletonAndAllScopes) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-root-sees-all-creation");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-root-sees-all-creation");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -257,7 +257,7 @@ TEST(RootListenerScope, RootListenerFiresForSingletonAndAllScopes) {
     scopeB.start();
 
     int count = 0;
-    ctx.on(ctr::onCreated, [&count](const ctr::AnyBean& bean) {
+    ctx.on(CTORIUM_NAMESPACE::onCreated, [&count](const CTORIUM_NAMESPACE::AnyBean& bean) {
         if (bean.compatible<scoped_listener_fixture::RootSingleton>()
                 || bean.compatible<scoped_listener_fixture::ScopedSvc>()) {
             ++count;
@@ -273,7 +273,7 @@ TEST(RootListenerScope, RootListenerFiresForSingletonAndAllScopes) {
 }
 
 TEST(RootListenerScope, RootListenerFiresForAllDestructionPaths) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-root-sees-all-destroy");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-root-sees-all-destroy");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -281,7 +281,7 @@ TEST(RootListenerScope, RootListenerFiresForAllDestructionPaths) {
     scopeB.start();
 
     int count = 0;
-    ctx.on(ctr::onPreDestroy, [&count](const ctr::AnyBean& bean) {
+    ctx.on(CTORIUM_NAMESPACE::onPreDestroy, [&count](const CTORIUM_NAMESPACE::AnyBean& bean) {
         if (bean.compatible<scoped_listener_fixture::RootSingleton>()
                 || bean.compatible<scoped_listener_fixture::ScopedSvc>()) {
             ++count;
@@ -297,7 +297,7 @@ TEST(RootListenerScope, RootListenerFiresForAllDestructionPaths) {
 }
 
 TEST(RootListenerScope, RootTypedListenerFiresForSessionBeanInAnyScope) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-root-typed-any-scope");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-root-typed-any-scope");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -306,8 +306,8 @@ TEST(RootListenerScope, RootTypedListenerFiresForSessionBeanInAnyScope) {
 
     int count = 0;
     ctx.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++count;
         });
 
@@ -321,7 +321,7 @@ TEST(RootListenerScope, RootTypedListenerFiresForSessionBeanInAnyScope) {
 // --- ScopedListenerIsolation: independent scopes ----------------------------
 
 TEST(ScopedListenerIsolation, TwoScopesWithSeparateListenersSeeOnlyOwnBeans) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-two-scopes-create");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-two-scopes-create");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -331,13 +331,13 @@ TEST(ScopedListenerIsolation, TwoScopesWithSeparateListenersSeeOnlyOwnBeans) {
     int countA = 0;
     int countB = 0;
     scopeA.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&countA](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&countA](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++countA;
         });
     scopeB.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&countB](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&countB](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++countB;
         });
 
@@ -350,7 +350,7 @@ TEST(ScopedListenerIsolation, TwoScopesWithSeparateListenersSeeOnlyOwnBeans) {
 }
 
 TEST(ScopedListenerIsolation, TwoScopesDestructionIsolated) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-two-scopes-destroy");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-two-scopes-destroy");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scopeA = ctx.resolveScope("a");
     auto& scopeB = ctx.resolveScope("b");
@@ -360,13 +360,13 @@ TEST(ScopedListenerIsolation, TwoScopesDestructionIsolated) {
     int countA = 0;
     int countB = 0;
     scopeA.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onDestroyed,
-        [&countA](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&countA](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++countA;
         });
     scopeB.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onDestroyed,
-        [&countB](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&countB](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++countB;
         });
 
@@ -386,15 +386,15 @@ TEST(ScopedListenerIsolation, TwoScopesDestructionIsolated) {
 // --- ScopedListenerHandle: scoped listener removal --------------------------
 
 TEST(ScopedListenerHandle, ScopedListenerRemoveByHandleStopsDispatches) {
-    auto& ctx = ctr::BeanContext::resolveContext("slc-remove-handle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("slc-remove-handle");
     ctx.discover<^^scoped_listener_fixture>().start();
     auto& scope = ctx.resolveScope("scope");
     scope.start();
 
     int count = 0;
     auto handle = scope.on<scoped_listener_fixture::ScopedSvc>(
-        ctr::onCreated,
-        [&count](const ctr::Bean<scoped_listener_fixture::ScopedSvc>&) {
+        CTORIUM_NAMESPACE::onCreated,
+        [&count](const CTORIUM_NAMESPACE::Bean<scoped_listener_fixture::ScopedSvc>&) {
             ++count;
         });
     handle.remove();

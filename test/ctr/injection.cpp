@@ -12,23 +12,23 @@ namespace injection_lazy_cycle_fixture {
 
 struct B;
 
-struct [[=ctr::prototype{}]] A {
-    ctr::Bean<B> b;
-    explicit A(ctr::Bean<B> dep) : b(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::prototype{}]] A {
+    CTORIUM_NAMESPACE::Bean<B> b;
+    explicit A(CTORIUM_NAMESPACE::Bean<B> dep) : b(std::move(dep)) {}
 };
 
-struct [[=ctr::prototype{}]] B {
-    ctr::Bean<A> a;
-    explicit B(ctr::Bean<A> dep) : a(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::prototype{}]] B {
+    CTORIUM_NAMESPACE::Bean<A> a;
+    explicit B(CTORIUM_NAMESPACE::Bean<A> dep) : a(std::move(dep)) {}
 };
 
 } // namespace injection_lazy_cycle_fixture
 
 namespace injection_self_cycle_fixture {
 
-struct [[=ctr::prototype{}]] S {
-    ctr::Bean<S> self;
-    explicit S(ctr::Bean<S> dep) : self(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::prototype{}]] S {
+    CTORIUM_NAMESPACE::Bean<S> self;
+    explicit S(CTORIUM_NAMESPACE::Bean<S> dep) : self(std::move(dep)) {}
 };
 
 } // namespace injection_self_cycle_fixture
@@ -37,30 +37,30 @@ namespace injection_eager_cycle_fixture {
 
 struct B;
 
-struct [[=ctr::singleton{.lazy = false}]] A {
-    ctr::Bean<B> b;
-    explicit A(ctr::Bean<B> dep) : b(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] A {
+    CTORIUM_NAMESPACE::Bean<B> b;
+    explicit A(CTORIUM_NAMESPACE::Bean<B> dep) : b(std::move(dep)) {}
 };
 
-struct [[=ctr::singleton{.lazy = false}]] B {
-    ctr::Bean<A> a;
-    explicit B(ctr::Bean<A> dep) : a(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{.lazy = false}]] B {
+    CTORIUM_NAMESPACE::Bean<A> a;
+    explicit B(CTORIUM_NAMESPACE::Bean<A> dep) : a(std::move(dep)) {}
 };
 
 } // namespace injection_eager_cycle_fixture
 
 namespace injection_multi_dep_fixture {
 
-struct [[=ctr::singleton{}]] Dep1 { int value = 1; };
-struct [[=ctr::singleton{}]] Dep2 { int value = 2; };
-struct [[=ctr::singleton{}]] Dep3 { int value = 3; };
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep1 { int value = 1; };
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep2 { int value = 2; };
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep3 { int value = 3; };
 
-struct [[=ctr::prototype{}]] Consumer {
-    ctr::Bean<Dep1> dep1;
-    ctr::Bean<Dep2> dep2;
-    ctr::Bean<Dep3> dep3;
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<Dep1> dep1;
+    CTORIUM_NAMESPACE::Bean<Dep2> dep2;
+    CTORIUM_NAMESPACE::Bean<Dep3> dep3;
 
-    Consumer(ctr::Bean<Dep1> a, ctr::Bean<Dep2> b, ctr::Bean<Dep3> c)
+    Consumer(CTORIUM_NAMESPACE::Bean<Dep1> a, CTORIUM_NAMESPACE::Bean<Dep2> b, CTORIUM_NAMESPACE::Bean<Dep3> c)
         : dep1(std::move(a)), dep2(std::move(b)), dep3(std::move(c)) {}
 };
 
@@ -68,44 +68,44 @@ struct [[=ctr::prototype{}]] Consumer {
 
 namespace injection_proto_singleton_fixture {
 
-struct [[=ctr::singleton{}]] SingletonDep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] SingletonDep {};
 
-struct [[=ctr::prototype{}]] Consumer {
-    ctr::Bean<SingletonDep> dep;
-    explicit Consumer(ctr::Bean<SingletonDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<SingletonDep> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<SingletonDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_proto_singleton_fixture
 
 namespace injection_singleton_proto_fixture {
 
-struct [[=ctr::prototype{}]] PrototypeDep {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] PrototypeDep {};
 
-struct [[=ctr::singleton{}]] Consumer {
-    ctr::Bean<PrototypeDep> dep;
-    explicit Consumer(ctr::Bean<PrototypeDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<PrototypeDep> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<PrototypeDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_singleton_proto_fixture
 
 namespace injection_session_singleton_fixture {
 
-struct [[=ctr::singleton{}]] SingletonDep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] SingletonDep {};
 
-struct [[=ctr::session{}]] Consumer {
-    ctr::Bean<SingletonDep> dep;
-    explicit Consumer(ctr::Bean<SingletonDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::session{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<SingletonDep> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<SingletonDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_session_singleton_fixture
 
 namespace injection_thread_local_singleton_fixture {
 
-struct [[=ctr::singleton{}]] SingletonDep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] SingletonDep {};
 
-struct [[=ctr::threadLocal{}]] Consumer {
-    ctr::Bean<SingletonDep> dep;
-    explicit Consumer(ctr::Bean<SingletonDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::threadLocal{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<SingletonDep> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<SingletonDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_thread_local_singleton_fixture
@@ -119,28 +119,28 @@ struct Product {};
 
 using FactoryProduct = Product<ProductTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
     FactoryProduct make() { return FactoryProduct{}; }
 };
 
-struct [[=ctr::prototype{}]] Consumer {
-    ctr::Bean<FactoryProduct> dep;
-    explicit Consumer(ctr::Bean<FactoryProduct> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<FactoryProduct> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<FactoryProduct> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_factory_singleton_fixture
 
 namespace injection_post_construct_fixture {
 
-struct [[=ctr::singleton{}]] Dep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep {};
 
-struct [[=ctr::singleton{}]] Target {
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Target {
     Dep* received = nullptr;
     int callCount = 0;
 
-    [[=ctr::postConstruct{}]]
-    void init(ctr::Bean<Dep> dep) {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
+    void init(CTORIUM_NAMESPACE::Bean<Dep> dep) {
         received = dep.operator->();
         ++callCount;
     }
@@ -150,14 +150,14 @@ struct [[=ctr::singleton{}]] Target {
 
 namespace injection_pre_destroy_fixture {
 
-struct [[=ctr::singleton{}]] SingletonDep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] SingletonDep {};
 
-struct [[=ctr::prototype{}]] Target {
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Target {
     SingletonDep* received = nullptr;
     int callCount = 0;
 
-    [[=ctr::preDestroy{}]]
-    void cleanup(ctr::Bean<SingletonDep> dep) {
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
+    void cleanup(CTORIUM_NAMESPACE::Bean<SingletonDep> dep) {
         received = dep.operator->();
         ++callCount;
     }
@@ -176,17 +176,17 @@ struct Dep {
 
 using ExposedDep = Dep<DepTag>;
 
-struct [[=ctr::factory{}]] Factory {
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("a")}]]
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("a")}]]
     ExposedDep makeA() {
         ExposedDep dep;
         dep.value = 1;
         return dep;
     }
 
-    [[=ctr::singleton{}]]
-    [[=ctr::named{.name = std::define_static_string("b")}]]
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("b")}]]
     ExposedDep makeB() {
         ExposedDep dep;
         dep.value = 2;
@@ -194,11 +194,11 @@ struct [[=ctr::factory{}]] Factory {
     }
 };
 
-struct [[=ctr::prototype{}]] Consumer {
-    ctr::Bean<ExposedDep> dep;
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<ExposedDep> dep;
     explicit Consumer(
-        [[=ctr::named{.name = std::define_static_string("a")}]]
-        ctr::Bean<ExposedDep> d) : dep(std::move(d)) {}
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("a")}]]
+        CTORIUM_NAMESPACE::Bean<ExposedDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_named_param_fixture
@@ -207,49 +207,49 @@ namespace injection_missing_dep_fixture {
 
 struct MissingDep {};
 
-struct [[=ctr::prototype{}]] Consumer {
-    ctr::Bean<MissingDep> dep;
-    explicit Consumer(ctr::Bean<MissingDep> d) : dep(std::move(d)) {}
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<MissingDep> dep;
+    explicit Consumer(CTORIUM_NAMESPACE::Bean<MissingDep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_missing_dep_fixture
 
 namespace injection_unknown_named_fixture {
 
-struct [[=ctr::singleton{}]] Dep {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Dep {};
 
-struct [[=ctr::prototype{}]] Consumer {
-    ctr::Bean<Dep> dep;
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Consumer {
+    CTORIUM_NAMESPACE::Bean<Dep> dep;
     explicit Consumer(
-        [[=ctr::named{.name = std::define_static_string("absent")}]]
-        ctr::Bean<Dep> d) : dep(std::move(d)) {}
+        [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("absent")}]]
+        CTORIUM_NAMESPACE::Bean<Dep> d) : dep(std::move(d)) {}
 };
 
 } // namespace injection_unknown_named_fixture
 
 TEST(Injection, LazyConstructorCycleRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-lazy-cycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-lazy-cycle");
     ctx.discover<^^injection_lazy_cycle_fixture>().start();
-    EXPECT_THROW(ctx.resolve<injection_lazy_cycle_fixture::A>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<injection_lazy_cycle_fixture::A>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Injection, SelfConstructorCycleRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-self-cycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-self-cycle");
     ctx.discover<^^injection_self_cycle_fixture>().start();
-    EXPECT_THROW(ctx.resolve<injection_self_cycle_fixture::S>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<injection_self_cycle_fixture::S>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Injection, EagerSingletonCycleRaisesResolutionErrorAtStart) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-eager-cycle");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-eager-cycle");
     ctx.discover<^^injection_eager_cycle_fixture>();
-    EXPECT_THROW(ctx.start(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.start(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Injection, MultipleConstructorDependenciesEachResolvedDistinctly) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-multi-dep");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-multi-dep");
     ctx.discover<^^injection_multi_dep_fixture>().start();
 
     {
@@ -276,7 +276,7 @@ TEST(Injection, MultipleConstructorDependenciesEachResolvedDistinctly) {
 }
 
 TEST(Injection, PrototypeConsumerSharesSingletonDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-proto-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-proto-singleton");
     ctx.discover<^^injection_proto_singleton_fixture>().start();
 
     {
@@ -293,7 +293,7 @@ TEST(Injection, PrototypeConsumerSharesSingletonDependency) {
 }
 
 TEST(Injection, SingletonConsumerHoldsPrototypeDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-singleton-proto");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-singleton-proto");
     ctx.discover<^^injection_singleton_proto_fixture>().start();
 
     {
@@ -310,7 +310,7 @@ TEST(Injection, SingletonConsumerHoldsPrototypeDependency) {
 }
 
 TEST(Injection, SessionConsumerReceivesSingletonDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-session-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-session-singleton");
     ctx.discover<^^injection_session_singleton_fixture>().start();
     auto& scope = ctx.resolveScope("inj-session-singleton-scope");
     scope.start();
@@ -325,7 +325,7 @@ TEST(Injection, SessionConsumerReceivesSingletonDependency) {
 }
 
 TEST(Injection, ThreadLocalConsumerReceivesSingletonDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-thread-local-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-thread-local-singleton");
     ctx.discover<^^injection_thread_local_singleton_fixture>().start();
 
     {
@@ -338,7 +338,7 @@ TEST(Injection, ThreadLocalConsumerReceivesSingletonDependency) {
 }
 
 TEST(Injection, ConsumerReceivesFactoryProducedSingletonDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-factory-singleton");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-factory-singleton");
     ctx.discover<^^injection_factory_singleton_fixture>().start();
 
     {
@@ -351,7 +351,7 @@ TEST(Injection, ConsumerReceivesFactoryProducedSingletonDependency) {
 }
 
 TEST(Injection, PostConstructHookReceivesInjectedDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-post-construct-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-post-construct-param");
     ctx.discover<^^injection_post_construct_fixture>().start();
 
     {
@@ -368,7 +368,7 @@ TEST(Injection, PostConstructHookReceivesInjectedDependency) {
 }
 
 TEST(Injection, PreDestroyHookReceivesInjectedSingletonDependency) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-pre-destroy-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-pre-destroy-param");
     ctx.discover<^^injection_pre_destroy_fixture>().start();
 
     injection_pre_destroy_fixture::SingletonDep* expected = nullptr;
@@ -377,8 +377,8 @@ TEST(Injection, PreDestroyHookReceivesInjectedSingletonDependency) {
     int destroyedCount = 0;
 
     ctx.on<injection_pre_destroy_fixture::Target>(
-        ctr::onDestroyed,
-        [&](const ctr::Bean<injection_pre_destroy_fixture::Target>& bean) {
+        CTORIUM_NAMESPACE::onDestroyed,
+        [&](const CTORIUM_NAMESPACE::Bean<injection_pre_destroy_fixture::Target>& bean) {
             received = bean->received;
             hookCallCount = bean->callCount;
             ++destroyedCount;
@@ -402,13 +402,13 @@ TEST(Injection, PreDestroyHookReceivesInjectedSingletonDependency) {
 }
 
 TEST(Injection, NamedConstructorParameterSelectsNamedCandidate) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-named-param");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-named-param");
     ctx.discover<^^injection_named_param_fixture>().start();
 
     {
         auto consumer = ctx.resolve<injection_named_param_fixture::Consumer>();
-        auto depA = ctx.resolve<injection_named_param_fixture::ExposedDep>(ctr::named{"a"});
-        auto depB = ctx.resolve<injection_named_param_fixture::ExposedDep>(ctr::named{"b"});
+        auto depA = ctx.resolve<injection_named_param_fixture::ExposedDep>(CTORIUM_NAMESPACE::named{"a"});
+        auto depB = ctx.resolve<injection_named_param_fixture::ExposedDep>(CTORIUM_NAMESPACE::named{"b"});
 
         EXPECT_EQ(consumer->dep.operator->(), depA.operator->());
         EXPECT_NE(consumer->dep.operator->(), depB.operator->());
@@ -420,16 +420,16 @@ TEST(Injection, NamedConstructorParameterSelectsNamedCandidate) {
 }
 
 TEST(Injection, MissingDependencyRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-missing-dep");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-missing-dep");
     ctx.discover<^^injection_missing_dep_fixture>().start();
-    EXPECT_THROW(ctx.resolve<injection_missing_dep_fixture::Consumer>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<injection_missing_dep_fixture::Consumer>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
 TEST(Injection, UnknownNamedQualifierRaisesResolutionError) {
-    auto& ctx = ctr::BeanContext::resolveContext("inj-unknown-named");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("inj-unknown-named");
     ctx.discover<^^injection_unknown_named_fixture>().start();
-    EXPECT_THROW(ctx.resolve<injection_unknown_named_fixture::Consumer>(), ctr::ResolutionError);
+    EXPECT_THROW(ctx.resolve<injection_unknown_named_fixture::Consumer>(), CTORIUM_NAMESPACE::ResolutionError);
     ctx.stop();
 }
 
@@ -444,14 +444,14 @@ namespace injection_concurrent_singleton_cycle_fixture {
 
 struct B;
 
-struct [[=ctr::singleton{}]] A {
-    ctr::Bean<B> b;
-    explicit A(ctr::Bean<B> dep) : b(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] A {
+    CTORIUM_NAMESPACE::Bean<B> b;
+    explicit A(CTORIUM_NAMESPACE::Bean<B> dep) : b(std::move(dep)) {}
 };
 
-struct [[=ctr::singleton{}]] B {
-    ctr::Bean<A> a;
-    explicit B(ctr::Bean<A> dep) : a(std::move(dep)) {}
+struct [[=CTORIUM_NAMESPACE::singleton{}]] B {
+    CTORIUM_NAMESPACE::Bean<A> a;
+    explicit B(CTORIUM_NAMESPACE::Bean<A> dep) : a(std::move(dep)) {}
 };
 
 } // namespace injection_concurrent_singleton_cycle_fixture
@@ -463,7 +463,7 @@ TEST(Injection, ConcurrentSingletonCycleCausesMutualWait) {
 
     for (int attempt = 0; attempt < kAttempts; ++attempt) {
         std::string ctxKey = "inj-conc-cycle-" + std::to_string(attempt);
-        auto& ctx = ctr::BeanContext::resolveContext(ctxKey);
+        auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext(ctxKey);
         ctx.discover<^^injection_concurrent_singleton_cycle_fixture>().start();
 
         std::atomic<bool> aThrew{false}, bThrew{false};
@@ -475,7 +475,7 @@ TEST(Injection, ConcurrentSingletonCycleCausesMutualWait) {
             while (rendezvous.load(std::memory_order_acquire) < 2) {}
             try {
                 ctx.resolve<injection_concurrent_singleton_cycle_fixture::A>();
-            } catch (const ctr::ResolutionError&) {
+            } catch (const CTORIUM_NAMESPACE::ResolutionError&) {
                 aThrew.store(true, std::memory_order_release);
             } catch (...) {}
             doneA.store(true, std::memory_order_release);
@@ -486,7 +486,7 @@ TEST(Injection, ConcurrentSingletonCycleCausesMutualWait) {
             while (rendezvous.load(std::memory_order_acquire) < 2) {}
             try {
                 ctx.resolve<injection_concurrent_singleton_cycle_fixture::B>();
-            } catch (const ctr::ResolutionError&) {
+            } catch (const CTORIUM_NAMESPACE::ResolutionError&) {
                 bThrew.store(true, std::memory_order_release);
             } catch (...) {}
             doneB.store(true, std::memory_order_release);

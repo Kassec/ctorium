@@ -17,7 +17,7 @@ namespace bench_resolve_singleton {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -95,7 +95,7 @@ namespace bench_resolve_singleton {
 
 namespace bench_resolve_mono {
 
-#define CTR_BENCH_DECLARE_MONO_TYPE(Type) struct [[=ctr::singleton{}]] Type {};
+#define CTR_BENCH_DECLARE_MONO_TYPE(Type) struct [[=CTORIUM_NAMESPACE::singleton{}]] Type {};
     CTR_BENCH_MONO_TYPES(CTR_BENCH_DECLARE_MONO_TYPE)
 #undef CTR_BENCH_DECLARE_MONO_TYPE
 
@@ -107,7 +107,7 @@ namespace bench_resolve_prototype {
 
 
     =
-    ctr::prototype {
+    CTORIUM_NAMESPACE::prototype {
     }
 
     ]
@@ -127,7 +127,7 @@ namespace bench_resolve_proto1dep {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -138,14 +138,14 @@ namespace bench_resolve_proto1dep {
 
 
     =
-    ctr::prototype {
+    CTORIUM_NAMESPACE::prototype {
     }
 
     ]
     ]
     Proto1Dep {
-        ctr::Bean<Dep> dep;
-        explicit Proto1Dep (ctr::Bean<Dep> d)
+        CTORIUM_NAMESPACE::Bean<Dep> dep;
+        explicit Proto1Dep (CTORIUM_NAMESPACE::Bean<Dep> d)
         :
         dep(std::move(d))
         {
@@ -165,7 +165,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -176,7 +176,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -187,7 +187,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -198,7 +198,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -209,7 +209,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -220,7 +220,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -231,7 +231,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -242,7 +242,7 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -254,28 +254,28 @@ namespace bench_resolve_proto8deps {
 
 
     =
-    ctr::prototype {
+    CTORIUM_NAMESPACE::prototype {
     }
 
     ]
     ]
     Proto8Deps {
-        ctr::Bean<Dep0> d0;
-        ctr::Bean<Dep1> d1;
-        ctr::Bean<Dep2> d2;
-        ctr::Bean<Dep3> d3;
-        ctr::Bean<Dep4> d4;
-        ctr::Bean<Dep5> d5;
-        ctr::Bean<Dep6> d6;
-        ctr::Bean<Dep7> d7;
+        CTORIUM_NAMESPACE::Bean<Dep0> d0;
+        CTORIUM_NAMESPACE::Bean<Dep1> d1;
+        CTORIUM_NAMESPACE::Bean<Dep2> d2;
+        CTORIUM_NAMESPACE::Bean<Dep3> d3;
+        CTORIUM_NAMESPACE::Bean<Dep4> d4;
+        CTORIUM_NAMESPACE::Bean<Dep5> d5;
+        CTORIUM_NAMESPACE::Bean<Dep6> d6;
+        CTORIUM_NAMESPACE::Bean<Dep7> d7;
 
         explicit Proto8Deps (
-            ctr::Bean<Dep0> d0_
+            CTORIUM_NAMESPACE::Bean<Dep0> d0_
        ,
-        ctr::Bean<Dep1> d1_,
-            ctr::Bean<Dep2> d2_, ctr::Bean<Dep3> d3_,
-            ctr::Bean<Dep4> d4_, ctr::Bean<Dep5> d5_,
-            ctr::Bean<Dep6> d6_, ctr::Bean<Dep7> d7_
+        CTORIUM_NAMESPACE::Bean<Dep1> d1_,
+            CTORIUM_NAMESPACE::Bean<Dep2> d2_, CTORIUM_NAMESPACE::Bean<Dep3> d3_,
+            CTORIUM_NAMESPACE::Bean<Dep4> d4_, CTORIUM_NAMESPACE::Bean<Dep5> d5_,
+            CTORIUM_NAMESPACE::Bean<Dep6> d6_, CTORIUM_NAMESPACE::Bean<Dep7> d7_
         )
         :
         d0(std::move(d0_)), d1(std::move(d1_)),
@@ -297,7 +297,7 @@ namespace bench_resolve_session {
 
 
     =
-    ctr::session {
+    CTORIUM_NAMESPACE::session {
     }
 
     ]
@@ -317,7 +317,7 @@ namespace bench_resolve_tl {
 
 
     =
-    ctr::threadLocal {
+    CTORIUM_NAMESPACE::threadLocal {
     }
 
     ]
@@ -357,7 +357,7 @@ static constexpr std::size_t kChunks = kBatch / kWindow;
 // Timed path: SingletonStore::find() (lock-free atomic load) + Bean<T> ctor.
 
 static void BM_Resolve_Singleton(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-sing");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-sing");
     ctx.discover<^^bench_resolve_singleton>().start();
     auto warm = ctx.resolve<bench_resolve_singleton::Singleton>();
     benchmark::DoNotOptimize(warm);
@@ -386,7 +386,7 @@ BENCHMARK(BM_Resolve_Singleton);
     }
 
 static void BM_Resolve_Mono_Interleaved64(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-mono-i64");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-mono-i64");
     ctx.discover<^^bench_resolve_mono>().start();
     CTR_BENCH_MONO_TYPES(CTR_BENCH_RESOLVE_MONO)
 
@@ -415,10 +415,10 @@ BENCHMARK(BM_Resolve_Mono_Interleaved64);
 // Baseline for BM_Resolve_Prototype_1Dep and BM_Resolve_Prototype_8Deps.
 
 static void BM_Resolve_Prototype(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-proto");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-proto");
     ctx.discover<^^bench_resolve_prototype>().start();
 
-    std::vector<ctr::Bean<bench_resolve_prototype::Prototype>> beans;
+    std::vector<CTORIUM_NAMESPACE::Bean<bench_resolve_prototype::Prototype>> beans;
     beans.reserve(kWindow);
 
     double total_creation_s = 0.0;
@@ -451,12 +451,12 @@ BENCHMARK(BM_Resolve_Prototype)->UseManualTime();
 // Difference vs BM_Resolve_Prototype → 1-dep injection overhead.
 
 static void BM_Resolve_Prototype_1Dep(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-proto-1dep");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-proto-1dep");
     ctx.discover<^^bench_resolve_proto1dep>().start();
     auto warm = ctx.resolve<bench_resolve_proto1dep::Proto1Dep>();
     benchmark::DoNotOptimize(warm.operator->());
 
-    std::vector<ctr::Bean<bench_resolve_proto1dep::Proto1Dep>> beans;
+    std::vector<CTORIUM_NAMESPACE::Bean<bench_resolve_proto1dep::Proto1Dep>> beans;
     beans.reserve(kWindow);
 
     double total_creation_s = 0.0;
@@ -489,12 +489,12 @@ BENCHMARK(BM_Resolve_Prototype_1Dep)->UseManualTime();
 // (BM_Resolve_Prototype_8Deps − BM_Resolve_Prototype_1Dep) / 7 ≈ marginal dep cost.
 
 static void BM_Resolve_Prototype_8Deps(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-proto-8deps");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-proto-8deps");
     ctx.discover<^^bench_resolve_proto8deps>().start();
     auto warm = ctx.resolve<bench_resolve_proto8deps::Proto8Deps>();
     benchmark::DoNotOptimize(warm.operator->());
 
-    std::vector<ctr::Bean<bench_resolve_proto8deps::Proto8Deps>> beans;
+    std::vector<CTORIUM_NAMESPACE::Bean<bench_resolve_proto8deps::Proto8Deps>> beans;
     beans.reserve(kWindow);
 
     double total_creation_s = 0.0;
@@ -527,7 +527,7 @@ BENCHMARK(BM_Resolve_Prototype_8Deps)->UseManualTime();
 // Timed path: TypeId lookup + SessionStore atomic find() + proxy handle ctor.
 
 static void BM_Resolve_Session(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-sess");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-sess");
     ctx.discover<^^bench_resolve_session>().start();
     auto &scope = ctx.resolveScope("bm-res-sess-s");
     scope.start();
@@ -558,7 +558,7 @@ BENCHMARK(BM_Resolve_Session);
 // operator->; compare with BM_Access_ThreadLocal for per-access cost).
 
 static void BM_Resolve_ThreadLocal(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-res-tl");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-res-tl");
     ctx.discover<^^bench_resolve_tl>().start();
     auto warm = ctx.resolve<bench_resolve_tl::TLBean>();
     benchmark::DoNotOptimize(warm);
@@ -595,7 +595,7 @@ BENCHMARK(BM_Resolve_ThreadLocal);
 // by the stored candidateNameId.  No construction — the object is already live.
 
 static void BM_Access_Session(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-acc-sess");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-acc-sess");
     ctx.discover<^^bench_resolve_session>().start();
     auto &scope = ctx.resolveScope("bm-acc-sess-s");
     scope.start();
@@ -624,7 +624,7 @@ BENCHMARK(BM_Access_Session);
 // Compare with BM_Access_Session to see TL-store vs session-store access cost.
 
 static void BM_Access_ThreadLocal(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-acc-tl");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-acc-tl");
     ctx.discover<^^bench_resolve_tl>().start();
     auto handle = ctx.resolve<bench_resolve_tl::TLBean>();
     benchmark::DoNotOptimize(handle);

@@ -3,7 +3,9 @@
 #include <cstdint>
 #include <limits>
 
-namespace ctr::detail {
+#include "../api/ctr/Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Dense index into a store slot table.
@@ -17,4 +19,4 @@ using SlotId = std::uint32_t;
 /** Invalid or uninitialized slot identifier. */
 inline constexpr SlotId kInvalidSlotId = std::numeric_limits<SlotId>::max();
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

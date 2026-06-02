@@ -8,9 +8,11 @@
 #include <utility>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../DescriptorId.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 // Forward declaration: TLCleanup holds a weak_ptr<Registry>.
 class Registry;
@@ -193,4 +195,4 @@ inline TLCleanup& tlCleanup() {
     return cleanup;
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

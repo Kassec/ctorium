@@ -9,11 +9,13 @@
 #include <unordered_map>
 #include <vector>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../TypeId.hpp"
 #include "../../api/ctr/Errors.hpp"
 #include "HashUtils.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Bidirectional interning table mapping C++ types to dense `TypeId` indices.
@@ -180,4 +182,4 @@ private:
     bool frozen_ = false;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

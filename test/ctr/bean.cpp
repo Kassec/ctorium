@@ -6,8 +6,8 @@
 
 namespace bean_fixture {
 
-struct [[=ctr::singleton{}]] Svc {};
-struct [[=ctr::prototype{}]] Proto {};
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Svc {};
+struct [[=CTORIUM_NAMESPACE::prototype{}]] Proto {};
 
 } // namespace bean_fixture
 
@@ -21,7 +21,7 @@ struct [[=ctr::prototype{}]] Proto {};
 // with no atomic refcount operations.
 
 TEST(BeanHandle, MoveConstructionTransfersPointer) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-move-ctor");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-move-ctor");
     ctx.discover<^^bean_fixture>().start();
     auto b1   = ctx.resolve<bean_fixture::Svc>();
     auto* ptr = b1.operator->();
@@ -31,18 +31,18 @@ TEST(BeanHandle, MoveConstructionTransfersPointer) {
 }
 
 TEST(BeanHandle, MoveAssignmentTransfersPointer) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-move-assign");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-move-assign");
     ctx.discover<^^bean_fixture>().start();
     auto b1   = ctx.resolve<bean_fixture::Svc>();
     auto* ptr = b1.operator->();
-    ctr::Bean<bean_fixture::Svc> b2;
+    CTORIUM_NAMESPACE::Bean<bean_fixture::Svc> b2;
     b2 = std::move(b1);
     EXPECT_EQ(b2.operator->(), ptr);
     ctx.stop();
 }
 
 TEST(BeanHandle, OperatorStarEquivalentToArrow) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-star");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-star");
     ctx.discover<^^bean_fixture>().start();
     auto b = ctx.resolve<bean_fixture::Svc>();
     EXPECT_EQ(&(*b), b.operator->());
@@ -50,7 +50,7 @@ TEST(BeanHandle, OperatorStarEquivalentToArrow) {
 }
 
 TEST(BeanHandle, ValueEquivalentToArrow) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-value");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-value");
     ctx.discover<^^bean_fixture>().start();
     auto b = ctx.resolve<bean_fixture::Svc>();
     EXPECT_EQ(&b.value(), b.operator->());
@@ -58,10 +58,10 @@ TEST(BeanHandle, ValueEquivalentToArrow) {
 }
 
 TEST(BeanHandle, CopyAssignmentPreservesPointerAndEquality) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-copy-assign");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-copy-assign");
     ctx.discover<^^bean_fixture>().start();
     auto b1 = ctx.resolve<bean_fixture::Svc>();
-    ctr::Bean<bean_fixture::Svc> b2;
+    CTORIUM_NAMESPACE::Bean<bean_fixture::Svc> b2;
     b2 = b1;
     EXPECT_EQ(b1.operator->(), b2.operator->());
     EXPECT_EQ(b1, b2);
@@ -69,12 +69,12 @@ TEST(BeanHandle, CopyAssignmentPreservesPointerAndEquality) {
 }
 
 TEST(BeanHandle, DefaultConstructedHandleHasNullPointer) {
-    ctr::Bean<bean_fixture::Svc> b;
+    CTORIUM_NAMESPACE::Bean<bean_fixture::Svc> b;
     EXPECT_EQ(b.operator->(), nullptr);
 }
 
 TEST(BeanHandle, MoveConstructionLeavesSourceNull) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-move-null-ctor");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-move-null-ctor");
     ctx.discover<^^bean_fixture>().start();
     auto b1 = ctx.resolve<bean_fixture::Svc>();
     auto b2 = std::move(b1);
@@ -83,17 +83,17 @@ TEST(BeanHandle, MoveConstructionLeavesSourceNull) {
 }
 
 TEST(BeanHandle, MoveAssignmentLeavesSourceNull) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-move-null-assign");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-move-null-assign");
     ctx.discover<^^bean_fixture>().start();
     auto b1 = ctx.resolve<bean_fixture::Svc>();
-    ctr::Bean<bean_fixture::Svc> b2;
+    CTORIUM_NAMESPACE::Bean<bean_fixture::Svc> b2;
     b2 = std::move(b1);
     EXPECT_EQ(b1.operator->(), nullptr);
     ctx.stop();
 }
 
 TEST(BeanHandle, InequalityOperatorReturnsTrueForDistinctBeans) {
-    auto& ctx = ctr::BeanContext::resolveContext("bh-neq");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bh-neq");
     ctx.discover<^^bean_fixture>().start();
     auto b1 = ctx.resolve<bean_fixture::Proto>();
     auto b2 = ctx.resolve<bean_fixture::Proto>();

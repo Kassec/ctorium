@@ -9,24 +9,24 @@ namespace lifecycle_inherited_hooks_fixture {
 inline std::vector<int> calls;
 
 struct Base {
-    [[=ctr::postConstruct{}]]
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void baseInit() {
         calls.push_back(1);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void baseCleanup() {
         calls.push_back(4);
     }
 };
 
-struct [[=ctr::singleton{}]] Derived : Base {
-    [[=ctr::postConstruct{}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Derived : Base {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void derivedInit() {
         calls.push_back(2);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void derivedCleanup() {
         calls.push_back(3);
     }
@@ -37,7 +37,7 @@ struct [[=ctr::singleton{}]] Derived : Base {
 TEST(LifecycleHooks, InheritedHooksRunAroundConcreteHooks) {
     lifecycle_inherited_hooks_fixture::calls.clear();
 
-    auto& ctx = ctr::BeanContext::resolveContext("lifecycle-hooks-inherited");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("lifecycle-hooks-inherited");
     ctx.discover<^^lifecycle_inherited_hooks_fixture>().start();
 
     auto bean = ctx.resolve<lifecycle_inherited_hooks_fixture::Derived>();
@@ -53,23 +53,23 @@ namespace lifecycle_multiple_hooks_fixture {
 
 inline std::vector<int> calls;
 
-struct [[=ctr::singleton{}]] Service {
-    [[=ctr::postConstruct{}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Service {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void firstInit() {
         calls.push_back(1);
     }
 
-    [[=ctr::postConstruct{}]]
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void secondInit() {
         calls.push_back(2);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void firstCleanup() {
         calls.push_back(4);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void secondCleanup() {
         calls.push_back(3);
     }
@@ -80,7 +80,7 @@ struct [[=ctr::singleton{}]] Service {
 TEST(LifecycleHooks, MultipleHooksOfSameKindAllRunInDefinedOrder) {
     lifecycle_multiple_hooks_fixture::calls.clear();
 
-    auto& ctx = ctr::BeanContext::resolveContext("lifecycle-hooks-multiple");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("lifecycle-hooks-multiple");
     ctx.discover<^^lifecycle_multiple_hooks_fixture>().start();
 
     auto bean = ctx.resolve<lifecycle_multiple_hooks_fixture::Service>();
@@ -97,48 +97,48 @@ namespace lifecycle_virtual_diamond_hooks_fixture {
 inline std::vector<int> calls;
 
 struct VirtualBase {
-    [[=ctr::postConstruct{}]]
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void baseInit() {
         calls.push_back(1);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void baseCleanup() {
         calls.push_back(8);
     }
 };
 
 struct Left : virtual VirtualBase {
-    [[=ctr::postConstruct{}]]
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void leftInit() {
         calls.push_back(2);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void leftCleanup() {
         calls.push_back(7);
     }
 };
 
 struct Right : virtual VirtualBase {
-    [[=ctr::postConstruct{}]]
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void rightInit() {
         calls.push_back(3);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void rightCleanup() {
         calls.push_back(6);
     }
 };
 
-struct [[=ctr::singleton{}]] Diamond : Left, Right {
-    [[=ctr::postConstruct{}]]
+struct [[=CTORIUM_NAMESPACE::singleton{}]] Diamond : Left, Right {
+    [[=CTORIUM_NAMESPACE::postConstruct{}]]
     void diamondInit() {
         calls.push_back(4);
     }
 
-    [[=ctr::preDestroy{}]]
+    [[=CTORIUM_NAMESPACE::preDestroy{}]]
     void diamondCleanup() {
         calls.push_back(5);
     }
@@ -149,7 +149,7 @@ struct [[=ctr::singleton{}]] Diamond : Left, Right {
 TEST(LifecycleHooks, VirtualDiamondBaseHookRunsOnce) {
     lifecycle_virtual_diamond_hooks_fixture::calls.clear();
 
-    auto& ctx = ctr::BeanContext::resolveContext("lifecycle-hooks-virtual-diamond");
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("lifecycle-hooks-virtual-diamond");
     ctx.discover<^^lifecycle_virtual_diamond_hooks_fixture>().start();
 
     auto bean = ctx.resolve<lifecycle_virtual_diamond_hooks_fixture::Diamond>();

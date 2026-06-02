@@ -20,7 +20,7 @@ namespace bench_startup_session {
 
 
     =
-    ctr::singleton {
+    CTORIUM_NAMESPACE::singleton {
     }
 
     ]
@@ -31,7 +31,7 @@ namespace bench_startup_session {
 
 
     =
-    ctr::session {
+    CTORIUM_NAMESPACE::session {
     }
 
     ]
@@ -42,7 +42,7 @@ namespace bench_startup_session {
 
 
     =
-    ctr::session {
+    CTORIUM_NAMESPACE::session {
     }
 
     ]
@@ -67,7 +67,7 @@ static void BM_Startup_SmallGraph(benchmark::State &state) {
         std::string key = "bm-su-small-" + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
         state.ResumeTiming();
 
-        auto &ctx = ctr::BeanContext::resolveContext(key);
+        auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext(key);
         ctx.discover<^^bench_startup_small>().start();
 
         state.PauseTiming();
@@ -96,7 +96,7 @@ static void BM_Startup_MediumGraph(benchmark::State &state) {
         std::string key = "bm-su-medium-" + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
         state.ResumeTiming();
 
-        auto &ctx = ctr::BeanContext::resolveContext(key);
+        auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext(key);
         ctx.discover<^^bench_startup_medium>().start();
 
         state.PauseTiming();
@@ -127,7 +127,7 @@ static void BM_Startup_LargeGraph(benchmark::State &state) {
         std::string key = "bm-su-large-" + std::to_string(counter.fetch_add(1, std::memory_order_relaxed));
         state.ResumeTiming();
 
-        auto &ctx = ctr::BeanContext::resolveContext(key);
+        auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext(key);
         ctx.discover<^^bench_startup_large>().start();
 
         state.PauseTiming();
@@ -158,7 +158,7 @@ BENCHMARK(BM_Startup_LargeGraph);
 // own session scope.
 
 static void BM_Scope_StartStop(benchmark::State &state) {
-    auto &ctx = ctr::BeanContext::resolveContext("bm-scope-cycle");
+    auto &ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("bm-scope-cycle");
     ctx.discover<^^bench_startup_session>().start();
     auto &scope = ctx.resolveScope("bm-scope-cycle-s");
 

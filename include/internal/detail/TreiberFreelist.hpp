@@ -3,9 +3,11 @@
 #include <atomic>
 #include <cstdint>
 
+#include "../../api/ctr/Config.hpp"
+
 #include "../SlotId.hpp"
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Pops one slot from an ABA-safe Treiber freelist.
@@ -64,4 +66,4 @@ inline void pushTreiberFreelist(
         std::memory_order_relaxed));
 }
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

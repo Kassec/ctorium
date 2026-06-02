@@ -4,13 +4,15 @@
 #include <cstdint>
 #include <typeinfo>
 
+#include "../api/ctr/Config.hpp"
+
 #include "Identity.hpp"
 #include "Lifetime.hpp"
 #include "Origin.hpp"
 
-namespace ctr { struct BeanReflectiveData; } // forward decl for metadata field
+namespace CTORIUM_NAMESPACE { struct BeanReflectiveData; } // forward decl for metadata field
 
-namespace ctr::detail {
+namespace CTORIUM_NAMESPACE::detail {
 
 /**
  * @brief Compile-time descriptor produced at each `discover<>()` call site.
@@ -241,7 +243,7 @@ struct ContributedDescriptor {
      * @brief Retained reflective method data; `nullptr` when `retainAllMetadata = false`.
      * Produced by `makeReflectiveData<T>()` in `BeanDescriptorGen.hpp`.
      */
-    const ctr::BeanReflectiveData* reflectiveData = nullptr;
+    const CTORIUM_NAMESPACE::BeanReflectiveData* reflectiveData = nullptr;
 
     // ── Polymorphic-exposure fields (SPEC-polymorphic-exposure) ──────────────
 
@@ -282,4 +284,4 @@ struct ContributedDescriptor {
     void* (*adjustToConcrete)(void*) noexcept = nullptr;
 };
 
-} // namespace ctr::detail
+} // namespace CTORIUM_NAMESPACE::detail

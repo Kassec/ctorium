@@ -4,9 +4,12 @@
 
 // Forward declaration: remove() calls ListenerStore methods.
 // The definition of remove() lives in ListenerStore.hpp (which includes this header).
-namespace ctr::detail { class ListenerStore; }
 
-namespace ctr {
+#include "Config.hpp"
+
+namespace CTORIUM_NAMESPACE::detail { class ListenerStore; }
+
+namespace CTORIUM_NAMESPACE {
 
 /**
  * @brief Listener phase tag for context initialization.
@@ -75,15 +78,15 @@ public:
     void remove() noexcept;
 
 private:
-    friend class ctr::detail::ListenerStore;
+    friend class CTORIUM_NAMESPACE::detail::ListenerStore;
 
     // Internal constructor used by ListenerStore::addListener().
-    explicit ListenerHandle(ctr::detail::ListenerStore* store,
+    explicit ListenerHandle(CTORIUM_NAMESPACE::detail::ListenerStore* store,
                             std::size_t token) noexcept
         : store_(store), tokenValue_(token) {}
 
-    ctr::detail::ListenerStore* store_ = nullptr;
+    CTORIUM_NAMESPACE::detail::ListenerStore* store_ = nullptr;
     std::size_t                 tokenValue_ = 0;
 };
 
-} // namespace ctr
+} // namespace CTORIUM_NAMESPACE

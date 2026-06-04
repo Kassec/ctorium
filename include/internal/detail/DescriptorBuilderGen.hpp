@@ -170,10 +170,16 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
         "Ctorium: multiple lifetime annotations on the same factory product are invalid.");
     static_assert(!ann.emptyNameError,
         "Ctorium: ctr::named annotation with an empty key is invalid.");
-    // Single-pass member scan on the product type for hooks (D4).
-    constexpr auto members     = scanMembers<productType>();
     // Single-pass annotation scan on the product type to check for Bean status.
+    // Must come before scanMembers: external types without a Ctorium lifetime
+    // annotation must not be reflected via scanMembers — their constructors may
+    // carry non-template class parameters that cause template_arguments_of to
+    // throw inside isBeanType (see: GitHub issue #19).
     constexpr auto productAnn  = scanAnnotations(productType);
+    // Member scan only for product types that carry a Ctorium lifetime annotation.
+    // External/unannotated types skip this scan; hooks are already guarded below
+    // by productAnn.hasLifetimeMarker, so an empty MemberScan is correct.
+    constexpr auto members     = scanMembersIfBean<productType, productAnn.hasLifetimeMarker>();
     // qualifiedNameOf computed once per entity (D1).
     constexpr const char* productName = qualifiedNameOf(productType);
     constexpr const char* factoryName = qualifiedNameOf(entity.declaringFactory);

@@ -868,3 +868,121 @@ TEST(Factory, FactoryProductMetadataFactoryMethodIsNotInPublicApi) {
 
     ctx.stop();
 }
+
+// ─── Issue #19: external product types must not be scanned via scanMembers ───
+//
+// A factory producer returning an unannotated type (no ctr:: lifetime marker)
+// must compile and resolve even when that type has constructors with non-template
+// class-type parameters.  Before the fix, scanMembers was called unconditionally;
+// isBeanType then called template_arguments_of on a non-template class (ExternalDep),
+// which threw inside a consteval context and caused a compile error.
+
+namespace factory_external_product_fixture {
+
+// Non-template, unannotated class used as a constructor parameter.
+// This is the trigger: isBeanType(^^ExternalDep) calls template_arguments_of,
+// which throws because ExternalDep is not a class-template specialization.
+struct ExternalDep {};
+
+// External product returned by value — no Ctorium annotation on the type.
+struct ExternalByValue {
+    int marker = 1;
+    explicit ExternalByValue(ExternalDep /*dep*/) {}
+};
+
+// External product returned by unique_ptr — mirrors the grpc::Service scenario.
+struct ExternalByUniquePtr {
+    int marker = 2;
+    explicit ExternalByUniquePtr(ExternalDep /*dep*/) {}
+};
+
+// External product with a default constructor — simpler variant also covered.
+struct ExternalDefaultCtor {
+    int marker = 3;
+};
+
+struct [[=CTORIUM_NAMESPACE::factory{}]] ExternalFactory {
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("by-value")}]]
+    ExternalByValue makeByValue() {
+        return ExternalByValue{ExternalDep{}};
+    }
+
+    [[=CTORIUM_NAMESPACE::singleton{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("by-unique-ptr")}]]
+    std::unique_ptr<ExternalByUniquePtr> makeByUniquePtr() {
+        return std::make_unique<ExternalByUniquePtr>(ExternalDep{});
+    }
+
+    [[=CTORIUM_NAMESPACE::prototype{}]]
+    [[=CTORIUM_NAMESPACE::named{.name = std::define_static_string("default-ctor")}]]
+    ExternalDefaultCtor makeDefaultCtor() {
+        return ExternalDefaultCtor{};
+    }
+};
+
+} // namespace factory_external_product_fixture
+
+// Regression test: discovery of a factory whose products include unannotated
+// external types must compile without errors (issue #19).
+TEST(Factory, ExternalProductByValueIsDiscoverableAndResolvable) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-external-by-value");
+    ctx.discover<^^factory_external_product_fixture>().start();
+
+    auto product = ctx.resolve<factory_external_product_fixture::ExternalByValue>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("by-value")});
+
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(product->marker, 1);
+
+    ctx.stop();
+}
+
+// Regression test: unique_ptr<ExternalType> factory product — the exact scenario
+// described in issue #19 (analogue of std::unique_ptr<grpc::Service>).
+TEST(Factory, ExternalProductByUniquePtrIsDiscoverableAndResolvable) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-external-by-unique-ptr");
+    ctx.discover<^^factory_external_product_fixture>().start();
+
+    auto product = ctx.resolve<factory_external_product_fixture::ExternalByUniquePtr>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("by-unique-ptr")});
+
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(product->marker, 2);
+    EXPECT_EQ(product.metadata().origin(), CTORIUM_NAMESPACE::Origin::FactoryProduct);
+
+    ctx.stop();
+}
+
+// External product resolves as singleton: same instance on repeated resolves.
+TEST(Factory, ExternalProductByUniquePtrIsSingleton) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-external-unique-ptr-singleton");
+    ctx.discover<^^factory_external_product_fixture>().start();
+
+    auto first = ctx.resolve<factory_external_product_fixture::ExternalByUniquePtr>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("by-unique-ptr")});
+    auto second = ctx.resolve<factory_external_product_fixture::ExternalByUniquePtr>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("by-unique-ptr")});
+
+    ASSERT_NE(first.operator->(), nullptr);
+    EXPECT_EQ(first.operator->(), second.operator->());
+
+    ctx.stop();
+}
+
+// External product with default constructor also covered (simpler path).
+TEST(Factory, ExternalProductWithDefaultCtorIsDiscoverableAndResolvable) {
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-external-default-ctor");
+    ctx.discover<^^factory_external_product_fixture>().start();
+
+    auto first = ctx.resolve<factory_external_product_fixture::ExternalDefaultCtor>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("default-ctor")});
+    auto second = ctx.resolve<factory_external_product_fixture::ExternalDefaultCtor>(
+        CTORIUM_NAMESPACE::named{.name = std::define_static_string("default-ctor")});
+
+    ASSERT_NE(first.operator->(), nullptr);
+    EXPECT_EQ(first->marker, 3);
+    EXPECT_NE(first.operator->(), second.operator->());
+
+    ctx.stop();
+}

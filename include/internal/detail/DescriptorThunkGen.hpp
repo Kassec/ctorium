@@ -585,6 +585,20 @@ consteval MemberScan scanMembers() {
     return result;
 }
 
+// Conditionally calls scanMembers<Type>() only when IsBean is true; returns an
+// empty MemberScan otherwise.  Used for factory products: external (unannotated)
+// types must not be reflected via members_of/bases_of because their constructors
+// may have non-template class parameters that trigger template_arguments_of
+// failures inside isBeanType.
+template<std::meta::info Type, bool IsBean>
+consteval MemberScan scanMembersIfBean() {
+    if constexpr (IsBean) {
+        return scanMembers<Type>();
+    } else {
+        return MemberScan{};
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // factory product thunks
 // ─────────────────────────────────────────────────────────────────────────────

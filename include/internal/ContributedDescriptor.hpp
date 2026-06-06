@@ -208,11 +208,11 @@ struct ContributedDescriptor {
      */
     const char* factoryMethodName = nullptr;
 
-    // --- Auto-allocating thunks (unique_ptr<T> factory products, Prototype lifetime) ---
+    // --- Auto-allocating thunks (unique_ptr<T> factory products) ---
 
     /**
-     * @brief Combined allocate-and-construct thunk.  Non-null only for factory products
-     * returning `unique_ptr<T>` with `Lifetime::Prototype`.  Signature: `void*(void* ctx)`.
+     * @brief Combined allocate-and-construct thunk.  Non-null for factory products
+     * returning `unique_ptr<T>`, regardless of lifetime.  Signature: `void*(void* ctx)`.
      * The thunk calls the factory method and releases the `unique_ptr` ownership,
      * returning the live pointer.  Invariant: non-null ↔ `dealloc` non-null.
      */

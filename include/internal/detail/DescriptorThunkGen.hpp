@@ -623,8 +623,8 @@ consteval std::meta::info unwrapUniquePtr(std::meta::info returnType) {
     return returnType;
 }
 
-// Standard construct thunk: placement-new from factory call for value returns
-// and fallback paths where the engine pre-allocates mem.
+// Standard construct thunk: placement-new from factory call for value-return products.
+// Not instantiated for unique_ptr<T> products — those always use allocAndConstructFactoryProductThunk.
 template<typename T, std::meta::info FactoryType, std::meta::info Method, std::size_t... Is>
 void constructFactoryProductThunkImpl(
         void* mem,
@@ -634,14 +634,7 @@ void constructFactoryProductThunkImpl(
     using Factory = [:FactoryType:];
     constexpr auto pmf = &[:Method:];
     Factory* fp = static_cast<Factory*>(factoryPtr);
-    if constexpr (std::meta::is_same_type(
-            std::meta::dealias(std::meta::return_type_of(Method)),
-            std::meta::dealias(^^std::unique_ptr<T>))) {
-        auto ptr = (fp->*pmf)(injectParam<Factory, Method, Is>(ctx)...);
-        new (mem) T(std::move(*ptr));
-    } else {
-        new (mem) T((fp->*pmf)(injectParam<Factory, Method, Is>(ctx)...));
-    }
+    new (mem) T((fp->*pmf)(injectParam<Factory, Method, Is>(ctx)...));
 }
 
 template<typename T, std::meta::info FactoryType, std::meta::info Method>

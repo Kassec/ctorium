@@ -209,6 +209,14 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
         deallocFn = &deallocFactoryProductThunk<T>;
     }
 
+    void (*constructFn)(void*, void*);
+    if constexpr (isUniquePtrReturn) {
+        // noopConstruct: never reached — allocAndConstruct path is taken instead.
+        constructFn = &noopConstruct;
+    } else {
+        constructFn = &constructFactoryProductThunk<T, entity.declaringFactory, entity.entity>;
+    }
+
     return ContributedDescriptor{
         .identity          = computeIdentityForProduct(entity.entity, factoryName, ann.beanName, ann.lifetime),
         .exposedTypeName   = productName,
@@ -219,7 +227,7 @@ consteval ContributedDescriptor makeDescriptorForProduct() {
         .priority          = ann.priority,
         .lifetime          = ann.lifetime,
         .origin            = Origin::FactoryProduct,
-        .construct         = &constructFactoryProductThunk<T, entity.declaringFactory, entity.entity>,
+        .construct         = constructFn,
         .destroy           = &destroyThunk<T>,
         .postConstruct     = postConstructFn,
         .preDestroy        = preDestroyFn,

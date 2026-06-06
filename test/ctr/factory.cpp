@@ -167,7 +167,7 @@ TEST(Factory, ValueProducerReturnFormIsResolvableByName) {
     ctx.stop();
 }
 
-TEST(Factory, UniquePtrProducerReturnFormIsBlockedByCurrentDescriptorGeneration) {
+TEST(Factory, UniquePtrProducerReturnFormIsResolvableByName) {
     auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-unique-ptr-return-form");
     ctx.discover<^^factory_return_forms_fixture>().start();
 
@@ -181,6 +181,39 @@ TEST(Factory, UniquePtrProducerReturnFormIsBlockedByCurrentDescriptorGeneration)
     EXPECT_EQ(first->value, 2);
     EXPECT_EQ(first.metadata().exactType(), typeid(factory_return_forms_fixture::UniquePtrProduct));
     EXPECT_NE(first.operator->(), second.operator->());
+
+    ctx.stop();
+}
+
+namespace factory_unique_ptr_non_movable_fixture {
+
+struct NonMovable {
+    NonMovable() = default;
+    NonMovable(NonMovable&&) = delete;
+    NonMovable(const NonMovable&) = delete;
+    int marker = 42;
+};
+static_assert(!std::is_move_constructible_v<NonMovable>);
+
+struct [[=CTORIUM_NAMESPACE::factory{}]] Factory {
+    [[=CTORIUM_NAMESPACE::prototype{}]]
+    std::unique_ptr<NonMovable> makeNonMovable() {
+        return std::make_unique<NonMovable>();
+    }
+};
+
+} // namespace factory_unique_ptr_non_movable_fixture
+
+TEST(Factory, UniquePtrNonMovableProductIsResolvable) {
+    // Regression: issue #20 — unique_ptr<T> factory products must not require
+    // T to be move-constructible. Without the fix, this test fails to compile.
+    auto& ctx = CTORIUM_NAMESPACE::BeanContext::resolveContext("ft-unique-ptr-non-movable");
+    ctx.discover<^^factory_unique_ptr_non_movable_fixture>().start();
+
+    auto product = ctx.resolve<factory_unique_ptr_non_movable_fixture::NonMovable>();
+
+    ASSERT_NE(product.operator->(), nullptr);
+    EXPECT_EQ(product->marker, 42);
 
     ctx.stop();
 }

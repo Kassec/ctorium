@@ -360,10 +360,16 @@ consteval bool isBeanType(std::meta::info paramType) {
     // template_arguments_of precondition: d must be a class-type template specialisation.
     // Guard with is_class_type to avoid precondition violations on reference/pointer/
     // primitive params (e.g. copy/move-ctor params like const T& or T&&).
+    // try/catch guards against non-template class types (e.g. ordinary value classes):
+    // template_arguments_of throws on those under GCC 16 (issue #21).
     if (!std::meta::is_type(d) || !std::meta::is_class_type(d)) return false;
-    const auto args = std::meta::template_arguments_of(d);
-    if (args.size() != 1) return false;
-    return std::meta::template_of(d) == ^^CTORIUM_NAMESPACE::Bean;
+    try {
+        const auto args = std::meta::template_arguments_of(d);
+        if (args.size() != 1) return false;
+        return std::meta::template_of(d) == ^^CTORIUM_NAMESPACE::Bean;
+    } catch (...) {
+        return false;
+    }
 }
 
 struct HookList {

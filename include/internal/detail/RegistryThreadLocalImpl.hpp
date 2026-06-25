@@ -50,8 +50,6 @@ namespace CTORIUM_NAMESPACE::detail {
             && requestedDesc.primaryDescriptor != kInvalidDescriptorId
                 ? requestedDesc.primaryDescriptor
                 : descId;
-        const Descriptor &desc =
-            primaryDescId == descId ? requestedDesc : descriptors_.at(primaryDescId);
         const DescriptorCold &cold = descriptors_.coldAt(primaryDescId);
         TLData &tl = tlData();
 

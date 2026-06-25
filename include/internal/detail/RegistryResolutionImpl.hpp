@@ -409,7 +409,6 @@ namespace CTORIUM_NAMESPACE::detail {
                 }
 
                 if (lt == Lifetime::Prototype) {
-                    const Descriptor &primaryDesc = descriptors_.at(primaryId);
                     const DescriptorCold &primaryCold = descriptors_.coldAt(primaryId);
                     CycleGuard guard(materializationStack(), primaryId);
 
